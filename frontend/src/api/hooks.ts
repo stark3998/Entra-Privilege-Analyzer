@@ -228,7 +228,7 @@ export function useDriftAlerts(params: DriftAlertsParams) {
     queryKey: ["driftAlerts", tenantId, params],
     queryFn: () =>
       client.get<PaginatedResponse<DriftAlert>>(
-        `/api/tenants/${tenantId}/drift?${queryString}`,
+        `/api/tenants/${tenantId}/drift-alerts?${queryString}`,
       ),
   });
 }
@@ -244,7 +244,7 @@ export function useDriftAlertDetail(alertId: string) {
     queryKey: ["driftAlert", tenantId, alertId],
     queryFn: () =>
       client.get<DriftAlert>(
-        `/api/tenants/${tenantId}/drift/${alertId}`,
+        `/api/tenants/${tenantId}/drift-alerts/${alertId}`,
       ),
     enabled: !!alertId,
   });
@@ -269,7 +269,7 @@ export function useUpdateDriftAlert() {
   return useMutation({
     mutationFn: ({ alertId, status, notes }: UpdateDriftAlertPayload) =>
       client.patch<DriftAlert>(
-        `/api/tenants/${tenantId}/drift/${alertId}`,
+        `/api/tenants/${tenantId}/drift-alerts/${alertId}`,
         { status, notes },
       ),
     onSuccess: (_data, variables) => {
@@ -293,7 +293,7 @@ export function useDetectDrift() {
   return useMutation({
     mutationFn: () =>
       client.post<{ status: string }>(
-        `/api/tenants/${tenantId}/drift/detect`,
+        `/api/tenants/${tenantId}/drift-alerts/detect`,
         {},
       ),
     onSuccess: () => {
@@ -330,7 +330,7 @@ export function useViolations(params: ViolationsParams) {
     queryKey: ["violations", tenantId, params],
     queryFn: () =>
       client.get<PaginatedResponse<BestPracticeViolation>>(
-        `/api/tenants/${tenantId}/best-practices/violations?${queryString}`,
+        `/api/tenants/${tenantId}/best-practices?${queryString}`,
       ),
   });
 }
@@ -346,7 +346,7 @@ export function useViolationDetail(violationId: string) {
     queryKey: ["violation", tenantId, violationId],
     queryFn: () =>
       client.get<BestPracticeViolation>(
-        `/api/tenants/${tenantId}/best-practices/violations/${violationId}`,
+        `/api/tenants/${tenantId}/best-practices/${violationId}`,
       ),
     enabled: !!violationId,
   });
@@ -406,7 +406,7 @@ export function useDashboardSummary() {
     queryKey: ["dashboardSummary", tenantId],
     queryFn: () =>
       client.get<DashboardSummary>(
-        `/api/tenants/${tenantId}/dashboard/summary`,
+        `/api/tenants/${tenantId}/dashboard`,
       ),
   });
 }
@@ -438,7 +438,7 @@ export function useExecutiveNarrative() {
     queryKey: ["executiveNarrative", tenantId],
     queryFn: () =>
       client.get<Narrative>(
-        `/api/tenants/${tenantId}/dashboard/narrative`,
+        `/api/tenants/${tenantId}/narratives/executive`,
       ),
   });
 }
@@ -455,7 +455,7 @@ export function useRefreshNarrative() {
   return useMutation({
     mutationFn: () =>
       client.post<Narrative>(
-        `/api/tenants/${tenantId}/dashboard/narrative/refresh`,
+        `/api/tenants/${tenantId}/narratives/refresh`,
         {},
       ),
     onSuccess: () => {

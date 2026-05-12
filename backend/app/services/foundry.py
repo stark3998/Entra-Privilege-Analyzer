@@ -16,10 +16,11 @@ _foundry_client: FoundryClient | None = None
 class FoundryClient:
     """Async wrapper around Azure AI Foundry chat completions endpoint."""
 
-    def __init__(self, endpoint: str, key: str, model: str) -> None:
+    def __init__(self, endpoint: str, key: str, model: str, api_version: str = "2024-02-01") -> None:
         self._endpoint = endpoint.rstrip("/")
         self._key = key
         self._model = model
+        self._api_version = api_version
 
     async def complete(
         self,
@@ -33,7 +34,7 @@ class FoundryClient:
         """
         url = (
             f"{self._endpoint}/openai/deployments/{self._model}"
-            f"/chat/completions?api-version=2024-02-01"
+            f"/chat/completions?api-version={self._api_version}"
         )
         headers = {
             "api-key": self._key,
@@ -87,6 +88,7 @@ def init_foundry_client(settings: Settings) -> FoundryClient | None:
         endpoint=settings.azure_foundry_endpoint,
         key=settings.azure_foundry_key,
         model=settings.azure_foundry_model,
+        api_version=settings.azure_openai_api_version,
     )
     logger.info("FoundryClient initialised with model=%s", settings.azure_foundry_model)
     return _foundry_client

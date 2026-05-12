@@ -5,18 +5,13 @@ services:
       target: dev
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
-      - LOCAL_MODE=true
-      - BACKEND_PORT=8000
-      - CORS_ORIGINS=http://localhost:5173
-      - COSMOS_ENDPOINT=https://cosmosdb:8081
-      - COSMOS_KEY=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==
-      - COSMOS_DATABASE=entra-analyzer
       - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_SSL=false
     volumes:
       - ./backend:/app
+      - ./shared:/shared
     depends_on:
       - redis
 
@@ -26,10 +21,8 @@ services:
       target: deps
     ports:
       - "5173:5173"
-    environment:
-      - VITE_APP_CLIENT_ID=local-dev
-      - VITE_API_BASE_URL=http://localhost:8000
-      - VITE_LOCAL_MODE=true
+    env_file:
+      - .env
     volumes:
       - ./frontend:/app
       - /app/node_modules

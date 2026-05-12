@@ -41,6 +41,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s — %(message)s",
     )
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(
+        logging.WARNING
+    )
 
     if settings.local_mode:
         logger.warning("LOCAL MODE ACTIVE — authentication disabled")

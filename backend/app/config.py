@@ -36,11 +36,16 @@ class Settings(BaseSettings):
     azure_foundry_endpoint: str = ""
     azure_foundry_key: str = ""
     azure_foundry_model: str = "gpt-4o"
+    azure_openai_api_version: str = "2024-02-01"
 
     # App Insights
     applicationinsights_connection_string: str = ""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 @lru_cache(maxsize=1)

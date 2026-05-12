@@ -6,7 +6,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 
 from app.auth.deps import CurrentUser, require_role, validate_tenant_access
@@ -30,6 +30,27 @@ class TenantSettingsUpdate(BaseModel):
     baseline_window_days: int | None = Field(default=None, ge=7, le=365)
 
 
+async def _get_or_create_config(
+    tenant_id: str, repo: CosmosRepo,
+) -> TenantConfig:
+    """Return the tenant config, creating a default one if it doesn't exist."""
+    config = await repo.get_tenant_config(tenant_id)
+    if config is not None:
+        return config
+
+    now = datetime.now(UTC)
+    config = TenantConfig(
+        id=tenant_id,
+        tenant_id=tenant_id,
+        display_name=tenant_id,
+        sync_schedule_hours=6,
+        baseline_window_days=30,
+        created_at=now,
+        updated_at=now,
+    )
+    return await repo.upsert_tenant_config(config)
+
+
 @router.get("")
 async def get_tenant_settings(
     tenant_id: str,
@@ -37,15 +58,10 @@ async def get_tenant_settings(
     repo: CosmosRepo = Depends(get_cosmos_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    """Return the current tenant configuration."""
+    """Return the current tenant configuration, creating defaults if needed."""
     validate_tenant_access(tenant_id, user, settings)
 
-    config = await repo.get_tenant_config(tenant_id)
-    if config is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tenant configuration not found",
-        )
+    config = await _get_or_create_config(tenant_id, repo)
     return config.model_dump(mode="json")
 
 
@@ -60,12 +76,7 @@ async def update_tenant_settings(
     """Update tenant configuration (sync schedule, baseline window)."""
     validate_tenant_access(tenant_id, user, settings)
 
-    config = await repo.get_tenant_config(tenant_id)
-    if config is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tenant configuration not found",
-        )
+    config = await _get_or_create_config(tenant_id, repo)
 
     if body.display_name is not None:
         config.display_name = body.display_name

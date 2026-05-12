@@ -24,8 +24,8 @@ const isLocalMode = import.meta.env.VITE_LOCAL_MODE === "true";
 const LOCAL_USER: AuthUser = {
   name: "Local Developer",
   email: "dev@localhost",
-  tenantId: "local-tenant-id",
-  oid: "local-oid",
+  tenantId: "local-dev-tenant",
+  oid: "local-dev-user",
 };
 
 /**

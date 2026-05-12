@@ -301,15 +301,20 @@ class TestSettingsEndpoints:
     """Tests for the /settings API routes."""
 
     @pytest.mark.asyncio
-    async def test_get_settings_not_found(
+    async def test_get_settings_auto_creates_default(
         self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_tenant_config.return_value = None
+        mock_repo.upsert_tenant_config.side_effect = lambda c: c
 
         resp = await client_with_mock_repo.get(
             "/api/tenants/local-dev-tenant/settings"
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["tenant_id"] == "local-dev-tenant"
+        assert data["sync_schedule_hours"] == 6
+        assert data["baseline_window_days"] == 30
 
     @pytest.mark.asyncio
     async def test_get_settings_requires_iam_admin(
@@ -321,13 +326,16 @@ class TestSettingsEndpoints:
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_update_settings_not_found(
+    async def test_update_settings_auto_creates_then_updates(
         self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_tenant_config.return_value = None
+        mock_repo.upsert_tenant_config.side_effect = lambda c: c
 
         resp = await client_with_mock_repo.put(
             "/api/tenants/local-dev-tenant/settings",
             json={"sync_schedule_hours": 12},
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["sync_schedule_hours"] == 12
