@@ -1,0 +1,132 @@
+{
+  "_description": "Maps audit log operations to required Microsoft Graph permissions and risk weights",
+  "graph_permissions": {
+    "User.Read": {
+      "actions": ["Read own profile"],
+      "risk_weight": "low",
+      "category": "user"
+    },
+    "User.Read.All": {
+      "actions": ["Read all users' full profiles", "List users"],
+      "risk_weight": "low",
+      "category": "user"
+    },
+    "User.ReadWrite.All": {
+      "actions": ["Update user properties", "Create users", "Delete users"],
+      "risk_weight": "high",
+      "category": "user"
+    },
+    "Directory.Read.All": {
+      "actions": ["Read directory data", "List directory objects"],
+      "risk_weight": "low",
+      "category": "directory"
+    },
+    "Directory.ReadWrite.All": {
+      "actions": ["Update directory objects", "Create directory objects"],
+      "risk_weight": "high",
+      "category": "directory"
+    },
+    "Group.Read.All": {
+      "actions": ["Read all groups", "List group members"],
+      "risk_weight": "low",
+      "category": "group"
+    },
+    "Group.ReadWrite.All": {
+      "actions": ["Create groups", "Update groups", "Delete groups", "Add/remove members"],
+      "risk_weight": "medium",
+      "category": "group"
+    },
+    "Application.Read.All": {
+      "actions": ["Read all applications", "List app registrations"],
+      "risk_weight": "low",
+      "category": "application"
+    },
+    "Application.ReadWrite.All": {
+      "actions": ["Create applications", "Update applications", "Delete applications"],
+      "risk_weight": "high",
+      "category": "application"
+    },
+    "RoleManagement.Read.All": {
+      "actions": ["Read role definitions", "Read role assignments"],
+      "risk_weight": "low",
+      "category": "role"
+    },
+    "RoleManagement.ReadWrite.Directory": {
+      "actions": ["Create role assignments", "Delete role assignments", "Manage role definitions"],
+      "risk_weight": "critical",
+      "category": "role"
+    },
+    "Policy.Read.All": {
+      "actions": ["Read all policies", "Read conditional access policies"],
+      "risk_weight": "low",
+      "category": "policy"
+    },
+    "Policy.ReadWrite.ConditionalAccess": {
+      "actions": ["Create conditional access policies", "Update conditional access policies"],
+      "risk_weight": "critical",
+      "category": "policy"
+    },
+    "AuditLog.Read.All": {
+      "actions": ["Read audit logs", "Read sign-in logs"],
+      "risk_weight": "low",
+      "category": "audit"
+    },
+    "PrivilegedAccess.Read.AzureAD": {
+      "actions": ["Read PIM role assignments", "Read PIM role settings"],
+      "risk_weight": "low",
+      "category": "pim"
+    },
+    "PrivilegedAccess.ReadWrite.AzureAD": {
+      "actions": ["Activate PIM roles", "Create PIM assignments"],
+      "risk_weight": "critical",
+      "category": "pim"
+    },
+    "Mail.Read": {
+      "actions": ["Read user mail"],
+      "risk_weight": "medium",
+      "category": "mail"
+    },
+    "Mail.ReadWrite": {
+      "actions": ["Read and write user mail", "Send mail"],
+      "risk_weight": "medium",
+      "category": "mail"
+    },
+    "Sites.Read.All": {
+      "actions": ["Read all SharePoint sites"],
+      "risk_weight": "low",
+      "category": "sharepoint"
+    },
+    "Sites.ReadWrite.All": {
+      "actions": ["Read and write all SharePoint sites"],
+      "risk_weight": "medium",
+      "category": "sharepoint"
+    }
+  },
+  "audit_operation_to_permission": {
+    "Add user": "User.ReadWrite.All",
+    "Update user": "User.ReadWrite.All",
+    "Delete user": "User.ReadWrite.All",
+    "Add member to group": "Group.ReadWrite.All",
+    "Remove member from group": "Group.ReadWrite.All",
+    "Add group": "Group.ReadWrite.All",
+    "Delete group": "Group.ReadWrite.All",
+    "Add application": "Application.ReadWrite.All",
+    "Update application": "Application.ReadWrite.All",
+    "Delete application": "Application.ReadWrite.All",
+    "Add service principal": "Application.ReadWrite.All",
+    "Update service principal": "Application.ReadWrite.All",
+    "Add member to role": "RoleManagement.ReadWrite.Directory",
+    "Remove member from role": "RoleManagement.ReadWrite.Directory",
+    "Add conditional access policy": "Policy.ReadWrite.ConditionalAccess",
+    "Update conditional access policy": "Policy.ReadWrite.ConditionalAccess",
+    "Delete conditional access policy": "Policy.ReadWrite.ConditionalAccess",
+    "Add delegated permission grant": "Directory.ReadWrite.All",
+    "Consent to application": "Directory.ReadWrite.All"
+  },
+  "risk_weights": {
+    "low": 1,
+    "medium": 3,
+    "high": 7,
+    "critical": 10
+  }
+}

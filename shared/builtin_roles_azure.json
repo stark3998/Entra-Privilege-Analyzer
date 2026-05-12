@@ -1,0 +1,141 @@
+{
+  "_description": "Subset of Azure RBAC built-in roles with their actions. Full catalog fetched from ARM API at runtime.",
+  "roles": [
+    {
+      "id": "acdd72a7-3385-48ef-bd42-f606fba81ae7",
+      "roleName": "Reader",
+      "description": "View all resources, but does not allow you to make any changes.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": ["*/read"],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "b24988ac-6180-42a0-ab88-20f7382dd24c",
+      "roleName": "Contributor",
+      "description": "Grants full access to manage all resources, but does not allow you to assign roles.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": ["*"],
+        "notActions": [
+          "Microsoft.Authorization/*/Delete",
+          "Microsoft.Authorization/*/Write",
+          "Microsoft.Authorization/elevateAccess/Action"
+        ],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "8e3af657-a8ff-443c-a75c-2fe8c4bcb635",
+      "roleName": "Owner",
+      "description": "Grants full access to manage all resources, including the ability to assign roles.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": ["*"],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "18d7d88d-d35e-4fb5-a5c3-7773c20a72d9",
+      "roleName": "User Access Administrator",
+      "description": "Lets you manage user access to Azure resources.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "*/read",
+          "Microsoft.Authorization/*",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "9980e02c-c2be-4d73-94e8-173b1dc7cf3c",
+      "roleName": "Virtual Machine Contributor",
+      "description": "Lets you manage virtual machines, but not access to them, and not the virtual network or storage account they are connected to.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Compute/availabilitySets/*",
+          "Microsoft.Compute/locations/*",
+          "Microsoft.Compute/virtualMachines/*",
+          "Microsoft.Compute/virtualMachineScaleSets/*",
+          "Microsoft.Compute/disks/write",
+          "Microsoft.Compute/disks/read",
+          "Microsoft.Compute/disks/delete",
+          "Microsoft.Network/networkInterfaces/*",
+          "Microsoft.Network/networkSecurityGroups/join/action",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Storage/storageAccounts/listKeys/action",
+          "Microsoft.Storage/storageAccounts/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
+      "roleName": "Storage Blob Data Contributor",
+      "description": "Allows for read, write, and delete access to Azure Storage blob containers and data.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Storage/storageAccounts/blobServices/containers/delete",
+          "Microsoft.Storage/storageAccounts/blobServices/containers/read",
+          "Microsoft.Storage/storageAccounts/blobServices/containers/write",
+          "Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action"
+        ],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/*"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "acdd72a7-3385-48ef-bd42-f606fba81ae7",
+      "roleName": "Key Vault Secrets User",
+      "description": "Read secret contents.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.KeyVault/vaults/secrets/getSecret/action",
+          "Microsoft.KeyVault/vaults/secrets/readMetadata/action"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "230815da-be43-4aae-9cb4-875f7bd000aa",
+      "roleName": "Cosmos DB Account Reader Role",
+      "description": "Can read Azure Cosmos DB account data.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.DocumentDB/*/read",
+          "Microsoft.DocumentDB/databaseAccounts/readonlykeys/action",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    }
+  ]
+}
