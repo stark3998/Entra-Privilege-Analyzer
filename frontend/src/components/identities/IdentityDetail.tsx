@@ -9,24 +9,18 @@ interface IdentityDetailProps {
 }
 
 /** Color map for identity type badges. */
-const TYPE_COLORS: Record<IdentityType, string> = {
-  User: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  ServicePrincipal:
-    "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
-  ManagedIdentity:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  Group:
-    "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+const TYPE_COLORS: Record<IdentityType, { bg: string; dot: string }> = {
+  User: { bg: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", dot: "bg-blue-500" },
+  ServicePrincipal: { bg: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", dot: "bg-purple-500" },
+  ManagedIdentity: { bg: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300", dot: "bg-emerald-500" },
+  Group: { bg: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300", dot: "bg-amber-500" },
 };
 
 /** Color map for role assignment type badges. */
 const ASSIGNMENT_COLORS: Record<string, string> = {
-  direct:
-    "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  group:
-    "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
-  pim:
-    "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+  direct: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  group: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+  pim: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
 };
 
 function StatCard({
@@ -39,7 +33,7 @@ function StatCard({
   color?: string;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
+    <div className="card px-4 py-3">
       <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
         {label}
       </p>
@@ -214,15 +208,9 @@ export function IdentityDetail({ identity }: IdentityDetailProps) {
       <div className="flex flex-wrap items-start gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-              {identity.display_name}
-            </h1>
-            <span
-              className={clsx(
-                "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium",
-                TYPE_COLORS[identity.identity_type],
-              )}
-            >
+            <h1 className="page-title">{identity.display_name}</h1>
+            <span className={clsx("badge", TYPE_COLORS[identity.identity_type].bg)}>
+              <span className={clsx("h-1.5 w-1.5 rounded-full", TYPE_COLORS[identity.identity_type].dot)} />
               {identity.identity_type}
             </span>
           </div>
@@ -265,31 +253,22 @@ export function IdentityDetail({ identity }: IdentityDetailProps) {
         />
       </div>
 
-      {/* Current Roles */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">
-          Current Roles
-        </h2>
-        <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+        <h2 className="section-title mb-3">Current Roles</h2>
+        <div className="card overflow-hidden">
           <CurrentRolesTable roles={identity.current_roles} />
         </div>
       </section>
 
-      {/* Observed Actions */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">
-          Observed Actions
-        </h2>
-        <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+        <h2 className="section-title mb-3">Observed Actions</h2>
+        <div className="card overflow-hidden">
           <ObservedActionsTable actions={identity.observed_actions} />
         </div>
       </section>
 
-      {/* Action Timeline */}
       <section>
-        <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">
-          Action Timeline
-        </h2>
+        <h2 className="section-title mb-3">Action Timeline</h2>
         <ActionTimeline identityId={identity.id} />
       </section>
     </div>

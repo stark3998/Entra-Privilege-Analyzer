@@ -57,8 +57,8 @@ function AuthenticatedApp() {
 
 function LocalModeBanner() {
   return (
-    <div className="bg-amber-500 px-4 py-1 text-center text-xs font-medium text-amber-950">
-      LOCAL MODE -- Authentication is disabled
+    <div className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-center text-xs font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
+      LOCAL MODE &mdash; Authentication is disabled
     </div>
   );
 }

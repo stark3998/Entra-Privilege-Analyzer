@@ -1,18 +1,13 @@
-// frontend/src/hooks/useDarkMode.ts
 import { useCallback, useEffect, useState } from "react";
 
 const STORAGE_KEY = "theme";
 
-/**
- * Hook to toggle dark mode.
- * Persists preference to localStorage and applies the 'dark' class to <html>.
- */
 export function useDarkMode(): [boolean, () => void] {
   const [isDark, setIsDark] = useState<boolean>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "dark") return true;
     if (stored === "light") return false;
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return false;
   });
 
   useEffect(() => {

@@ -139,11 +139,11 @@ export function JsonViewer({
   const isJson = language === "json" || (!language && content.trimStart().startsWith("{"));
 
   return (
-    <div className="relative rounded-lg border border-slate-700 bg-slate-900">
+    <div className="relative rounded-xl border border-slate-700/80 bg-slate-900">
       {/* Copy button */}
       <button
         onClick={handleCopy}
-        className="absolute right-2 top-2 z-10 rounded-md border border-slate-600 bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700 hover:text-white"
+        className="absolute right-2 top-2 z-10 rounded-lg border border-slate-600 bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-300 transition-colors hover:bg-slate-700 hover:text-white"
       >
         {copied ? "Copied!" : "Copy"}
       </button>

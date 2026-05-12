@@ -1,6 +1,5 @@
 // frontend/src/pages/ReportsPage.tsx
 import { useCallback } from "react";
-import clsx from "clsx";
 import { useDownloadReport } from "@/api/hooks";
 
 interface ReportCardProps {
@@ -29,9 +28,9 @@ function ReportCard({ title, description, format, icon }: ReportCardProps) {
   }, [refetch, format]);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div className="card p-6">
       <div className="flex items-start gap-4">
-        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400">
+        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400">
           {icon}
         </div>
         <div className="flex-1">
@@ -42,14 +41,10 @@ function ReportCard({ title, description, format, icon }: ReportCardProps) {
             {description}
           </p>
           <button
+            type="button"
             onClick={handleDownload}
             disabled={isFetching}
-            className={clsx(
-              "mt-4 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors",
-              isFetching
-                ? "cursor-not-allowed bg-brand-400 dark:bg-brand-600"
-                : "bg-brand-600 hover:bg-brand-700 dark:bg-brand-500 dark:hover:bg-brand-600",
-            )}
+            className="btn-primary mt-4"
           >
             {isFetching ? (
               <>
@@ -102,18 +97,15 @@ function ReportCard({ title, description, format, icon }: ReportCardProps) {
 export function ReportsPage() {
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-          Reports
-        </h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        <h1 className="page-title">Reports</h1>
+        <p className="page-subtitle">
           Download executive reports summarizing your Entra ID permissions posture
         </p>
       </div>
 
       {/* Report cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <ReportCard
           title="Executive PDF Report"
           description="A comprehensive PDF report with risk scores, compliance status, drift analysis, and AI-generated executive narrative. Ideal for sharing with leadership."

@@ -16,10 +16,8 @@ interface DriftAlertTableProps {
 }
 
 const DRIFT_TYPE_COLORS: Record<DriftType, string> = {
-  first_seen:
-    "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  frequency_anomaly:
-    "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+  first_seen: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  frequency_anomaly: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
 };
 
 const DRIFT_TYPE_LABELS: Record<DriftType, string> = {
@@ -28,13 +26,10 @@ const DRIFT_TYPE_LABELS: Record<DriftType, string> = {
 };
 
 const STATUS_COLORS: Record<DriftStatus, string> = {
-  open: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-  acknowledged:
-    "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  escalated:
-    "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
-  resolved:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  open: "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+  acknowledged: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+  escalated: "bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
+  resolved: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
 };
 
 const SKELETON_ROWS = 5;
@@ -119,9 +114,9 @@ export function DriftAlertTable({
 
   return (
     <div className="space-y-4">
-      <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+      <div className="card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+          <table className="min-w-full divide-y divide-slate-100 dark:divide-slate-800">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-800/50">
                 <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Severity</th>
@@ -138,7 +133,7 @@ export function DriftAlertTable({
                 <tr
                   key={alert.id}
                   onClick={() => navigate(`/drift/${alert.id}`)}
-                  className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                  className="cursor-pointer transition-colors hover:bg-brand-50/50 dark:hover:bg-brand-900/10"
                 >
                   <td className="whitespace-nowrap px-4 py-2.5">
                     <SeverityBadge severity={alert.severity} />
@@ -195,25 +190,25 @@ export function DriftAlertTable({
               onClick={() => onPageChange(page - 1)}
               disabled={page <= 1}
               className={clsx(
-                "rounded px-2.5 py-1.5 text-xs font-medium transition-colors",
+                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
                 page <= 1
                   ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
-                  : "text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700",
+                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
               )}
             >
               Prev
             </button>
-            <span className="px-2 text-xs text-slate-500 dark:text-slate-400">
+            <span className="px-2 text-xs font-medium text-slate-500 dark:text-slate-400">
               {page} / {totalPages}
             </span>
             <button
               onClick={() => onPageChange(page + 1)}
               disabled={page >= totalPages}
               className={clsx(
-                "rounded px-2.5 py-1.5 text-xs font-medium transition-colors",
+                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
                 page >= totalPages
                   ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
-                  : "text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700",
+                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
               )}
             >
               Next

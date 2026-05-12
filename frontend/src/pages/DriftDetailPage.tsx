@@ -13,10 +13,8 @@ import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import type { DriftStatus, DriftType } from "@/api/types";
 
 const DRIFT_TYPE_COLORS: Record<DriftType, string> = {
-  first_seen:
-    "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  frequency_anomaly:
-    "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+  first_seen: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  frequency_anomaly: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
 };
 
 const DRIFT_TYPE_LABELS: Record<DriftType, string> = {
@@ -25,13 +23,10 @@ const DRIFT_TYPE_LABELS: Record<DriftType, string> = {
 };
 
 const STATUS_COLORS: Record<DriftStatus, string> = {
-  open: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-  acknowledged:
-    "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  escalated:
-    "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
-  resolved:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  open: "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+  acknowledged: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+  escalated: "bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
+  resolved: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
 };
 
 /** Z-score visual gauge as a horizontal bar. */
@@ -113,23 +108,13 @@ export function DriftDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Back button */}
       <button
+        type="button"
         onClick={() => navigate("/drift")}
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+        className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-brand-900/20 dark:hover:text-brand-300"
       >
-        <svg
-          className="h-4 w-4"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M15 19l-7-7 7-7"
-          />
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
         </svg>
         Back to Drift Monitor
       </button>
@@ -170,10 +155,7 @@ export function DriftDetailPage() {
             </svg>
           }
           action={
-            <button
-              onClick={() => navigate("/drift")}
-              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700 dark:bg-brand-500 dark:hover:bg-brand-600"
-            >
+            <button type="button" onClick={() => navigate("/drift")} className="btn-primary">
               Return to Drift Monitor
             </button>
           }
@@ -205,9 +187,7 @@ export function DriftDetailPage() {
                   {data.status}
                 </span>
               </div>
-              <h1 className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
-                {data.identity_display_name}
-              </h1>
+              <h1 className="page-title mt-2">{data.identity_display_name}</h1>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 Detected {formatRelativeTime(data.detected_at)}
               </p>
@@ -268,50 +248,30 @@ export function DriftDetailPage() {
             </div>
           )}
 
-          {/* Alert info stats */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Action
-              </p>
-              <p className="mt-1 truncate text-sm font-bold text-slate-900 dark:text-white" title={data.action}>
-                {data.action}
-              </p>
+            <div className="card px-4 py-3">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Action</p>
+              <p className="mt-1 truncate text-sm font-bold text-slate-900 dark:text-white" title={data.action}>{data.action}</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Resource
-              </p>
+            <div className="card px-4 py-3">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Resource</p>
               <p className="mt-1 truncate text-sm font-bold text-slate-900 dark:text-white" title={data.resource ?? undefined}>
-                {data.resource ?? (
-                  <span className="text-slate-400 dark:text-slate-500">--</span>
-                )}
+                {data.resource ?? <span className="text-slate-400 dark:text-slate-500">--</span>}
               </p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Observed Count
-              </p>
-              <p className="mt-1 text-xl font-bold tabular-nums text-slate-900 dark:text-white">
-                {data.observed_count ?? "--"}
-              </p>
+            <div className="card px-4 py-3">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Observed Count</p>
+              <p className="mt-1 text-xl font-bold tabular-nums text-slate-900 dark:text-white">{data.observed_count ?? "--"}</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Detected At
-              </p>
-              <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
-                {formatRelativeTime(data.detected_at)}
-              </p>
+            <div className="card px-4 py-3">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Detected At</p>
+              <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">{formatRelativeTime(data.detected_at)}</p>
             </div>
           </div>
 
-          {/* Details text */}
           <section>
-            <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">
-              Details
-            </h2>
-            <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+            <h2 className="section-title mb-3">Details</h2>
+            <div className="card p-5">
               <p className="text-sm text-slate-700 dark:text-slate-300">
                 {data.details}
               </p>
@@ -324,10 +284,8 @@ export function DriftDetailPage() {
             data.baseline_mean != null &&
             data.baseline_stddev != null && (
               <section>
-                <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">
-                  Frequency Analysis
-                </h2>
-                <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+                <h2 className="section-title mb-3">Frequency Analysis</h2>
+                <div className="card p-5">
                   <ZScoreGauge
                     zScore={data.z_score}
                     mean={data.baseline_mean}
@@ -337,13 +295,10 @@ export function DriftDetailPage() {
               </section>
             )}
 
-          {/* Acknowledgment info */}
           {data.acknowledged_by && (
             <section>
-              <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">
-                Acknowledgment
-              </h2>
-              <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+              <h2 className="section-title mb-3">Acknowledgment</h2>
+              <div className="card p-5">
                 <p className="text-sm text-slate-700 dark:text-slate-300">
                   Acknowledged by{" "}
                   <span className="font-medium">{data.acknowledged_by}</span>
@@ -358,11 +313,8 @@ export function DriftDetailPage() {
             </section>
           )}
 
-          {/* Action Timeline */}
           <section>
-            <h2 className="mb-3 text-lg font-semibold text-slate-900 dark:text-white">
-              Action Timeline
-            </h2>
+            <h2 className="section-title mb-3">Action Timeline</h2>
             <DriftTimeline
               identityId={data.identity_id}
               highlightAction={data.action}

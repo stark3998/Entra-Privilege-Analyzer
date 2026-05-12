@@ -75,7 +75,7 @@ export function DriftTimeline({
     <div className="space-y-4">
       {/* Baseline reference */}
       {baselineMean != null && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm dark:border-blue-800 dark:bg-blue-900/20">
+        <div className="rounded-xl border border-blue-200/80 bg-blue-50 px-4 py-2.5 text-sm dark:border-blue-800/60 dark:bg-blue-900/20">
           <span className="font-medium text-blue-700 dark:text-blue-300">
             Baseline mean:
           </span>{" "}
@@ -110,10 +110,10 @@ export function DriftTimeline({
 
               <div
                 className={clsx(
-                  "rounded-lg border p-3",
+                  "rounded-xl border p-3 shadow-sm",
                   isHighlighted
-                    ? "border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20"
-                    : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800/60",
+                    ? "border-amber-300/80 bg-amber-50 dark:border-amber-700/60 dark:bg-amber-900/20"
+                    : "border-slate-200/80 bg-white dark:border-slate-700/80 dark:bg-slate-800/60",
                 )}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -180,10 +180,10 @@ export function DriftTimeline({
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
               className={clsx(
-                "rounded px-2.5 py-1.5 text-xs font-medium transition-colors",
+                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
                 page <= 1
                   ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
-                  : "text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700",
+                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
               )}
             >
               Prev
@@ -192,10 +192,10 @@ export function DriftTimeline({
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
               className={clsx(
-                "rounded px-2.5 py-1.5 text-xs font-medium transition-colors",
+                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
                 page >= totalPages
                   ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
-                  : "text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700",
+                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
               )}
             >
               Next

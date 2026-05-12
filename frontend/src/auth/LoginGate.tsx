@@ -10,13 +10,12 @@ export function LoginGate() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
-      <div className="w-full max-w-md space-y-8 rounded-xl bg-white p-10 shadow-lg dark:bg-slate-900">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-brand-50/30 to-slate-100 dark:from-slate-950 dark:via-brand-950/20 dark:to-slate-900">
+      <div className="w-full max-w-md animate-fade-in space-y-8 rounded-2xl border border-slate-200/60 bg-white/80 p-10 shadow-card backdrop-blur-sm dark:border-slate-700/60 dark:bg-slate-900/80">
         <div className="text-center">
-          {/* Shield icon */}
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-brand-100 dark:bg-brand-900">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 shadow-lg shadow-brand-500/25">
             <svg
-              className="h-8 w-8 text-brand-600 dark:text-brand-400"
+              className="h-8 w-8 text-white"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -38,7 +37,7 @@ export function LoginGate() {
         </div>
         <button
           onClick={handleSignIn}
-          className="flex w-full items-center justify-center gap-3 rounded-lg bg-brand-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+          className="btn-primary w-full justify-center gap-3 py-3"
         >
           <svg className="h-5 w-5" viewBox="0 0 21 21" fill="none">
             <rect x="1" y="1" width="9" height="9" fill="#f25022" />
@@ -48,6 +47,9 @@ export function LoginGate() {
           </svg>
           Sign in with Microsoft
         </button>
+        <p className="text-center text-xs text-slate-400 dark:text-slate-500">
+          Powered by Microsoft Entra ID
+        </p>
       </div>
     </div>
   );

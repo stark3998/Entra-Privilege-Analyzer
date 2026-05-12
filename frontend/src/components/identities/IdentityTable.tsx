@@ -15,40 +15,30 @@ interface IdentityTableProps {
 }
 
 /** Color map for identity type badges. */
-const TYPE_COLORS: Record<IdentityType, string> = {
-  User: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  ServicePrincipal:
-    "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
-  ManagedIdentity:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  Group:
-    "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+const TYPE_COLORS: Record<IdentityType, { bg: string; dot: string }> = {
+  User: { bg: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", dot: "bg-blue-500" },
+  ServicePrincipal: { bg: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", dot: "bg-purple-500" },
+  ManagedIdentity: { bg: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300", dot: "bg-emerald-500" },
+  Group: { bg: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300", dot: "bg-amber-500" },
 };
 
 function RiskBadge({ score }: { score: number }) {
-  const color =
-    score > 70
-      ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
-      : score > 40
-        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400"
-        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400";
+  const barColor = score > 70 ? "bg-red-500" : score > 40 ? "bg-amber-500" : "bg-emerald-500";
+  const badgeColor = score > 70
+    ? "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+    : score > 40
+      ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+      : "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400";
 
   return (
     <div className="flex items-center gap-2">
-      <div className="h-2 w-16 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+      <div className="h-2 w-16 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
         <div
-          className={clsx(
-            "h-full rounded-full transition-all",
-            score > 70
-              ? "bg-red-500"
-              : score > 40
-                ? "bg-amber-500"
-                : "bg-emerald-500",
-          )}
+          className={clsx("h-full rounded-full transition-all", barColor)}
           style={{ width: `${Math.min(score, 100)}%` }}
         />
       </div>
-      <span className={clsx("inline-flex rounded px-1.5 py-0.5 text-xs font-medium", color)}>
+      <span className={clsx("inline-flex rounded-md px-1.5 py-0.5 text-xs font-semibold", badgeColor)}>
         {score}
       </span>
     </div>
@@ -75,16 +65,15 @@ const columns: Column<IdentityProfile>[] = [
   {
     key: "type",
     header: "Type",
-    render: (item) => (
-      <span
-        className={clsx(
-          "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
-          TYPE_COLORS[item.identity_type],
-        )}
-      >
-        {item.identity_type}
-      </span>
-    ),
+    render: (item) => {
+      const c = TYPE_COLORS[item.identity_type];
+      return (
+        <span className={clsx("badge", c.bg)}>
+          <span className={clsx("h-1.5 w-1.5 rounded-full", c.dot)} />
+          {item.identity_type}
+        </span>
+      );
+    },
   },
   {
     key: "roles",

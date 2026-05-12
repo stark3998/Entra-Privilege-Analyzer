@@ -13,14 +13,11 @@ import type { IdentityType } from "@/api/types";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 
 /** Color map for identity type badges. Matches IdentityDetail. */
-const TYPE_COLORS: Record<string, string> = {
-  User: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-  ServicePrincipal:
-    "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
-  ManagedIdentity:
-    "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  Group:
-    "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+const TYPE_COLORS: Record<string, { bg: string; dot: string }> = {
+  User: { bg: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", dot: "bg-blue-500" },
+  ServicePrincipal: { bg: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", dot: "bg-purple-500" },
+  ManagedIdentity: { bg: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300", dot: "bg-emerald-500" },
+  Group: { bg: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300", dot: "bg-amber-500" },
 };
 
 /** Return text color class based on reduction score. */
@@ -39,23 +36,13 @@ export function RecommendationDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Back button */}
       <button
+        type="button"
         onClick={() => navigate("/recommendations")}
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+        className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-brand-900/20 dark:hover:text-brand-300"
       >
-        <svg
-          className="h-4 w-4"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M15 19l-7-7 7-7"
-          />
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
         </svg>
         Back to Recommendations
       </button>
@@ -96,10 +83,7 @@ export function RecommendationDetailPage() {
             </svg>
           }
           action={
-            <button
-              onClick={() => navigate("/recommendations")}
-              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700 dark:bg-brand-500 dark:hover:bg-brand-600"
-            >
+            <button type="button" onClick={() => navigate("/recommendations")} className="btn-primary">
               Return to Recommendations
             </button>
           }
@@ -113,18 +97,16 @@ export function RecommendationDetailPage() {
           <div className="flex flex-wrap items-start gap-4">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-                  {data.identity_display_name}
-                </h1>
-                <span
-                  className={clsx(
-                    "inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium",
-                    TYPE_COLORS[data.identity_type as IdentityType] ??
-                      "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
-                  )}
-                >
-                  {data.identity_type}
-                </span>
+                <h1 className="page-title">{data.identity_display_name}</h1>
+                {(() => {
+                  const c = TYPE_COLORS[data.identity_type as IdentityType];
+                  return (
+                    <span className={clsx("badge", c?.bg ?? "bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-300")}>
+                      <span className={clsx("h-1.5 w-1.5 rounded-full", c?.dot ?? "bg-slate-400")} />
+                      {data.identity_type}
+                    </span>
+                  );
+                })()}
               </div>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 Computed {formatRelativeTime(data.computed_at)}
@@ -132,53 +114,28 @@ export function RecommendationDetailPage() {
             </div>
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Reduction Score
-              </p>
-              <p
-                className={clsx(
-                  "mt-1 text-xl font-bold",
-                  reductionScoreColor(data.reduction_score),
-                )}
-              >
-                {data.reduction_score}%
-              </p>
+            <div className="card px-4 py-3">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Reduction Score</p>
+              <p className={clsx("mt-1 text-xl font-bold", reductionScoreColor(data.reduction_score))}>{data.reduction_score}%</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Current Roles
-              </p>
-              <p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">
-                {data.current_roles.length}
-              </p>
+            <div className="card px-4 py-3">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Current Roles</p>
+              <p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{data.current_roles.length}</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Required Permissions
-              </p>
-              <p className="mt-1 text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                {data.permission_gaps.filter((g) => g.is_used).length}
-              </p>
+            <div className="card px-4 py-3">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Required Permissions</p>
+              <p className="mt-1 text-xl font-bold text-emerald-600 dark:text-emerald-400">{data.permission_gaps.filter((g) => g.is_used).length}</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Excess Permissions
-              </p>
-              <p className="mt-1 text-xl font-bold text-red-600 dark:text-red-400">
-                {data.permission_gaps.filter((g) => !g.is_used).length}
-              </p>
+            <div className="card px-4 py-3">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Excess Permissions</p>
+              <p className="mt-1 text-xl font-bold text-red-600 dark:text-red-400">{data.permission_gaps.filter((g) => !g.is_used).length}</p>
             </div>
           </div>
 
-          {/* Role Diff */}
           <section>
-            <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
-              Role Comparison
-            </h2>
-            <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+            <h2 className="section-title mb-4">Role Comparison</h2>
+            <div className="card p-5">
               <RoleDiff
                 currentRoles={data.current_roles}
                 bestBuiltinMatch={data.best_builtin_match}
@@ -188,32 +145,23 @@ export function RecommendationDetailPage() {
             </div>
           </section>
 
-          {/* Permission Delta */}
           <section>
-            <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
-              Permission Analysis
-            </h2>
-            <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+            <h2 className="section-title mb-4">Permission Analysis</h2>
+            <div className="card p-5">
               <PermissionDelta permissionGaps={data.permission_gaps} />
             </div>
           </section>
 
-          {/* Custom Role Preview */}
           <section>
-            <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
-              Custom Role Definition
-            </h2>
-            <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+            <h2 className="section-title mb-4">Custom Role Definition</h2>
+            <div className="card p-5">
               <CustomRolePreview customRole={data.custom_role} />
             </div>
           </section>
 
-          {/* Export Panel */}
           <section>
-            <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
-              Export as Infrastructure as Code
-            </h2>
-            <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+            <h2 className="section-title mb-4">Export as Infrastructure as Code</h2>
+            <div className="card p-5">
               <ExportPanel identityId={data.identity_id} />
             </div>
           </section>

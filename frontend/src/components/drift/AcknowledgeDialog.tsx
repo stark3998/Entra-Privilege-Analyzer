@@ -1,6 +1,5 @@
 // frontend/src/components/drift/AcknowledgeDialog.tsx
 import { useState } from "react";
-import clsx from "clsx";
 import type { DriftAlert, DriftStatus } from "@/api/types";
 import { SeverityBadge } from "@/components/common/SeverityBadge";
 
@@ -40,14 +39,13 @@ export function AcknowledgeDialog({
         onClick={onCancel}
       />
 
-      {/* Dialog */}
-      <div className="relative z-10 mx-4 w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+      <div className="animate-scale-in relative z-10 mx-4 w-full max-w-md rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xl dark:border-slate-700/80 dark:bg-slate-900">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
           {STATUS_LABELS[targetStatus]} Alert
         </h2>
 
         {/* Alert summary */}
-        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+        <div className="mt-4 rounded-xl border border-slate-200/80 bg-slate-50 p-3 dark:border-slate-700/80 dark:bg-slate-800/60">
           <div className="flex items-center gap-2">
             <SeverityBadge severity={alert.severity} />
             <span className="text-sm font-medium text-slate-900 dark:text-white">
@@ -83,21 +81,18 @@ export function AcknowledgeDialog({
         {/* Actions */}
         <div className="mt-5 flex justify-end gap-3">
           <button
+            type="button"
             onClick={onCancel}
             disabled={isPending}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+            className="btn-secondary"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={() => onConfirm(notes)}
             disabled={isPending}
-            className={clsx(
-              "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors",
-              isPending
-                ? "cursor-not-allowed bg-brand-400 dark:bg-brand-600"
-                : "bg-brand-600 hover:bg-brand-700 dark:bg-brand-500 dark:hover:bg-brand-600",
-            )}
+            className="btn-primary"
           >
             {isPending && (
               <svg
