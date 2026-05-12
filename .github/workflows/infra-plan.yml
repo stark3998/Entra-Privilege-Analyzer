@@ -1,0 +1,108 @@
+# -----------------------------------------------------------------------------
+# Terraform Plan: runs on PRs that touch infra/ files.
+# Posts the plan output as a PR comment for review.
+# Uses OIDC — no long-lived secrets.
+# -----------------------------------------------------------------------------
+name: Terraform Plan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra-plan.yml"
+
+permissions:
+  id-token: write   # OIDC
+  contents: read
+  pull-requests: write # Post plan as PR comment
+
+env:
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_WORKING_DIR: infra/envs/prod
+  # ARM environment variables for azurerm backend init
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  ARM_USE_OIDC: "true"
+
+jobs:
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan \
+            -no-color \
+            -out=tfplan \
+            2>&1 | tee plan_output.txt
+
+          # Store plan output for the PR comment (truncate if too long)
+          PLAN=$(head -c 60000 plan_output.txt)
+          echo "plan<<PLAN_EOF" >> "$GITHUB_OUTPUT"
+          echo "$PLAN" >> "$GITHUB_OUTPUT"
+          echo "PLAN_EOF" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      # Post the plan as a PR comment so reviewers can see what changes
+      - name: Comment Plan on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const plan = `${{ steps.plan.outputs.plan }}`;
+            const outcome = '${{ steps.plan.outcome }}';
+            const icon = outcome === 'success' ? '&#x2705;' : '&#x274C;';
+
+            const body = `### ${icon} Terraform Plan — \`prod\`
+
+            <details>
+            <summary>Show plan output</summary>
+
+            \`\`\`hcl
+            ${plan.substring(0, 60000)}
+            \`\`\`
+
+            </details>
+
+            *Pushed by @${{ github.actor }}, commit \`${{ github.sha }}\`*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      # Fail the job if plan failed (after posting the comment)
+      - name: Check plan status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1

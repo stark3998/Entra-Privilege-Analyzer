@@ -5,12 +5,28 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from app.config import Settings, get_settings
 from app.observability import setup_observability
-from app.routers import actions, exports, health, identities, recommendations, sync, tenants
+from app.routers import (
+    actions,
+    best_practices,
+    dashboard,
+    drift,
+    exports,
+    health,
+    identities,
+    narratives,
+    recommendations,
+    reports,
+    settings_router,
+    sync,
+    tenants,
+    webhooks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +71,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.warning("Redis initialisation failed: %s", exc)
 
+    # Foundry AI (optional)
+    from app.services.foundry import init_foundry_client
+
+    foundry = init_foundry_client(settings)
+    if foundry is not None:
+        logger.info("Foundry AI client initialised")
+    else:
+        logger.warning("Foundry AI not configured — narratives disabled")
+
     yield
 
     # Shutdown
@@ -72,9 +97,22 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Entra Permissions Analyzer",
-        version="0.3.0",
+        version="0.7.0",
         lifespan=lifespan,
     )
+
+    # Security headers
+    class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+            response = await call_next(request)
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            if not settings.local_mode:
+                response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            return response
+
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # CORS
     origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
@@ -94,6 +132,13 @@ def create_app() -> FastAPI:
     app.include_router(sync.router)
     app.include_router(recommendations.router)
     app.include_router(exports.router)
+    app.include_router(drift.router)
+    app.include_router(best_practices.router)
+    app.include_router(dashboard.router)
+    app.include_router(narratives.router)
+    app.include_router(webhooks.router)
+    app.include_router(reports.router)
+    app.include_router(settings_router.router)
 
     return app
 

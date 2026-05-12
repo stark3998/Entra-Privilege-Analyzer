@@ -131,3 +131,134 @@ export interface ExportResult {
   content: string;
   filename: string;
 }
+
+// --- Phase 4: Drift Detection ---
+
+export type DriftSeverity = "low" | "medium" | "high" | "critical";
+export type DriftStatus = "open" | "acknowledged" | "escalated" | "resolved";
+export type DriftType = "first_seen" | "frequency_anomaly";
+
+export interface DriftAlert {
+  id: string;
+  tenant_id: string;
+  identity_id: string;
+  identity_display_name: string;
+  drift_type: DriftType;
+  action: string;
+  resource: string | null;
+  severity: DriftSeverity;
+  status: DriftStatus;
+  z_score: number | null;
+  baseline_mean: number | null;
+  baseline_stddev: number | null;
+  observed_count: number | null;
+  details: string;
+  detected_at: string;
+  acknowledged_by: string | null;
+  acknowledged_at: string | null;
+  resolved_at: string | null;
+}
+
+export interface BaselineStats {
+  identity_id: string;
+  action: string;
+  resource: string | null;
+  mean: number;
+  stddev: number;
+  sample_count: number;
+  window_start: string;
+  window_end: string;
+}
+
+// --- Phase 5: Best Practices ---
+
+export type ViolationType =
+  | "stale_identity"
+  | "permanent_admin"
+  | "no_pim"
+  | "sp_credential_expiry"
+  | "separation_of_duties"
+  | "overprivileged"
+  | "mfa_gap"
+  | "role_assignable_group";
+
+export type ViolationPriority = "critical" | "high" | "medium" | "low" | "info";
+
+export interface BestPracticeViolation {
+  id: string;
+  tenant_id: string;
+  identity_id: string;
+  identity_display_name: string;
+  identity_type: string;
+  violation_type: ViolationType;
+  priority: ViolationPriority;
+  title: string;
+  description: string;
+  remediation_steps: string[];
+  affected_roles: string[];
+  detected_at: string;
+  resolved: boolean;
+}
+
+export interface BestPracticeSummary {
+  tenant_id: string;
+  total_violations: number;
+  by_priority: Record<string, number>;
+  by_type: Record<string, number>;
+  compliance_score: number;
+  evaluated_at: string;
+}
+
+// --- Phase 6: Executive Dashboard ---
+
+export interface DashboardSummary {
+  tenant_id: string;
+  total_identities: number;
+  total_actions: number;
+  identities_by_type: Record<string, number>;
+  avg_risk_score: number;
+  high_risk_count: number;
+  drift_alerts_open: number;
+  drift_alerts_by_severity: Record<string, number>;
+  compliance_score: number;
+  top_risky_identities: Array<{
+    id: string;
+    display_name: string;
+    identity_type: string;
+    risk_score: number;
+  }>;
+  recommendations_count: number;
+  avg_reduction_score: number;
+  computed_at: string;
+}
+
+export interface TrendPoint {
+  date: string;
+  value: number;
+}
+
+export interface DashboardTrends {
+  risk_score_trend: TrendPoint[];
+  drift_alerts_trend: TrendPoint[];
+  actions_trend: TrendPoint[];
+}
+
+export interface Narrative {
+  id: string;
+  content: string;
+  generated_at: string;
+  expires_at: string;
+}
+
+// --- Phase 7: Settings & Reports ---
+
+export interface TenantSettings {
+  id: string;
+  tenant_id: string;
+  sync_schedule_hours: number;
+  baseline_window_days: number;
+}
+
+export interface ReportFormat {
+  format: "pdf" | "pptx";
+}

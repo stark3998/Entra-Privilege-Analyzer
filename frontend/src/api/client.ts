@@ -42,6 +42,16 @@ export class ApiClient {
     return res.json() as Promise<T>;
   }
 
+  async put<T>(path: string, body: unknown): Promise<T> {
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method: "PUT",
+      headers: await this.headers(),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new ApiError(res.status, await res.text());
+    return res.json() as Promise<T>;
+  }
+
   async patch<T>(path: string, body: unknown): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: "PATCH",
@@ -50,6 +60,15 @@ export class ApiClient {
     });
     if (!res.ok) throw new ApiError(res.status, await res.text());
     return res.json() as Promise<T>;
+  }
+
+  async getBlob(path: string): Promise<Blob> {
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method: "GET",
+      headers: await this.headers(),
+    });
+    if (!res.ok) throw new ApiError(res.status, await res.text());
+    return res.blob();
   }
 
   async delete<T>(path: string): Promise<T> {

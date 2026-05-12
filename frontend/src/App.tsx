@@ -11,6 +11,12 @@ import { IdentitiesPage } from "@/pages/IdentitiesPage";
 import { IdentityDetailPage } from "@/pages/IdentityDetailPage";
 import { RecommendationsPage } from "@/pages/RecommendationsPage";
 import { RecommendationDetailPage } from "@/pages/RecommendationDetailPage";
+import { DriftPage } from "@/pages/DriftPage";
+import { DriftDetailPage } from "@/pages/DriftDetailPage";
+import { BestPracticesPage } from "@/pages/BestPracticesPage";
+import { BestPracticeDetailPage } from "@/pages/BestPracticeDetailPage";
+import { SettingsPage } from "@/pages/SettingsPage";
+import { ReportsPage } from "@/pages/ReportsPage";
 import { useAuth } from "@/auth/useAuth";
 import { TenantProvider } from "@/store/tenantContext";
 import { getApiClient } from "@/api/client";
@@ -35,6 +41,12 @@ function AuthenticatedApp() {
           <Route path="/identities/:id" element={<IdentityDetailPage />} />
           <Route path="/recommendations" element={<RecommendationsPage />} />
           <Route path="/recommendations/:id" element={<RecommendationDetailPage />} />
+          <Route path="/drift" element={<DriftPage />} />
+          <Route path="/drift/:id" element={<DriftDetailPage />} />
+          <Route path="/best-practices" element={<BestPracticesPage />} />
+          <Route path="/best-practices/:id" element={<BestPracticeDetailPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
