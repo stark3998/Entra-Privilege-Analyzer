@@ -436,6 +436,40 @@ class GraphIngestService:
         ]
 
     # ------------------------------------------------------------------
+    # Service principal ownership & permission grants
+    # ------------------------------------------------------------------
+
+    async def fetch_service_principal_owners(
+        self, tenant_id: str, sp_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch owners of a specific service principal."""
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/servicePrincipals/{sp_id}/owners"
+        params = {"$select": "id,displayName,userPrincipalName,@odata.type"}
+        return await self._graph_get_all_pages(token, url, params)
+
+    async def fetch_service_principal_app_role_assignments(
+        self, tenant_id: str, sp_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch granted application permission assignments for a service principal."""
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/servicePrincipals/{sp_id}/appRoleAssignments"
+        return await self._graph_get_all_pages(token, url)
+
+    async def fetch_service_principal_by_app_id(
+        self, tenant_id: str, app_id: str,
+    ) -> dict[str, Any] | None:
+        """Fetch a service principal by its appId (e.g. MS Graph SP)."""
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/servicePrincipals"
+        params = {
+            "$filter": f"appId eq '{app_id}'",
+            "$select": "id,displayName,appId,appRoles",
+        }
+        items = await self._graph_get_all_pages(token, url, params)
+        return items[0] if items else None
+
+    # ------------------------------------------------------------------
     # Beta-only sign-in activity reports
     # ------------------------------------------------------------------
 

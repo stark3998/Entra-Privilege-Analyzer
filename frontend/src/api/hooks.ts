@@ -34,6 +34,8 @@ import type {
   AlertRule,
   PimSession,
   PimSessionAnalytics,
+  AccessPathAnalysis,
+  AccessPathSummary,
 } from "./types";
 
 /**
@@ -913,5 +915,57 @@ export function useSyncPimSessions() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pim-sessions"] });
     },
+  });
+}
+
+// ------------------------------------------------------------------
+// Access Path Analysis
+// ------------------------------------------------------------------
+
+export function useAccessPaths(params: { minRisk?: string; page?: number; size?: number } = {}) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+  const { minRisk, page = 1, size = 20 } = params;
+
+  const qs = new URLSearchParams();
+  qs.set("page", String(page));
+  qs.set("size", String(size));
+  if (minRisk) qs.set("min_risk", minRisk);
+
+  return useQuery({
+    queryKey: ["access-paths", projectId, minRisk, page, size],
+    queryFn: () =>
+      client.get<{ items: AccessPathAnalysis[]; total: number; page: number; size: number }>(
+        `/api/projects/${projectId}/access-paths?${qs.toString()}`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export function useAccessPathsSummary() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["access-paths-summary", projectId],
+    queryFn: () =>
+      client.get<AccessPathSummary>(
+        `/api/projects/${projectId}/access-paths/summary`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export function useIdentityAccessPaths(identityId: string) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["identity-access-paths", projectId, identityId],
+    queryFn: () =>
+      client.get<AccessPathAnalysis>(
+        `/api/projects/${projectId}/identities/${identityId}/access-paths`,
+      ),
+    enabled: !!projectId && !!identityId,
   });
 }

@@ -33,6 +33,7 @@ _DEFAULT_PHASES = [
     "identity_profiles",
     "action_events",
     "pim_sessions",
+    "access_paths",
 ]
 
 

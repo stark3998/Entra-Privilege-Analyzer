@@ -3,8 +3,11 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import type { IdentityProfile, IdentityType, CurrentRole, ObservedAction } from "@/api/types";
-import { useIdentityPimSessions } from "@/api/hooks";
+import { useIdentityPimSessions, useIdentityAccessPaths } from "@/api/hooks";
 import { ActionTimeline } from "./ActionTimeline";
+import { AccessPathGraph } from "@/components/access-paths/AccessPathGraph";
+import { AccessPathCard } from "@/components/access-paths/AccessPathCard";
+import { SeverityBadge } from "@/components/common/SeverityBadge";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 
 interface IdentityDetailProps {
@@ -306,6 +309,70 @@ function PimSessionsTab({ identityId }: { identityId: string }) {
   );
 }
 
+function AccessPathsSection({ identityId }: { identityId: string }) {
+  const { data, isLoading } = useIdentityAccessPaths(identityId);
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+
+  const paths = data?.paths ?? [];
+  const total = data?.total_paths ?? 0;
+  const highestRisk = data?.highest_risk ?? "none";
+
+  if (isLoading) {
+    return (
+      <section>
+        <h2 className="section-title mb-3">Privilege Escalation Paths</h2>
+        <div className="card animate-pulse p-6">
+          <div className="h-4 w-48 rounded bg-slate-200 dark:bg-slate-700" />
+        </div>
+      </section>
+    );
+  }
+
+  if (total === 0) {
+    return (
+      <section>
+        <h2 className="section-title mb-3">Privilege Escalation Paths</h2>
+        <div className="card p-6 text-center text-sm text-slate-400 dark:text-slate-500">
+          No privilege escalation paths detected
+        </div>
+      </section>
+    );
+  }
+
+  const displayPaths = selectedIdx !== null ? [paths[selectedIdx]] : paths;
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center gap-3">
+        <h2 className="section-title">Privilege Escalation Paths</h2>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+          {total}
+        </span>
+        {highestRisk !== "none" && (
+          <SeverityBadge severity={highestRisk as "critical" | "high" | "medium"} />
+        )}
+      </div>
+      <div className="card overflow-hidden">
+        <div className="flex">
+          <div className="w-72 shrink-0 space-y-2 overflow-y-auto border-r border-slate-200 p-3 dark:border-slate-700" style={{ maxHeight: 440 }}>
+            {paths.map((p, i) => (
+              <AccessPathCard
+                key={p.id}
+                path={p}
+                selected={selectedIdx === i}
+                onClick={() => setSelectedIdx(selectedIdx === i ? null : i)}
+              />
+            ))}
+          </div>
+          <div className="flex-1">
+            <AccessPathGraph paths={displayPaths} height={440} />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function IdentityDetail({ identity }: IdentityDetailProps) {
   return (
     <div className="space-y-6">
@@ -364,6 +431,8 @@ export function IdentityDetail({ identity }: IdentityDetailProps) {
           <CurrentRolesTable roles={identity.current_roles} />
         </div>
       </section>
+
+      <AccessPathsSection identityId={identity.id} />
 
       <section>
         <h2 className="section-title mb-3">PIM Sessions</h2>

@@ -1254,3 +1254,56 @@ async def trigger_pim_session_sync(
 
     background_tasks.add_task(_run)
     return {"status": "accepted", "message": "PIM session sync started"}
+
+
+# ------------------------------------------------------------------
+# Access Path Analysis
+# ------------------------------------------------------------------
+
+
+@router.get("/access-paths")
+async def list_access_paths(
+    project_id: str,
+    min_risk: str | None = None,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=100),
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    offset = (page - 1) * size
+    items, total = await repo.list_access_path_analyses(tid, min_risk=min_risk, offset=offset, limit=size)
+    return {
+        "items": [i.model_dump(mode="json") for i in items],
+        "total": total,
+        "page": page,
+        "size": size,
+    }
+
+
+@router.get("/access-paths/summary")
+async def get_access_paths_summary(
+    project_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    summary = await repo.get_access_path_summary(tid)
+    return summary.model_dump(mode="json")
+
+
+@router.get("/identities/{identity_id}/access-paths")
+async def get_identity_access_paths(
+    project_id: str,
+    identity_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    analysis = await repo.get_access_path_analysis_by_identity(tid, identity_id)
+    if analysis is None:
+        return {"identity_id": identity_id, "paths": [], "total_paths": 0, "highest_risk": "none"}
+    return analysis.model_dump(mode="json")

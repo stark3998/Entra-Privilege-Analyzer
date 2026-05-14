@@ -27,6 +27,7 @@ from app.models.mfa_status import MfaRegistrationRecord
 from app.models.remediation import RemediationAction
 from app.models.sod_policy import SodConflictRule
 from app.models.pim_session import PimSession, PimSessionAnalytics
+from app.models.access_path import AccessPathAnalysis, AccessPathSummary
 from app.models.tenant import TenantConfig
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ class CosmosRepo:
         custom_roles: ContainerProxy,
         remediation_actions: ContainerProxy,
         pim_sessions: ContainerProxy,
+        access_path_analyses: ContainerProxy,
     ) -> None:
         self._client = client
         self._db = db
@@ -95,6 +97,7 @@ class CosmosRepo:
         self._custom_roles = custom_roles
         self._remediation_actions = remediation_actions
         self._pim_sessions = pim_sessions
+        self._access_path_analyses = access_path_analyses
 
     @classmethod
     async def create(cls, settings: Settings) -> CosmosRepo:
@@ -204,6 +207,10 @@ class CosmosRepo:
             id="pim_sessions",
             partition_key=PartitionKey(path="/tenantId"),
         )
+        access_path_analyses = await db.create_container_if_not_exists(
+            id="access_path_analyses",
+            partition_key=PartitionKey(path="/tenantId"),
+        )
 
         logger.info(
             "Cosmos DB initialised — database=%s, containers="
@@ -213,7 +220,7 @@ class CosmosRepo:
             "project_members,scan_history,scan_schedules,alert_rules,"
             "app_registrations,mfa_records,ca_policies,risk_detections,"
             "groups,access_reviews,sod_rules,custom_roles,remediation_actions,"
-            "pim_sessions",
+            "pim_sessions,access_path_analyses",
             settings.cosmos_database,
         )
         return cls(
@@ -243,6 +250,7 @@ class CosmosRepo:
             custom_roles=custom_roles,
             remediation_actions=remediation_actions,
             pim_sessions=pim_sessions,
+            access_path_analyses=access_path_analyses,
         )
 
     # ------------------------------------------------------------------
@@ -2000,6 +2008,7 @@ class CosmosRepo:
             "custom_roles": self._custom_roles,
             "remediation_actions": self._remediation_actions,
             "pim_sessions": self._pim_sessions,
+            "access_path_analyses": self._access_path_analyses,
         }
         container = container_map.get(container_name)
         if container is None:
@@ -2498,6 +2507,100 @@ class CosmosRepo:
             "credential_expiry_violations": credential_expiry,
             "recent_drift_alerts": recent_drift,
         }
+
+    # ------------------------------------------------------------------
+    # Access Path Analyses
+    # ------------------------------------------------------------------
+
+    async def upsert_access_path_analysis(
+        self, tenant_id: str, analysis: AccessPathAnalysis,
+    ) -> AccessPathAnalysis:
+        body = analysis.model_dump(mode="json")
+        body["tenantId"] = tenant_id
+        try:
+            result: dict[str, Any] = await self._access_path_analyses.upsert_item(body=body)
+            return AccessPathAnalysis.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos upsert_access_path_analysis failed for %s/%s: %s",
+                tenant_id, analysis.id, exc,
+            )
+            raise
+
+    async def get_access_path_analysis_by_identity(
+        self, tenant_id: str, identity_id: str,
+    ) -> AccessPathAnalysis | None:
+        query = (
+            "SELECT * FROM c WHERE c.tenantId = @tid AND c.identity_id = @iid"
+        )
+        params: list[dict[str, str]] = [
+            {"name": "@tid", "value": tenant_id},
+            {"name": "@iid", "value": identity_id},
+        ]
+        items: list[AccessPathAnalysis] = [
+            AccessPathAnalysis.model_validate(item)
+            async for item in self._access_path_analyses.query_items(
+                query=query, parameters=params, partition_key=tenant_id,
+            )
+        ]
+        return items[0] if items else None
+
+    async def list_access_path_analyses(
+        self, tenant_id: str, min_risk: str | None = None,
+        offset: int = 0, limit: int = 50,
+    ) -> tuple[list[AccessPathAnalysis], int]:
+        where = "c.tenantId = @tid AND c.total_paths > 0"
+        params: list[dict[str, str]] = [{"name": "@tid", "value": tenant_id}]
+
+        if min_risk:
+            risk_order = {"critical": 1, "high": 2, "medium": 3}
+            allowed = [k for k, v in risk_order.items() if v <= risk_order.get(min_risk, 3)]
+            placeholders = ", ".join(f"'{r}'" for r in allowed)
+            where += f" AND c.highest_risk IN ({placeholders})"
+
+        count_query = f"SELECT VALUE COUNT(1) FROM c WHERE {where}"
+        count_results: list[int] = [
+            item async for item in self._access_path_analyses.query_items(
+                query=count_query, parameters=params, partition_key=tenant_id,
+            )
+        ]
+        total = count_results[0] if count_results else 0
+
+        query = (
+            f"SELECT * FROM c WHERE {where} "
+            "ORDER BY c.critical_paths DESC, c.high_paths DESC "
+            f"OFFSET {offset} LIMIT {limit}"
+        )
+        items: list[AccessPathAnalysis] = [
+            AccessPathAnalysis.model_validate(item)
+            async for item in self._access_path_analyses.query_items(
+                query=query, parameters=params, partition_key=tenant_id,
+            )
+        ]
+        return items, total
+
+    async def get_access_path_summary(self, tenant_id: str) -> AccessPathSummary:
+        query = (
+            "SELECT VALUE {"
+            "  total: COUNT(1),"
+            "  critical: COUNT(c.highest_risk = 'critical' ? 1 : undefined),"
+            "  high: COUNT(c.highest_risk = 'high' ? 1 : undefined),"
+            "  medium: COUNT(c.highest_risk = 'medium' ? 1 : undefined)"
+            "} FROM c WHERE c.tenantId = @tid AND c.total_paths > 0"
+        )
+        params: list[dict[str, str]] = [{"name": "@tid", "value": tenant_id}]
+        results: list[dict[str, Any]] = [
+            item async for item in self._access_path_analyses.query_items(
+                query=query, parameters=params, partition_key=tenant_id,
+            )
+        ]
+        row = results[0] if results else {}
+        return AccessPathSummary(
+            total_identities_with_paths=row.get("total", 0),
+            critical_count=row.get("critical", 0),
+            high_count=row.get("high", 0),
+            medium_count=row.get("medium", 0),
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle

@@ -29,6 +29,7 @@ import { CustomRolesPage } from "@/pages/CustomRolesPage";
 import { RemediationHistoryPage } from "@/pages/RemediationHistoryPage";
 import { PimSessionsPage } from "@/pages/PimSessionsPage";
 import { PimSessionDetailPage } from "@/pages/PimSessionDetailPage";
+import { AccessPathsPage } from "@/pages/AccessPathsPage";
 import { useAuth } from "@/auth/useAuth";
 import { ProjectProvider } from "@/store/projectContext";
 import { getApiClient } from "@/api/client";
@@ -71,6 +72,7 @@ function AuthenticatedApp() {
         <Route path="app-registrations" element={<AppRegistrationsPage />} />
         <Route path="conditional-access" element={<ConditionalAccessPage />} />
         <Route path="groups" element={<GroupsPage />} />
+        <Route path="access-paths" element={<AccessPathsPage />} />
         <Route path="custom-roles" element={<CustomRolesPage />} />
         <Route path="remediation" element={<RemediationHistoryPage />} />
         <Route path="reports" element={<ReportsPage />} />

@@ -622,3 +622,77 @@ export interface PimSessionAnalytics {
   anomaly_counts_by_type: Record<string, number>;
   computed_at: string;
 }
+
+// --- Access Path Analysis ---
+
+export type AccessPathNodeType =
+  | "user"
+  | "service_principal"
+  | "application"
+  | "group"
+  | "directory_role"
+  | "app_permission";
+
+export type AccessPathEdgeType =
+  | "owns_app"
+  | "app_has_sp"
+  | "sp_has_app_role"
+  | "sp_has_directory_role"
+  | "owns_group"
+  | "member_of_group"
+  | "group_has_role"
+  | "owns_sp"
+  | "has_directory_role"
+  | "can_modify_any_app";
+
+export type AccessPathRisk = "critical" | "high" | "medium";
+
+export interface AccessPathNode {
+  id: string;
+  node_type: AccessPathNodeType;
+  display_name: string;
+  properties: Record<string, unknown>;
+}
+
+export interface AccessPathEdge {
+  edge_type: AccessPathEdgeType;
+  description: string;
+}
+
+export interface AccessPathStep {
+  node: AccessPathNode;
+  edge: AccessPathEdge | null;
+}
+
+export interface AccessPath {
+  id: string;
+  path_type: string;
+  risk_level: AccessPathRisk;
+  steps: AccessPathStep[];
+  target_privilege: string;
+  description: string;
+  exploitability: string;
+}
+
+export interface AccessPathAnalysis {
+  id: string;
+  tenant_id: string;
+  identity_id: string;
+  identity_display_name: string;
+  identity_type: string;
+  paths: AccessPath[];
+  total_paths: number;
+  critical_paths: number;
+  high_paths: number;
+  medium_paths: number;
+  highest_risk: string;
+  analyzed_at: string;
+}
+
+export interface AccessPathSummary {
+  total_identities_with_paths: number;
+  critical_count: number;
+  high_count: number;
+  medium_count: number;
+  top_path_types: { path_type: string; count: number }[];
+}

@@ -294,6 +294,25 @@ class IngestPipeline:
                 logger.warning("PIM session phase failed", exc_info=True)
                 await self._update_phase(scan_record, "pim_sessions", "failed")
 
+        # 10. Access Path Analysis
+        access_paths_processed = 0
+        if settings.pim_session_enabled:
+            await self._update_phase(scan_record, "access_paths", "running")
+            try:
+                from app.services.access_path_analyzer import AccessPathAnalyzer
+
+                analyzer = AccessPathAnalyzer(self._repo, self._graph)
+                path_results = await analyzer.analyze_tenant(tenant_id)
+                for result in path_results:
+                    await self._repo.upsert_access_path_analysis(tenant_id, result)
+                access_paths_processed = len(path_results)
+                await self._update_phase(
+                    scan_record, "access_paths", "completed", access_paths_processed,
+                )
+            except Exception:
+                logger.warning("Access path analysis failed", exc_info=True)
+                await self._update_phase(scan_record, "access_paths", "failed")
+
         duration_ms = int((time.monotonic() - start_time) * 1000)
 
         summary: dict[str, Any] = {
@@ -304,6 +323,7 @@ class IngestPipeline:
             "audit_events_fetched": len(raw_audit_events),
             "signin_events_fetched": len(raw_signin_events),
             "pim_sessions_processed": pim_sessions_processed,
+            "access_paths_processed": access_paths_processed,
             "duration_ms": duration_ms,
         }
         logger.info("Ingest pipeline complete: %s", summary)
