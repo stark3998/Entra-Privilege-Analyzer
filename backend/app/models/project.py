@@ -26,6 +26,7 @@ class ScanRecord(BaseModel):
     target_tenant_id: str
     scan_type: Literal["full", "incremental"] = "full"
     status: Literal["queued", "running", "completed", "failed"] = "queued"
+    auth_mode: Literal["app", "delegated"] = "app"
     phases: list[ScanPhase] = []
     started_at: datetime
     completed_at: datetime | None = None
@@ -58,8 +59,8 @@ class Project(BaseModel):
     name: str
     target_tenant_id: str
     target_tenant_name: str
-    client_id: str
-    encrypted_client_secret: str
+    client_id: str = ""
+    encrypted_client_secret: str = ""
     status: Literal["active", "setup", "error"] = "setup"
     permission_status: dict[str, Any] | None = None
     last_scan_at: datetime | None = None

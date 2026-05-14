@@ -33,8 +33,8 @@ class CreateProjectPayload(BaseModel):
     name: str
     target_tenant_id: str
     target_tenant_name: str
-    client_id: str
-    client_secret: str
+    client_id: str = ""
+    client_secret: str = ""
 
 
 class UpdateProjectPayload(BaseModel):
@@ -123,13 +123,19 @@ async def create_project(
     repo: CosmosRepo = Depends(get_cosmos_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    """Create a new project. Validates Graph API permissions before saving."""
-    validator = PermissionValidator()
-    perm_result = await validator.validate(
-        payload.client_id, payload.client_secret, payload.target_tenant_id,
-    )
+    """Create a new project. Validates Graph API permissions when credentials are provided."""
+    has_credentials = bool(payload.client_id and payload.client_secret)
 
-    crypto = CryptoService(settings)
+    perm_result: dict[str, Any] | None = None
+    encrypted_secret = ""
+    if has_credentials:
+        validator = PermissionValidator()
+        perm_result = await validator.validate(
+            payload.client_id, payload.client_secret, payload.target_tenant_id,
+        )
+        crypto = CryptoService(settings)
+        encrypted_secret = crypto.encrypt(payload.client_secret)
+
     now = datetime.now(UTC)
     project = Project(
         id=str(uuid.uuid4()),
@@ -139,8 +145,8 @@ async def create_project(
         target_tenant_id=payload.target_tenant_id,
         target_tenant_name=payload.target_tenant_name,
         client_id=payload.client_id,
-        encrypted_client_secret=crypto.encrypt(payload.client_secret),
-        status="active" if perm_result["valid"] else "setup",
+        encrypted_client_secret=encrypted_secret,
+        status="active" if (perm_result and perm_result["valid"]) else "setup",
         permission_status=perm_result,
         created_at=now,
         updated_at=now,
@@ -214,6 +220,11 @@ async def validate_permissions(
     project = await validate_project_access(
         project_id, user, repo, settings, required_role="admin",
     )
+    if not project.client_id or not project.encrypted_client_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No app credentials configured. Use delegated scan mode or add credentials first.",
+        )
     crypto = CryptoService(settings)
     secret = crypto.decrypt(project.encrypted_client_secret)
 

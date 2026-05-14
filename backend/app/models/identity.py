@@ -98,6 +98,11 @@ class IdentityProfile(BaseModel):
     user_type: str | None = None
     external_user_state: str | None = None
     external_user_state_change: datetime | None = None
+
+    # Sign-in activity (from Graph signInActivity property)
+    last_sign_in_at: datetime | None = None
+    last_non_interactive_sign_in_at: datetime | None = None
+
     creation_type: str | None = None
     identity_providers: list[str] = []
 

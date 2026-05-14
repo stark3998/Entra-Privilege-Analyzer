@@ -10,6 +10,7 @@ import type {
   InviteMemberPayload,
   ScanRecord,
   PaginatedResponse,
+  DelegatedPermissionsCheck,
 } from "./types";
 
 export function useProjects() {
@@ -172,9 +173,15 @@ export function useTriggerScan(projectId: string) {
   const client = getApiClient();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (full: boolean = false) =>
-      client.post<{ scan_id: string; status: string }>(
-        `/api/projects/${projectId}/scans/trigger?full=${full}`,
+    mutationFn: ({
+      full = false,
+      authMode = "app",
+    }: {
+      full?: boolean;
+      authMode?: "app" | "delegated";
+    } = {}) =>
+      client.post<{ scan_id: string; status: string; auth_mode: string }>(
+        `/api/projects/${projectId}/scans/trigger?full=${full}&auth_mode=${authMode}`,
         {},
       ),
     onSuccess: () => {
@@ -185,5 +192,19 @@ export function useTriggerScan(projectId: string) {
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
+  });
+}
+
+export function useDelegatedPermissionsCheck(projectId: string, enabled = false) {
+  const client = getApiClient();
+  return useQuery({
+    queryKey: ["delegatedPermissions", projectId],
+    queryFn: () =>
+      client.get<DelegatedPermissionsCheck>(
+        `/api/projects/${projectId}/scans/delegated-permissions-check`,
+      ),
+    enabled: !!projectId && enabled,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
   });
 }

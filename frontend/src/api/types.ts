@@ -341,11 +341,19 @@ export interface ScanRecord {
   project_id: string;
   target_tenant_id: string;
   scan_type: "full" | "incremental";
+  auth_mode: "app" | "delegated";
   status: ScanStatus;
   phases: ScanPhase[];
   started_at: string;
   completed_at: string | null;
   error_message: string | null;
+}
+
+export interface DelegatedPermissionsCheck {
+  sufficient: boolean;
+  granted_scopes: string[];
+  missing_scopes: string[];
+  error?: string;
 }
 
 // --- Analytics ---

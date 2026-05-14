@@ -195,12 +195,22 @@ class IngestPipeline:
             app_id: str | None = None
             user_type: str | None = None
             external_user_state: str | None = None
+            last_sign_in_at: datetime | None = None
+            last_non_interactive_sign_in_at: datetime | None = None
 
             if identity_type == IdentityType.USER and object_id in user_lookup:
                 user_data = user_lookup[object_id]
                 upn = user_data.get("userPrincipalName")
                 user_type = user_data.get("userType")
                 external_user_state = user_data.get("externalUserState")
+                sign_in_activity = user_data.get("signInActivity")
+                if sign_in_activity:
+                    ts = sign_in_activity.get("lastSignInDateTime")
+                    if ts:
+                        last_sign_in_at = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    ts = sign_in_activity.get("lastNonInteractiveSignInDateTime")
+                    if ts:
+                        last_non_interactive_sign_in_at = datetime.fromisoformat(ts.replace("Z", "+00:00"))
             elif identity_type == IdentityType.SERVICE_PRINCIPAL and object_id in sp_lookup:
                 sp_data = sp_lookup[object_id]
                 app_id = sp_data.get("appId")
@@ -210,6 +220,8 @@ class IngestPipeline:
                 app_id = app_id or existing.app_id
                 user_type = user_type or existing.user_type
                 external_user_state = external_user_state or existing.external_user_state
+                last_sign_in_at = last_sign_in_at or existing.last_sign_in_at
+                last_non_interactive_sign_in_at = last_non_interactive_sign_in_at or existing.last_non_interactive_sign_in_at
 
             profile = IdentityProfile(
                 id=identity_id,
@@ -230,6 +242,8 @@ class IngestPipeline:
                 updated_at=now,
                 user_type=user_type,
                 external_user_state=external_user_state,
+                last_sign_in_at=last_sign_in_at,
+                last_non_interactive_sign_in_at=last_non_interactive_sign_in_at,
             )
             await self._repo.upsert_identity(tenant_id, profile)
             identities_processed += 1

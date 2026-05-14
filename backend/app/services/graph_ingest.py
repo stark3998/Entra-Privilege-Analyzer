@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -15,7 +16,6 @@ from app.models.action import ActionEvent, ActionSource
 
 logger = logging.getLogger(__name__)
 
-_GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 _GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
 
 
@@ -33,16 +33,17 @@ class GraphIngestService:
         settings: Settings,
         client_id: str | None = None,
         client_secret: str | None = None,
+        token_provider: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._settings = settings
         self._client_id = client_id or settings.azure_client_id
         self._client_secret = client_secret or settings.azure_client_secret
+        self._token_provider = token_provider
+        api_version = getattr(settings, "graph_api_version", "beta")
+        self._graph_base = f"https://graph.microsoft.com/{api_version}"
 
     async def _get_client_credential_token(self, tenant_id: str) -> str:
-        """Get a token for a specific tenant using client credentials flow.
-
-        Uses msal.ConfidentialClientApplication with the target tenant authority.
-        """
+        """Get a token for a specific tenant using client credentials flow."""
         app = msal.ConfidentialClientApplication(
             self._client_id,
             authority=f"https://login.microsoftonline.com/{tenant_id}",
@@ -53,6 +54,13 @@ class GraphIngestService:
             error = result.get("error_description", "Unknown error")
             raise RuntimeError(f"Client credential token acquisition failed: {error}")
         return result["access_token"]
+
+    async def _get_token(self, tenant_id: str) -> str:
+        """Get a Graph API token — delegates to the token provider if set,
+        otherwise falls back to client credentials flow."""
+        if self._token_provider:
+            return await self._token_provider()
+        return await self._get_client_credential_token(tenant_id)
 
     async def _graph_get(
         self, token: str, url: str, params: dict[str, str] | None = None
@@ -98,7 +106,7 @@ class GraphIngestService:
         If delta_link is provided, fetches only new events since last sync.
         Otherwise fetches the last 30 days.
         """
-        token = await self._get_client_credential_token(tenant_id)
+        token = await self._get_token(tenant_id)
 
         if delta_link:
             data = await self._graph_get(token, delta_link)
@@ -109,7 +117,7 @@ class GraphIngestService:
         since = (datetime.now(UTC) - timedelta(days=30)).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
         )
-        url = f"{_GRAPH_BASE}/auditLogs/directoryAudits"
+        url = f"{self._graph_base}/auditLogs/directoryAudits"
         params = {"$filter": f"activityDateTime ge {since}", "$top": "999"}
         events = await self._graph_get_all_pages(token, url, params)
         return events, None
@@ -121,8 +129,8 @@ class GraphIngestService:
 
         Filters by createdDateTime if ``since`` is provided, otherwise last 30 days.
         """
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/auditLogs/signIns"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/auditLogs/signIns"
 
         cutoff = since or (datetime.now(UTC) - timedelta(days=30))
         cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -131,33 +139,38 @@ class GraphIngestService:
 
     async def fetch_role_assignments(self, tenant_id: str) -> list[dict[str, Any]]:
         """Fetch all directory role assignments with expanded principal and roleDefinition."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/roleManagement/directory/roleAssignments"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/roleManagement/directory/roleAssignments"
         params = {"$expand": "principal,roleDefinition"}
         return await self._graph_get_all_pages(token, url, params)
 
     async def fetch_role_definitions(self, tenant_id: str) -> list[dict[str, Any]]:
         """Fetch all directory role definitions."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/roleManagement/directory/roleDefinitions"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/roleManagement/directory/roleDefinitions"
         return await self._graph_get_all_pages(token, url)
 
     async def fetch_service_principals(self, tenant_id: str) -> list[dict[str, Any]]:
         """Fetch service principals in the tenant."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/servicePrincipals"
-        params = {"$select": "id,displayName,appId,servicePrincipalType"}
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/servicePrincipals"
+        params = {
+            "$select": (
+                "id,displayName,appId,servicePrincipalType,accountEnabled,"
+                "passwordCredentials,keyCredentials,createdDateTime"
+            ),
+        }
         return await self._graph_get_all_pages(token, url, params)
 
     async def fetch_users(self, tenant_id: str) -> list[dict[str, Any]]:
         """Fetch users with selected fields including guest properties."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/users"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/users"
         params = {
             "$select": (
                 "id,displayName,userPrincipalName,userType,accountEnabled,"
                 "creationType,externalUserState,externalUserStateChangeDateTime,"
-                "createdDateTime"
+                "createdDateTime,signInActivity"
             ),
         }
         return await self._graph_get_all_pages(token, url, params)
@@ -170,16 +183,16 @@ class GraphIngestService:
         self, tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch all active role assignments including PIM-activated ones."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/roleManagement/directory/roleAssignmentScheduleInstances"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/roleManagement/directory/roleAssignmentScheduleInstances"
         return await self._graph_get_all_pages(token, url)
 
     async def fetch_role_eligibility_schedule_instances(
         self, tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch all PIM-eligible role assignments."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/roleManagement/directory/roleEligibilityScheduleInstances"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/roleManagement/directory/roleEligibilityScheduleInstances"
         return await self._graph_get_all_pages(token, url)
 
     # ------------------------------------------------------------------
@@ -188,8 +201,8 @@ class GraphIngestService:
 
     async def fetch_applications(self, tenant_id: str) -> list[dict[str, Any]]:
         """Fetch app registrations with credential and permission details."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/applications"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/applications"
         params = {
             "$select": (
                 "id,appId,displayName,signInAudience,passwordCredentials,"
@@ -203,8 +216,8 @@ class GraphIngestService:
         self, tenant_id: str, app_object_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch owners of a specific app registration."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/applications/{app_object_id}/owners"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/applications/{app_object_id}/owners"
         params = {"$select": "id,displayName,userPrincipalName"}
         return await self._graph_get_all_pages(token, url, params)
 
@@ -212,8 +225,8 @@ class GraphIngestService:
         self, tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch delegated permission grants."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/oauth2PermissionGrants"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/oauth2PermissionGrants"
         return await self._graph_get_all_pages(token, url)
 
     # ------------------------------------------------------------------
@@ -224,8 +237,8 @@ class GraphIngestService:
         self, tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch bulk MFA registration status for all users."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/reports/authenticationMethods/userRegistrationDetails"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/reports/authenticationMethods/userRegistrationDetails"
         return await self._graph_get_all_pages(token, url)
 
     # ------------------------------------------------------------------
@@ -236,8 +249,8 @@ class GraphIngestService:
         self, tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch all Conditional Access policies."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/identity/conditionalAccess/policies"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/identity/conditionalAccess/policies"
         return await self._graph_get_all_pages(token, url)
 
     # ------------------------------------------------------------------
@@ -246,16 +259,16 @@ class GraphIngestService:
 
     async def fetch_risky_users(self, tenant_id: str) -> list[dict[str, Any]]:
         """Fetch risky users from Identity Protection. Requires P2 license."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/identityProtection/riskyUsers"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/identityProtection/riskyUsers"
         return await self._graph_get_all_pages(token, url)
 
     async def fetch_risk_detections(
         self, tenant_id: str, since: datetime | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch risk detections. Requires P1+ license."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/identityProtection/riskDetections"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/identityProtection/riskDetections"
         params: dict[str, str] | None = None
         if since:
             cutoff = since.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -268,8 +281,8 @@ class GraphIngestService:
 
     async def fetch_groups(self, tenant_id: str) -> list[dict[str, Any]]:
         """Fetch all security groups with role-assignable and dynamic metadata."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/groups"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/groups"
         params = {
             "$select": (
                 "id,displayName,groupTypes,securityEnabled,mailEnabled,"
@@ -302,8 +315,8 @@ class GraphIngestService:
         self, tenant_id: str, group_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch transitive (nested) members of a group."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/groups/{group_id}/transitiveMembers"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/groups/{group_id}/transitiveMembers"
         params = {"$select": "id,displayName,userPrincipalName,@odata.type"}
         return await self._graph_get_all_pages(token, url, params)
 
@@ -311,8 +324,8 @@ class GraphIngestService:
         self, tenant_id: str, group_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch owners of a group."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/groups/{group_id}/owners"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/groups/{group_id}/owners"
         params = {"$select": "id,displayName,userPrincipalName"}
         return await self._graph_get_all_pages(token, url, params)
 
@@ -324,8 +337,8 @@ class GraphIngestService:
         self, tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch access review definitions. Requires Entra ID Governance."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/identityGovernance/accessReviews/definitions"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/identityGovernance/accessReviews/definitions"
         return await self._graph_get_all_pages(token, url)
 
     # ------------------------------------------------------------------
@@ -336,9 +349,47 @@ class GraphIngestService:
         self, tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch cross-tenant access policy partner configurations."""
-        token = await self._get_client_credential_token(tenant_id)
-        url = f"{_GRAPH_BASE}/policies/crossTenantAccessPolicy/partners"
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/policies/crossTenantAccessPolicy/partners"
         return await self._graph_get_all_pages(token, url)
+
+    # ------------------------------------------------------------------
+    # Beta-only: Service Principal & App Credential sign-in reports
+    # ------------------------------------------------------------------
+
+    async def fetch_service_principal_sign_in_activities(
+        self, tenant_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch last sign-in activity for service principals (beta only).
+
+        Returns empty list if the endpoint is unavailable (e.g., using v1.0).
+        """
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/reports/servicePrincipalSignInActivities"
+        try:
+            return await self._graph_get_all_pages(token, url)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (400, 404):
+                logger.debug("servicePrincipalSignInActivities not available (version=%s)", self._settings.graph_api_version)
+                return []
+            raise
+
+    async def fetch_app_credential_sign_in_activities(
+        self, tenant_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch last sign-in activity per app credential (beta only).
+
+        Returns empty list if the endpoint is unavailable (e.g., using v1.0).
+        """
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/reports/appCredentialSignInActivities"
+        try:
+            return await self._graph_get_all_pages(token, url)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (400, 404):
+                logger.debug("appCredentialSignInActivities not available (version=%s)", self._settings.graph_api_version)
+                return []
+            raise
 
     # ------------------------------------------------------------------
     # Parsing helpers

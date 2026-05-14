@@ -4,6 +4,7 @@ import {
   useScanHistory,
   useLatestScan,
   useTriggerScan,
+  useDelegatedPermissionsCheck,
 } from "@/api/projectHooks";
 import { useProjectContext } from "@/store/projectContext";
 import type { ScanRecord, ScanPhase } from "@/api/types";
@@ -21,6 +22,21 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span className={`badge ${styles[status] ?? styles.queued}`}>
       {status}
+    </span>
+  );
+}
+
+function AuthModeBadge({ mode }: { mode: string }) {
+  if (mode === "delegated") {
+    return (
+      <span className="badge bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400">
+        Delegated
+      </span>
+    );
+  }
+  return (
+    <span className="badge bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+      App
     </span>
   );
 }
@@ -95,6 +111,7 @@ function ScanHistoryRow({
           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
             {scan.scan_type === "full" ? "Full Scan" : "Incremental"}
           </span>
+          <AuthModeBadge mode={scan.auth_mode ?? "app"} />
         </div>
         <div className="flex items-center gap-6">
           {duration !== null && (
@@ -149,11 +166,19 @@ export function ScanPage() {
     "incremental",
   );
 
+  const hasAppCredentials = !!(project.client_id);
+  const [authMode, setAuthMode] = useState<"app" | "delegated">(
+    hasAppCredentials ? "app" : "delegated",
+  );
+
+  const { data: permCheck, isLoading: permCheckLoading } =
+    useDelegatedPermissionsCheck(projectId, authMode === "delegated");
+
   const isRunning =
     latestScan?.status === "running" || latestScan?.status === "queued";
 
   function handleTrigger() {
-    triggerScan.mutate(scanType === "full");
+    triggerScan.mutate({ full: scanType === "full", authMode });
   }
 
   return (
@@ -190,12 +215,46 @@ export function ScanPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Auth mode toggle */}
+            <div className="flex rounded-lg border border-slate-200 dark:border-slate-700">
+              <button
+                onClick={() => setAuthMode("app")}
+                disabled={!hasAppCredentials}
+                title={
+                  hasAppCredentials
+                    ? "Use project app registration credentials"
+                    : "No app credentials configured for this project"
+                }
+                className={clsx(
+                  "rounded-l-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                  authMode === "app"
+                    ? "bg-blue-600 text-white"
+                    : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800",
+                  !hasAppCredentials && "cursor-not-allowed opacity-40",
+                )}
+              >
+                App Credentials
+              </button>
+              <button
+                onClick={() => setAuthMode("delegated")}
+                className={clsx(
+                  "rounded-r-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                  authMode === "delegated"
+                    ? "bg-purple-600 text-white"
+                    : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800",
+                )}
+              >
+                My Credentials
+              </button>
+            </div>
+
             <select
               value={scanType}
               onChange={(e) =>
                 setScanType(e.target.value as "incremental" | "full")
               }
               className="input-base text-sm"
+              title="Select scan type"
             >
               <option value="incremental">Incremental</option>
               <option value="full">Full Scan</option>
@@ -221,6 +280,42 @@ export function ScanPage() {
             </button>
           </div>
         </div>
+
+        {/* Delegated mode info banner */}
+        {authMode === "delegated" && (
+          <div className="mt-4 rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-800 dark:bg-purple-900/20">
+            <p className="text-xs text-purple-700 dark:text-purple-300">
+              Scan will use your Entra ID permissions via delegated access (OBO flow).
+              You need sufficient admin roles (e.g., Global Reader) to read directory data.
+              Some data may be unavailable if your permissions are limited.
+            </p>
+            {permCheckLoading && (
+              <p className="mt-1 text-xs text-purple-500 dark:text-purple-400">
+                Checking your permissions...
+              </p>
+            )}
+            {permCheck && !permCheck.sufficient && (
+              <div className="mt-2">
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                  Missing permissions: {permCheck.missing_scopes.join(", ")}
+                </p>
+                <p className="mt-0.5 text-xs text-purple-600 dark:text-purple-400">
+                  The scan may return partial results. Ask your admin to grant delegated permissions and admin consent.
+                </p>
+              </div>
+            )}
+            {permCheck?.error && (
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                Permission check failed: {permCheck.error}
+              </p>
+            )}
+            {permCheck && permCheck.sufficient && (
+              <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                All required permissions are available.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Phase progress for latest running scan */}
         {isRunning && latestScan && latestScan.phases.length > 0 && (

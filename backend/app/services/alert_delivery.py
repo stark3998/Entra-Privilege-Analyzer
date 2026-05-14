@@ -28,8 +28,9 @@ GraphTokenProvider = Callable[[], Awaitable[str]]
 class AlertDeliveryService:
     """Delivers alerts via email, Teams, or webhook channels."""
 
-    def __init__(self, graph_token_provider: GraphTokenProvider | None = None) -> None:
+    def __init__(self, graph_token_provider: GraphTokenProvider | None = None, graph_api_version: str = "beta") -> None:
         self._graph_token_provider = graph_token_provider
+        self._graph_api_version = graph_api_version
 
     async def deliver(
         self,
@@ -109,7 +110,7 @@ class AlertDeliveryService:
 
         async with httpx.AsyncClient() as client:
             resp = await client.post(
-                "https://graph.microsoft.com/v1.0/me/sendMail",
+                f"https://graph.microsoft.com/{self._graph_api_version}/me/sendMail",
                 json=message,
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=30.0,

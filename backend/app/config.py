@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     azure_client_secret: str = ""
     azure_tenant_id: str = ""
 
+    # Microsoft Graph API version ("beta" for latest features, "v1.0" for GA stability)
+    graph_api_version: str = "beta"
+
     # Cosmos DB
     cosmos_endpoint: str = "https://localhost:8081"
     cosmos_key: str = ""
