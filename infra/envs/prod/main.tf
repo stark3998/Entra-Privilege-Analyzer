@@ -9,13 +9,21 @@ locals {
     environment = var.environment
     managed_by  = "terraform"
   })
+
+  resource_group_name = coalesce(var.existing_resource_group_name, try(azurerm_resource_group.main[0].name, null))
 }
 
 # ---------------------
 # Resource Group
 # ---------------------
 
+data "azurerm_resource_group" "existing" {
+  count = var.existing_resource_group_name != null ? 1 : 0
+  name  = var.existing_resource_group_name
+}
+
 resource "azurerm_resource_group" "main" {
+  count    = var.existing_resource_group_name == null ? 1 : 0
   name     = "rg-${var.project_name}-${var.environment}"
   location = var.location
   tags     = local.common_tags
@@ -32,7 +40,7 @@ module "observability" {
   project_name        = var.project_name
   environment         = var.environment
   location            = var.location
-  resource_group_name = azurerm_resource_group.main.name
+  resource_group_name = local.resource_group_name
   log_retention_days  = 90
   tags                = local.common_tags
 }
@@ -47,8 +55,10 @@ module "identity" {
   project_name        = var.project_name
   environment         = var.environment
   location            = var.location
-  resource_group_name = azurerm_resource_group.main.name
+  resource_group_name = local.resource_group_name
   github_repository   = var.github_repository
+  existing_application_client_id     = var.existing_application_client_id
+  existing_application_client_secret = var.existing_application_client_secret
 
   spa_redirect_uris = [
     "http://localhost:5173",
@@ -67,7 +77,7 @@ module "data" {
   project_name                  = var.project_name
   environment                   = var.environment
   location                      = var.location
-  resource_group_name           = azurerm_resource_group.main.name
+  resource_group_name           = local.resource_group_name
   managed_identity_principal_id = module.identity.managed_identity_principal_id
 
   # Prod: Standard C1 Redis
@@ -88,7 +98,7 @@ module "security" {
   project_name                  = var.project_name
   environment                   = var.environment
   location                      = var.location
-  resource_group_name           = azurerm_resource_group.main.name
+  resource_group_name           = local.resource_group_name
   managed_identity_principal_id = module.identity.managed_identity_principal_id
 
   # Secrets to store
@@ -112,7 +122,7 @@ module "compute" {
   project_name                  = var.project_name
   environment                   = var.environment
   location                      = var.location
-  resource_group_name           = azurerm_resource_group.main.name
+  resource_group_name           = local.resource_group_name
   log_analytics_workspace_id    = module.observability.log_analytics_workspace_id
   managed_identity_id           = module.identity.managed_identity_id
   managed_identity_principal_id = module.identity.managed_identity_principal_id
@@ -124,6 +134,7 @@ module "compute" {
   # App configuration
   application_client_id = module.identity.application_client_id
   tenant_id             = module.identity.tenant_id
+  cors_origin_regex     = var.cors_origin_regex
   cosmos_database_name  = module.data.cosmos_database_name
   redis_hostname        = module.data.redis_hostname
   redis_port            = module.data.redis_port

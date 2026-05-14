@@ -94,9 +94,15 @@ jobs:
       # Also update all scheduled jobs (they share the backend image)
       - name: Update scheduled jobs
         run: |
-          JOBS=("sync-tenant" "compute-baselines" "detect-drift" "generate-recommendations" "generate-narratives")
-          for JOB_SUFFIX in "${JOBS[@]}"; do
-            JOB_NAME="job-entraperm-${JOB_SUFFIX}-prod"
+          declare -A JOBS=(
+            [sync-tenant]="sync-ten"
+            [compute-baselines]="comp-base"
+            [detect-drift]="det-drift"
+            [generate-recommendations]="gen-reco"
+            [generate-narratives]="gen-narr"
+          )
+          for JOB_SUFFIX in "${!JOBS[@]}"; do
+            JOB_NAME="job-entraperm-${JOBS[$JOB_SUFFIX]}-prod"
             echo "Updating job: ${JOB_NAME}"
             az containerapp job update \
               --name "${JOB_NAME}" \

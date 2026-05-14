@@ -35,6 +35,19 @@ variable "github_repository" {
   type        = string
 }
 
+variable "existing_application_client_id" {
+  description = "Existing Entra application client ID to reuse. If null, Terraform creates a new application registration."
+  type        = string
+  default     = null
+}
+
+variable "existing_application_client_secret" {
+  description = "Client secret for an existing Entra application. Required when existing_application_client_id is set."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
 variable "tags" {
   description = "Tags applied to all resources"
   type        = map(string)

@@ -75,6 +75,12 @@ variable "tenant_id" {
   type        = string
 }
 
+variable "cors_origin_regex" {
+  description = "Regex for allowed browser origins when exact frontend URLs are not known at deploy time"
+  type        = string
+  default     = ""
+}
+
 variable "cosmos_database_name" {
   description = "Cosmos DB database name"
   type        = string

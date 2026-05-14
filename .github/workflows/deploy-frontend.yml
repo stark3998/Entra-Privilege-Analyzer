@@ -27,6 +27,8 @@ env:
   ACR_NAME: ${{ vars.ACR_NAME }}
   RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
   CONTAINER_APP_NAME: ${{ vars.FRONTEND_CONTAINER_APP_NAME }}
+  BACKEND_CONTAINER_APP_NAME: ${{ vars.BACKEND_CONTAINER_APP_NAME }}
+  APP_CLIENT_ID: ${{ vars.APP_CLIENT_ID }}
   IMAGE_NAME: entraperm-frontend
 
 jobs:
@@ -59,6 +61,15 @@ jobs:
       - name: ACR Login
         run: az acr login --name ${{ env.ACR_NAME }}
 
+      - name: Resolve backend API URL
+        run: |
+          BACKEND_FQDN=$(az containerapp show \
+            --name ${{ env.BACKEND_CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+
+          echo "VITE_API_BASE_URL=https://${BACKEND_FQDN}" >> "$GITHUB_ENV"
+
       # Build and push with git SHA tag — never :latest
       - name: Build and push Docker image
         run: |
@@ -67,6 +78,9 @@ jobs:
 
           docker build \
             --target prod \
+            --build-arg VITE_APP_CLIENT_ID="${{ env.APP_CLIENT_ID }}" \
+            --build-arg VITE_TENANT_ID="${{ env.AZURE_TENANT_ID }}" \
+            --build-arg VITE_API_BASE_URL="${{ env.VITE_API_BASE_URL }}" \
             --tag "${FULL_IMAGE}" \
             ./frontend
 

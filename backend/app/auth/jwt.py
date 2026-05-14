@@ -52,16 +52,23 @@ class MultiTenantJwtValidator:
         jwks_client = await self._ensure_jwks_client()
         signing_key = jwks_client.get_signing_key_from_jwt(token)
 
-        # First decode without issuer validation to extract tid
+        # First decode without claim validation to determine the token version
+        # and tenant-specific issuer expected by Entra.
         unverified = jwt.decode(token, options={"verify_signature": False})
         tid: str = unverified.get("tid", "")
-        expected_issuer = f"https://login.microsoftonline.com/{tid}/v2.0"
+        token_version = str(unverified.get("ver", "2.0"))
+        expected_issuer = (
+            f"https://sts.windows.net/{tid}/"
+            if token_version == "1.0"
+            else f"https://login.microsoftonline.com/{tid}/v2.0"
+        )
+        audiences = [self._client_id, f"api://{self._client_id}"]
 
         payload: dict[str, Any] = jwt.decode(
             token,
             signing_key.key,
             algorithms=["RS256"],
-            audience=self._client_id,
+            audience=audiences,
             issuer=expected_issuer,
         )
         return payload

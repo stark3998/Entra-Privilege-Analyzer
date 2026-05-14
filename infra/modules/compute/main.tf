@@ -145,6 +145,11 @@ resource "azurerm_container_app" "backend" {
       }
 
       env {
+        name  = "CORS_ORIGIN_REGEX"
+        value = var.cors_origin_regex
+      }
+
+      env {
         name  = "AZURE_FOUNDRY_ENDPOINT"
         value = var.foundry_endpoint
       }
@@ -194,14 +199,14 @@ resource "azurerm_container_app" "backend" {
       liveness_probe {
         transport = "HTTP"
         port      = 8000
-        path      = "/health"
+        path      = "/healthz"
       }
 
       # Readiness probe
       readiness_probe {
         transport = "HTTP"
         port      = 8000
-        path      = "/health"
+        path      = "/readyz"
       }
     }
 
@@ -302,22 +307,27 @@ locals {
     sync-tenant = {
       schedule = "0 */6 * * *"
       command  = ["python", "-m", "jobs.sync_tenant"]
+      name     = "sync-ten"
     }
     compute-baselines = {
       schedule = "0 2 * * *"
       command  = ["python", "-m", "jobs.compute_baselines"]
+      name     = "comp-base"
     }
     detect-drift = {
       schedule = "0 3 * * *"
       command  = ["python", "-m", "jobs.detect_drift"]
+      name     = "det-drift"
     }
     generate-recommendations = {
       schedule = "0 4 * * *"
       command  = ["python", "-m", "jobs.generate_recommendations"]
+      name     = "gen-reco"
     }
     generate-narratives = {
       schedule = "0 5 * * *"
       command  = ["python", "-m", "jobs.generate_narratives"]
+      name     = "gen-narr"
     }
   }
 }
@@ -325,7 +335,7 @@ locals {
 resource "azurerm_container_app_job" "scheduled" {
   for_each = local.scheduled_jobs
 
-  name                         = "job-${var.project_name}-${each.key}-${var.environment}"
+  name                         = "job-${var.project_name}-${each.value.name}-${var.environment}"
   location                     = var.location
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = var.resource_group_name

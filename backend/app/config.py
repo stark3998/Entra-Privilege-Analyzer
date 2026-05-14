@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     local_mode: bool = False
     backend_port: int = 8000
     cors_origins: str = "http://localhost:5173"
+    cors_origin_regex: str = "^https://ca-entraperm-frontend-[a-z0-9-]+\\.[a-z0-9-]+\\.[a-z]+\\.azurecontainerapps\\.io$"
 
     # Entra ID
     azure_client_id: str = ""

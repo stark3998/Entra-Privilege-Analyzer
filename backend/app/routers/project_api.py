@@ -796,16 +796,17 @@ async def create_sod_rule(
     return saved.model_dump(mode="json")
 
 
-@router.delete("/settings/sod-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/settings/sod-rules/{rule_id}")
 async def delete_sod_rule(
     project_id: str,
     rule_id: str,
     user: CurrentUser = Depends(get_current_user),
     repo: CosmosRepo = Depends(get_cosmos_repo),
     settings: Settings = Depends(get_settings),
-) -> None:
+) -> Response:
     tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
     await repo.delete_sod_rule(tid, rule_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ------------------------------------------------------------------
@@ -924,16 +925,17 @@ async def create_scan_schedule(
     return saved.model_dump(mode="json")
 
 
-@router.delete("/settings/scan-schedules/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/settings/scan-schedules/{schedule_id}")
 async def delete_scan_schedule(
     project_id: str,
     schedule_id: str,
     user: CurrentUser = Depends(get_current_user),
     repo: CosmosRepo = Depends(get_cosmos_repo),
     settings: Settings = Depends(get_settings),
-) -> None:
+) -> Response:
     await _tenant_id(project_id, user, repo, settings, required_role="operator")
     await repo.delete_scan_schedule(project_id, schedule_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ------------------------------------------------------------------
@@ -981,16 +983,17 @@ async def create_alert_rule(
     return saved.model_dump(mode="json")
 
 
-@router.delete("/settings/alert-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/settings/alert-rules/{rule_id}")
 async def delete_alert_rule(
     project_id: str,
     rule_id: str,
     user: CurrentUser = Depends(get_current_user),
     repo: CosmosRepo = Depends(get_cosmos_repo),
     settings: Settings = Depends(get_settings),
-) -> None:
+) -> Response:
     await _tenant_id(project_id, user, repo, settings, required_role="operator")
     await repo.delete_alert_rule(project_id, rule_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ------------------------------------------------------------------

@@ -366,6 +366,42 @@ Jobs run as Azure Container Apps Jobs in sequence:
 | react-router-dom | 6.28 | Client-side routing |
 
 ### Infrastructure
+
+### Deploying To An Existing Resource Group
+
+The Terraform under [infra/envs/prod](c:\Users\jatmadan\Documents\GitHub\Entra-Permissions-Analyzer\infra\envs\prod) can now either create a new resource group and Entra app registration or reuse existing ones.
+
+For the exact manual flow used for `rg-dmig`, run [scripts/deploy-existing-rg.ps1](c:\Users\jatmadan\Documents\GitHub\Entra-Permissions-Analyzer\scripts\deploy-existing-rg.ps1). It creates a temporary local-state Terraform workspace, provisions shared infrastructure, builds bootstrap images in ACR, applies the Container Apps resources, rebuilds the frontend against the live backend URL, and then runs smoke tests against the live frontend bundle. The script requires backend `/healthz` and unauthenticated backend `/api/projects` to pass, and reports backend `/readyz` separately as a readiness gate with its response body if dependencies are not fully ready yet.
+
+Example:
+
+```powershell
+./scripts/deploy-existing-rg.ps1 \
+   -ResourceGroupName rg-dmig \
+   -ExistingApplicationClientId 735e12ea-c482-4ccd-af90-8e36ecce1e9a \
+   -ExistingApplicationClientSecret '<existing-app-secret>' \
+   -FoundryEndpoint https://codex-jay-resource.openai.azure.com \
+   -FoundryKey '<foundry-key>' \
+   -GitHubRepository stark3998/Entra-Privilege-Analyzer
+```
+
+Add `-SkipSmokeTests` if you need to stop after deployment without validating the live endpoints.
+
+To deploy into an existing resource group such as `rg-dmig` and reuse an existing Entra app registration, provide these Terraform variables at plan/apply time:
+
+- `existing_resource_group_name`
+- `existing_application_client_id`
+- `existing_application_client_secret`
+- `foundry_endpoint`
+- `foundry_key`
+- `github_repository`
+
+When reusing an existing app registration, that app must already expose the `access_as_user` scope, include the required redirect URIs for the deployed frontend URL, and have the Microsoft Graph permissions the backend expects.
+
+The frontend image is build-time configured. For Azure deployments, pass `VITE_APP_CLIENT_ID`, `VITE_TENANT_ID`, and `VITE_API_BASE_URL` into the Docker build. The GitHub frontend deployment workflow now expects these repo variables for this path:
+
+- `APP_CLIENT_ID`
+- `BACKEND_CONTAINER_APP_NAME`
 | Technology | Purpose |
 |-----------|---------|
 | Azure Container Apps | Application hosting (backend, frontend, scheduled jobs) |
@@ -577,8 +613,11 @@ See [Infrastructure](#infrastructure) for Terraform-based Azure deployment.
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `VITE_APP_CLIENT_ID` | Prod | --- | Entra ID application client ID |
+| `VITE_TENANT_ID` | Prod | `common` | Entra ID tenant for MSAL authority |
 | `VITE_API_BASE_URL` | No | `/api` | Backend API base URL |
 | `VITE_LOCAL_MODE` | No | `false` | Skip MSAL authentication (dev only) |
+
+Backend CORS defaults to `http://localhost:5173` for local development and also allows the app's Azure Container Apps frontend hostname pattern by default. Azure deployments can still override that with `CORS_ORIGIN_REGEX` when needed.
 
 ---
 

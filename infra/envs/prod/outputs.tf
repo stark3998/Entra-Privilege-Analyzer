@@ -50,5 +50,5 @@ output "frontend_container_app_name" {
 
 output "resource_group_name" {
   description = "Resource group name"
-  value       = azurerm_resource_group.main.name
+  value       = local.resource_group_name
 }

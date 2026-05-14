@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.auth.deps import (
@@ -191,13 +192,13 @@ async def update_project(
     return _project_response(saved)
 
 
-@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{project_id}")
 async def delete_project(
     project_id: str,
     user: CurrentUser = Depends(get_current_user),
     repo: CosmosRepo = Depends(get_cosmos_repo),
     settings: Settings = Depends(get_settings),
-) -> None:
+) -> Response:
     """Delete a project. Owner only."""
     project = await validate_project_access(project_id, user, repo, settings)
     if project.owner_id != user.oid and not settings.local_mode:
@@ -207,6 +208,7 @@ async def delete_project(
         )
     await repo.delete_project(project.owner_id, project_id)
     logger.info("Project deleted: %s by user %s", project_id, user.oid)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{project_id}/validate-permissions")
@@ -383,17 +385,14 @@ async def update_member(
     return saved.model_dump(mode="json")
 
 
-@router.delete(
-    "/{project_id}/members/{member_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
+@router.delete("/{project_id}/members/{member_id}")
 async def remove_member(
     project_id: str,
     member_id: str,
     user: CurrentUser = Depends(get_current_user),
     repo: CosmosRepo = Depends(get_cosmos_repo),
     settings: Settings = Depends(get_settings),
-) -> None:
+) -> Response:
     """Remove a member from a project. Admin only."""
     await validate_project_access(
         project_id, user, repo, settings, required_role="admin",
@@ -412,3 +411,4 @@ async def remove_member(
         )
 
     await repo.delete_project_member(project_id, member_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

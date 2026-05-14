@@ -22,6 +22,10 @@ terraform {
 
 data "azuread_client_config" "current" {}
 
+locals {
+  create_application_registration = var.existing_application_client_id == null
+}
+
 # Microsoft Graph well-known app ID
 data "azuread_application_published_app_ids" "well_known" {}
 
@@ -29,11 +33,17 @@ data "azuread_service_principal" "msgraph" {
   client_id = data.azuread_application_published_app_ids.well_known.result["MicrosoftGraph"]
 }
 
+data "azuread_service_principal" "existing" {
+  count     = local.create_application_registration ? 0 : 1
+  client_id = var.existing_application_client_id
+}
+
 # ---------------------
 # Entra ID Application (multi-tenant)
 # ---------------------
 
 resource "azuread_application" "app" {
+  count            = local.create_application_registration ? 1 : 0
   display_name     = "${var.project_name}-${var.environment}"
   sign_in_audience = "AzureADMultipleOrgs"
 
@@ -134,7 +144,8 @@ resource "azuread_application" "app" {
 # ---------------------
 
 resource "azuread_service_principal" "app" {
-  client_id                    = azuread_application.app.client_id
+  count                        = local.create_application_registration ? 1 : 0
+  client_id                    = azuread_application.app[0].client_id
   app_role_assignment_required = false
 
   owners = [data.azuread_client_config.current.object_id]
@@ -145,7 +156,8 @@ resource "azuread_service_principal" "app" {
 # ---------------------
 
 resource "azuread_application_password" "app" {
-  application_id = azuread_application.app.id
+  count          = local.create_application_registration ? 1 : 0
+  application_id = azuread_application.app[0].id
   display_name   = "terraform-managed-${var.environment}"
   end_date       = timeadd(timestamp(), "8760h") # 1 year
 
@@ -171,7 +183,8 @@ resource "azurerm_user_assigned_identity" "app" {
 # ---------------------
 
 resource "azuread_application_federated_identity_credential" "github_main" {
-  application_id = azuread_application.app.id
+  count          = local.create_application_registration ? 1 : 0
+  application_id = azuread_application.app[0].id
   display_name   = "github-actions-main"
   description    = "GitHub Actions OIDC for main branch deployments"
   audiences      = ["api://AzureADTokenExchange"]
@@ -180,7 +193,8 @@ resource "azuread_application_federated_identity_credential" "github_main" {
 }
 
 resource "azuread_application_federated_identity_credential" "github_pr" {
-  application_id = azuread_application.app.id
+  count          = local.create_application_registration ? 1 : 0
+  application_id = azuread_application.app[0].id
   display_name   = "github-actions-pr"
   description    = "GitHub Actions OIDC for pull request workflows"
   audiences      = ["api://AzureADTokenExchange"]

@@ -874,7 +874,7 @@ class CosmosRepo:
         items: list[Project] = [
             Project.model_validate(item)
             async for item in self._projects.query_items(
-                query=query, parameters=params, enable_cross_partition_query=True,
+                query=query, parameters=params,
             )
         ]
         return items[0] if items else None
@@ -1025,7 +1025,7 @@ class CosmosRepo:
         return [
             ProjectMember.model_validate(item)
             async for item in self._project_members.query_items(
-                query=query, parameters=params, enable_cross_partition_query=True,
+                query=query, parameters=params,
             )
         ]
 
@@ -1110,7 +1110,7 @@ class CosmosRepo:
         return [
             ScanSchedule.model_validate(item)
             async for item in self._scan_schedules.query_items(
-                query=query, parameters=[], enable_cross_partition_query=True,
+                query=query, parameters=[],
             )
         ]
 

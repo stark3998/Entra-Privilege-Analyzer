@@ -15,6 +15,10 @@ export class ApiClient {
     this.getToken = getToken;
   }
 
+  setTokenProvider(getToken: TokenProvider): void {
+    this.getToken = getToken;
+  }
+
   private async headers(): Promise<HeadersInit> {
     const token = await this.getToken();
     return {
@@ -101,14 +105,19 @@ export class ApiError extends Error {
 let clientInstance: ApiClient | null = null;
 
 export function getApiClient(getToken?: TokenProvider): ApiClient {
-  if (clientInstance) return clientInstance;
-
   const baseUrl = import.meta.env.VITE_API_BASE_URL || "";
   const isLocalMode = import.meta.env.VITE_LOCAL_MODE === "true";
   const tokenProvider =
     isLocalMode || !getToken
       ? () => Promise.resolve("local-dev-token")
       : getToken;
+
+  if (clientInstance) {
+    if (!isLocalMode && getToken) {
+      clientInstance.setTokenProvider(getToken);
+    }
+    return clientInstance;
+  }
 
   clientInstance = new ApiClient(baseUrl, tokenProvider);
   return clientInstance;

@@ -1,10 +1,12 @@
 // frontend/src/auth/msal.ts
 import { PublicClientApplication, type Configuration } from "@azure/msal-browser";
 
+const tenantId = import.meta.env.VITE_TENANT_ID || "common";
+
 const msalConfig: Configuration = {
   auth: {
     clientId: import.meta.env.VITE_APP_CLIENT_ID || "",
-    authority: "https://login.microsoftonline.com/common",
+    authority: `https://login.microsoftonline.com/${tenantId}`,
     redirectUri: window.location.origin,
     postLogoutRedirectUri: window.location.origin,
   },
