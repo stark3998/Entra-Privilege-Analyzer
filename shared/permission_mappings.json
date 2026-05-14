@@ -16,6 +16,16 @@
       "risk_weight": "high",
       "category": "user"
     },
+    "User.Invite.All": {
+      "actions": ["Invite external users to the organization"],
+      "risk_weight": "medium",
+      "category": "user"
+    },
+    "User.Export.All": {
+      "actions": ["Export user data"],
+      "risk_weight": "medium",
+      "category": "user"
+    },
     "Directory.Read.All": {
       "actions": ["Read directory data", "List directory objects"],
       "risk_weight": "low",
@@ -36,6 +46,16 @@
       "risk_weight": "medium",
       "category": "group"
     },
+    "GroupMember.Read.All": {
+      "actions": ["Read group memberships", "List members of all groups"],
+      "risk_weight": "low",
+      "category": "group"
+    },
+    "GroupMember.ReadWrite.All": {
+      "actions": ["Add members to groups", "Remove members from groups"],
+      "risk_weight": "medium",
+      "category": "group"
+    },
     "Application.Read.All": {
       "actions": ["Read all applications", "List app registrations"],
       "risk_weight": "low",
@@ -46,8 +66,38 @@
       "risk_weight": "high",
       "category": "application"
     },
+    "Application.ReadWrite.OwnedBy": {
+      "actions": ["Update owned applications", "Manage credentials for owned apps"],
+      "risk_weight": "medium",
+      "category": "application"
+    },
+    "ServicePrincipalEndpoint.Read.All": {
+      "actions": ["Read service principal endpoints"],
+      "risk_weight": "low",
+      "category": "application"
+    },
+    "ServicePrincipalEndpoint.ReadWrite.All": {
+      "actions": ["Update service principal endpoints", "Create service principal endpoints"],
+      "risk_weight": "high",
+      "category": "application"
+    },
+    "DelegatedPermissionGrant.ReadWrite.All": {
+      "actions": ["Create delegated permission grants", "Delete delegated permission grants"],
+      "risk_weight": "high",
+      "category": "application"
+    },
+    "AppRoleAssignment.ReadWrite.All": {
+      "actions": ["Manage app role assignments for all apps"],
+      "risk_weight": "high",
+      "category": "application"
+    },
     "RoleManagement.Read.All": {
       "actions": ["Read role definitions", "Read role assignments"],
+      "risk_weight": "low",
+      "category": "role"
+    },
+    "RoleManagement.Read.Directory": {
+      "actions": ["Read directory role definitions", "Read directory role assignments"],
       "risk_weight": "low",
       "category": "role"
     },
@@ -55,6 +105,26 @@
       "actions": ["Create role assignments", "Delete role assignments", "Manage role definitions"],
       "risk_weight": "critical",
       "category": "role"
+    },
+    "RoleAssignmentSchedule.Read.Directory": {
+      "actions": ["Read PIM role assignment schedules"],
+      "risk_weight": "low",
+      "category": "pim"
+    },
+    "RoleAssignmentSchedule.ReadWrite.Directory": {
+      "actions": ["Create PIM role assignment schedules", "Cancel PIM role assignment schedules"],
+      "risk_weight": "critical",
+      "category": "pim"
+    },
+    "RoleEligibilitySchedule.Read.Directory": {
+      "actions": ["Read PIM role eligibility schedules"],
+      "risk_weight": "low",
+      "category": "pim"
+    },
+    "RoleEligibilitySchedule.ReadWrite.Directory": {
+      "actions": ["Create PIM role eligibility schedules", "Cancel PIM role eligibility schedules"],
+      "risk_weight": "critical",
+      "category": "pim"
     },
     "Policy.Read.All": {
       "actions": ["Read all policies", "Read conditional access policies"],
@@ -66,6 +136,31 @@
       "risk_weight": "critical",
       "category": "policy"
     },
+    "Policy.ReadWrite.AuthenticationMethod": {
+      "actions": ["Update authentication method policies", "Configure MFA settings"],
+      "risk_weight": "critical",
+      "category": "policy"
+    },
+    "Policy.ReadWrite.Authorization": {
+      "actions": ["Update authorization policies", "Configure tenant-wide auth settings"],
+      "risk_weight": "critical",
+      "category": "policy"
+    },
+    "ConditionalAccessPolicy.Read.All": {
+      "actions": ["Read all conditional access policies and named locations"],
+      "risk_weight": "low",
+      "category": "policy"
+    },
+    "ConditionalAccessPolicy.ReadWrite": {
+      "actions": ["Create conditional access policies", "Update conditional access policies", "Delete conditional access policies"],
+      "risk_weight": "critical",
+      "category": "policy"
+    },
+    "Domain.ReadWrite.All": {
+      "actions": ["Update domain settings", "Configure federation on domains"],
+      "risk_weight": "high",
+      "category": "directory"
+    },
     "AuditLog.Read.All": {
       "actions": ["Read audit logs", "Read sign-in logs"],
       "risk_weight": "low",
@@ -76,10 +171,65 @@
       "risk_weight": "low",
       "category": "pim"
     },
+    "PrivilegedAccess.Read.AzureADGroup": {
+      "actions": ["Read PIM group assignments", "Read PIM group eligibility"],
+      "risk_weight": "low",
+      "category": "pim"
+    },
     "PrivilegedAccess.ReadWrite.AzureAD": {
       "actions": ["Activate PIM roles", "Create PIM assignments"],
       "risk_weight": "critical",
       "category": "pim"
+    },
+    "PrivilegedAccess.ReadWrite.AzureADGroup": {
+      "actions": ["Activate PIM group memberships", "Create PIM group assignments"],
+      "risk_weight": "critical",
+      "category": "pim"
+    },
+    "IdentityRiskEvent.Read.All": {
+      "actions": ["Read identity risk events", "List risk detections"],
+      "risk_weight": "low",
+      "category": "identity_protection"
+    },
+    "IdentityRiskyUser.Read.All": {
+      "actions": ["Read risky user information", "List users flagged for risk"],
+      "risk_weight": "low",
+      "category": "identity_protection"
+    },
+    "IdentityRiskyServicePrincipal.Read.All": {
+      "actions": ["Read risky service principal information"],
+      "risk_weight": "low",
+      "category": "identity_protection"
+    },
+    "IdentityRiskyUser.ReadWrite.All": {
+      "actions": ["Dismiss user risk", "Confirm user compromise", "Reset user risk state"],
+      "risk_weight": "high",
+      "category": "identity_protection"
+    },
+    "AccessReview.Read.All": {
+      "actions": ["Read access reviews", "List access review definitions and instances"],
+      "risk_weight": "low",
+      "category": "access_review"
+    },
+    "AccessReview.ReadWrite.All": {
+      "actions": ["Create access reviews", "Update access reviews", "Submit access review decisions"],
+      "risk_weight": "high",
+      "category": "access_review"
+    },
+    "AccessReview.ReadWrite.Membership": {
+      "actions": ["Manage access reviews for group and app memberships"],
+      "risk_weight": "high",
+      "category": "access_review"
+    },
+    "UserAuthenticationMethod.Read.All": {
+      "actions": ["Read user authentication methods", "List MFA registrations"],
+      "risk_weight": "low",
+      "category": "authentication"
+    },
+    "UserAuthenticationMethod.ReadWrite.All": {
+      "actions": ["Register authentication methods", "Delete authentication methods", "Reset MFA"],
+      "risk_weight": "critical",
+      "category": "authentication"
     },
     "Mail.Read": {
       "actions": ["Read user mail"],
@@ -91,6 +241,31 @@
       "risk_weight": "medium",
       "category": "mail"
     },
+    "Mail.Send": {
+      "actions": ["Send mail as any user"],
+      "risk_weight": "medium",
+      "category": "mail"
+    },
+    "Calendars.Read": {
+      "actions": ["Read user calendars", "Read calendar events"],
+      "risk_weight": "low",
+      "category": "calendar"
+    },
+    "Calendars.ReadWrite": {
+      "actions": ["Create calendar events", "Update calendar events", "Delete calendar events"],
+      "risk_weight": "medium",
+      "category": "calendar"
+    },
+    "Files.Read.All": {
+      "actions": ["Read all files user can access", "Read files in all site collections"],
+      "risk_weight": "low",
+      "category": "files"
+    },
+    "Files.ReadWrite.All": {
+      "actions": ["Read and write all files", "Upload files", "Delete files"],
+      "risk_weight": "medium",
+      "category": "files"
+    },
     "Sites.Read.All": {
       "actions": ["Read all SharePoint sites"],
       "risk_weight": "low",
@@ -100,28 +275,193 @@
       "actions": ["Read and write all SharePoint sites"],
       "risk_weight": "medium",
       "category": "sharepoint"
+    },
+    "Channel.ReadBasic.All": {
+      "actions": ["Read channel names and descriptions", "List channels in teams"],
+      "risk_weight": "low",
+      "category": "teams"
+    },
+    "TeamSettings.Read.All": {
+      "actions": ["Read team settings for all teams"],
+      "risk_weight": "low",
+      "category": "teams"
+    },
+    "TeamSettings.ReadWrite.All": {
+      "actions": ["Update team settings", "Configure team properties"],
+      "risk_weight": "medium",
+      "category": "teams"
+    },
+    "SecurityEvents.Read.All": {
+      "actions": ["Read security alerts", "List security events"],
+      "risk_weight": "low",
+      "category": "security"
+    },
+    "SecurityEvents.ReadWrite.All": {
+      "actions": ["Update security alerts", "Dismiss security events", "Manage alert status"],
+      "risk_weight": "high",
+      "category": "security"
+    },
+    "ThreatIndicators.ReadWrite.OwnedBy": {
+      "actions": ["Create threat indicators", "Update owned threat indicators", "Delete owned threat indicators"],
+      "risk_weight": "high",
+      "category": "security"
+    },
+    "SecurityActions.ReadWrite.All": {
+      "actions": ["Trigger security actions", "Cancel security actions"],
+      "risk_weight": "high",
+      "category": "security"
+    },
+    "Device.Read.All": {
+      "actions": ["Read all devices", "List registered devices"],
+      "risk_weight": "low",
+      "category": "device"
+    },
+    "Device.ReadWrite.All": {
+      "actions": ["Create devices", "Update devices", "Delete devices"],
+      "risk_weight": "high",
+      "category": "device"
+    },
+    "DeviceManagementConfiguration.Read.All": {
+      "actions": ["Read Intune device configuration policies", "List compliance policies"],
+      "risk_weight": "low",
+      "category": "device_management"
+    },
+    "DeviceManagementConfiguration.ReadWrite.All": {
+      "actions": ["Create device configuration policies", "Update compliance policies"],
+      "risk_weight": "high",
+      "category": "device_management"
+    },
+    "DeviceManagementManagedDevices.Read.All": {
+      "actions": ["Read managed devices", "List Intune-enrolled devices"],
+      "risk_weight": "low",
+      "category": "device_management"
+    },
+    "DeviceManagementManagedDevices.ReadWrite.All": {
+      "actions": ["Wipe devices", "Retire devices", "Sync managed devices"],
+      "risk_weight": "high",
+      "category": "device_management"
+    },
+    "EntitlementManagement.Read.All": {
+      "actions": ["Read entitlement management access packages", "Read assignment policies"],
+      "risk_weight": "low",
+      "category": "governance"
+    },
+    "EntitlementManagement.ReadWrite.All": {
+      "actions": ["Create access packages", "Update assignment policies", "Grant access package assignments"],
+      "risk_weight": "high",
+      "category": "governance"
+    },
+    "CrossTenantInformation.ReadBasic.All": {
+      "actions": ["Read basic cross-tenant access information"],
+      "risk_weight": "low",
+      "category": "directory"
+    },
+    "CrossTenantUserProfileSharing.ReadWrite.All": {
+      "actions": ["Configure cross-tenant user profile sharing", "Update B2B collaboration settings"],
+      "risk_weight": "high",
+      "category": "directory"
     }
   },
   "audit_operation_to_permission": {
     "Add user": "User.ReadWrite.All",
     "Update user": "User.ReadWrite.All",
     "Delete user": "User.ReadWrite.All",
+    "Reset user password": "User.ReadWrite.All",
+    "Set user manager": "User.ReadWrite.All",
+    "Restore user": "User.ReadWrite.All",
+    "Disable account": "User.ReadWrite.All",
+    "Enable account": "User.ReadWrite.All",
+    "Change user password": "User.ReadWrite.All",
+    "Change user license": "User.ReadWrite.All",
+    "Invite external user": "User.Invite.All",
+    "Redeem external user invite": "User.ReadWrite.All",
+    "Hard delete user": "User.ReadWrite.All",
+
     "Add member to group": "Group.ReadWrite.All",
     "Remove member from group": "Group.ReadWrite.All",
     "Add group": "Group.ReadWrite.All",
     "Delete group": "Group.ReadWrite.All",
+    "Update group": "Group.ReadWrite.All",
+    "Add owner to group": "Group.ReadWrite.All",
+    "Remove owner from group": "Group.ReadWrite.All",
+    "Set group license": "Group.ReadWrite.All",
+    "Add app role assignment to group": "Group.ReadWrite.All",
+
     "Add application": "Application.ReadWrite.All",
     "Update application": "Application.ReadWrite.All",
     "Delete application": "Application.ReadWrite.All",
     "Add service principal": "Application.ReadWrite.All",
     "Update service principal": "Application.ReadWrite.All",
+    "Add app role assignment to service principal": "Application.ReadWrite.All",
+    "Remove app role assignment from service principal": "Application.ReadWrite.All",
+    "Update application - Certificates and secrets management": "Application.ReadWrite.All",
+    "Add owner to application": "Application.ReadWrite.All",
+    "Remove owner from application": "Application.ReadWrite.All",
+    "Add owner to service principal": "Application.ReadWrite.All",
+    "Remove owner from service principal": "Application.ReadWrite.All",
+    "Add application credentials": "Application.ReadWrite.All",
+    "Update application credentials": "Application.ReadWrite.All",
+    "Remove application credentials": "Application.ReadWrite.All",
+    "Set token configuration on application": "Application.ReadWrite.All",
+
+    "Add delegated permission grant": "Directory.ReadWrite.All",
+    "Remove delegated permission grant": "Directory.ReadWrite.All",
+    "Consent to application": "Directory.ReadWrite.All",
+
     "Add member to role": "RoleManagement.ReadWrite.Directory",
     "Remove member from role": "RoleManagement.ReadWrite.Directory",
+    "Add eligible member to role in PIM completed (permanent)": "RoleManagement.ReadWrite.Directory",
+    "Add eligible member to role in PIM completed (timebound)": "RoleManagement.ReadWrite.Directory",
+    "Add member to role in PIM completed (permanent)": "RoleManagement.ReadWrite.Directory",
+    "Add member to role in PIM completed (timebound)": "RoleManagement.ReadWrite.Directory",
+    "Add member to role outside of PIM (permanent)": "RoleManagement.ReadWrite.Directory",
+    "Add eligible member to role": "RoleManagement.ReadWrite.Directory",
+    "Remove eligible member from role": "RoleManagement.ReadWrite.Directory",
+
+    "Add member to role completed (PIM activation)": "PrivilegedAccess.ReadWrite.AzureAD",
+    "Remove member from role (PIM activation expired)": "PrivilegedAccess.ReadWrite.AzureAD",
+    "Remove member from role completed (PIM deactivate)": "PrivilegedAccess.ReadWrite.AzureAD",
+    "Update role setting in PIM": "PrivilegedAccess.ReadWrite.AzureAD",
+
     "Add conditional access policy": "Policy.ReadWrite.ConditionalAccess",
     "Update conditional access policy": "Policy.ReadWrite.ConditionalAccess",
     "Delete conditional access policy": "Policy.ReadWrite.ConditionalAccess",
-    "Add delegated permission grant": "Directory.ReadWrite.All",
-    "Consent to application": "Directory.ReadWrite.All"
+
+    "Set Company Information": "Directory.ReadWrite.All",
+    "Set federation settings on domain": "Domain.ReadWrite.All",
+    "Set domain authentication": "Domain.ReadWrite.All",
+    "Set password reset policy": "Policy.ReadWrite.AuthenticationMethod",
+    "Update authorization policy": "Policy.ReadWrite.Authorization",
+
+    "Add device": "Device.ReadWrite.All",
+    "Update device": "Device.ReadWrite.All",
+    "Delete device": "Device.ReadWrite.All",
+    "Add registered owner to device": "Device.ReadWrite.All",
+    "Add registered users to device": "Device.ReadWrite.All",
+
+    "Register security info": "UserAuthenticationMethod.ReadWrite.All",
+    "Delete security info": "UserAuthenticationMethod.ReadWrite.All",
+    "Update security info": "UserAuthenticationMethod.ReadWrite.All",
+    "Admin registered security info": "UserAuthenticationMethod.ReadWrite.All",
+    "Admin deleted security info": "UserAuthenticationMethod.ReadWrite.All",
+
+    "Add named location": "Policy.ReadWrite.ConditionalAccess",
+    "Update named location": "Policy.ReadWrite.ConditionalAccess",
+    "Delete named location": "Policy.ReadWrite.ConditionalAccess",
+
+    "Add authentication method": "UserAuthenticationMethod.ReadWrite.All",
+    "Remove authentication method": "UserAuthenticationMethod.ReadWrite.All",
+    "User registered all required security info": "UserAuthenticationMethod.ReadWrite.All",
+    "Admin updated user authentication method": "UserAuthenticationMethod.ReadWrite.All",
+
+    "Add access review": "AccessReview.ReadWrite.All",
+    "Delete access review": "AccessReview.ReadWrite.All",
+    "Update access review": "AccessReview.ReadWrite.All",
+    "Apply access review": "AccessReview.ReadWrite.All",
+
+    "Update entitlement management access package": "EntitlementManagement.ReadWrite.All",
+    "Create entitlement management access package": "EntitlementManagement.ReadWrite.All",
+    "Delete entitlement management access package": "EntitlementManagement.ReadWrite.All"
   },
   "risk_weights": {
     "low": 1,

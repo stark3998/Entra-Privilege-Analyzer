@@ -22,6 +22,11 @@ import { ProjectsHomePage } from "@/pages/ProjectsHomePage";
 import { ProjectCreatePage } from "@/pages/ProjectCreatePage";
 import { ScanPage } from "@/pages/ScanPage";
 import { ProjectMembersPage } from "@/pages/ProjectMembersPage";
+import { AppRegistrationsPage } from "@/pages/AppRegistrationsPage";
+import { ConditionalAccessPage } from "@/pages/ConditionalAccessPage";
+import { GroupsPage } from "@/pages/GroupsPage";
+import { CustomRolesPage } from "@/pages/CustomRolesPage";
+import { RemediationHistoryPage } from "@/pages/RemediationHistoryPage";
 import { useAuth } from "@/auth/useAuth";
 import { ProjectProvider } from "@/store/projectContext";
 import { getApiClient } from "@/api/client";
@@ -59,6 +64,11 @@ function AuthenticatedApp() {
         <Route path="drift/:id" element={<DriftDetailPage />} />
         <Route path="best-practices" element={<BestPracticesPage />} />
         <Route path="best-practices/:id" element={<BestPracticeDetailPage />} />
+        <Route path="app-registrations" element={<AppRegistrationsPage />} />
+        <Route path="conditional-access" element={<ConditionalAccessPage />} />
+        <Route path="groups" element={<GroupsPage />} />
+        <Route path="custom-roles" element={<CustomRolesPage />} />
+        <Route path="remediation" element={<RemediationHistoryPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="scan" element={<ScanPage />} />
         <Route path="members" element={<ProjectMembersPage />} />

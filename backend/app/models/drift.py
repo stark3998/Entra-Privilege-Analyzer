@@ -31,6 +31,9 @@ class DriftType(StrEnum):
 
     FIRST_SEEN = "first_seen"
     FREQUENCY_ANOMALY = "frequency_anomaly"
+    IDENTITY_PROTECTION = "identity_protection"
+    GUEST_PRIVILEGE_ESCALATION = "guest_privilege_escalation"
+    GROUP_ROLE_CHANGE = "group_role_change"
 
 
 class DriftAlert(BaseModel):
@@ -56,6 +59,9 @@ class DriftAlert(BaseModel):
     acknowledged_by: str | None = None
     acknowledged_at: datetime | None = None
     resolved_at: datetime | None = None
+    risk_event_type: str | None = None
+    risk_detection_id: str | None = None
+    entra_risk_level: str | None = None
 
 
 class BaselineStats(BaseModel):

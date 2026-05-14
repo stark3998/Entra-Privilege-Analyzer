@@ -11,12 +11,21 @@ from azure.cosmos.exceptions import CosmosHttpResponseError, CosmosResourceNotFo
 
 from app.config import Settings
 from app.models.action import ActionEvent
+from app.models.alert_rules import AlertRule, ScanSchedule
 from app.models.best_practice import BestPracticeViolation
 from app.models.drift import BaselineStats, DriftAlert
 from app.models.identity import IdentityProfile
 from app.models.narrative import Narrative
 from app.models.project import Project, ProjectMember, ScanRecord
 from app.models.role import RoleRecommendation
+from app.models.access_review import AccessReviewDefinition
+from app.models.app_registration import AppRegistrationProfile
+from app.models.conditional_access import ConditionalAccessPolicyRecord
+from app.models.custom_role import CustomRoleProfile
+from app.models.group import GroupProfile
+from app.models.mfa_status import MfaRegistrationRecord
+from app.models.remediation import RemediationAction
+from app.models.sod_policy import SodConflictRule
 from app.models.tenant import TenantConfig
 
 logger = logging.getLogger(__name__)
@@ -46,6 +55,17 @@ class CosmosRepo:
         projects: ContainerProxy,
         project_members: ContainerProxy,
         scan_history: ContainerProxy,
+        scan_schedules: ContainerProxy,
+        alert_rules: ContainerProxy,
+        app_registrations: ContainerProxy,
+        mfa_records: ContainerProxy,
+        ca_policies: ContainerProxy,
+        risk_detections: ContainerProxy,
+        groups: ContainerProxy,
+        access_reviews: ContainerProxy,
+        sod_rules: ContainerProxy,
+        custom_roles: ContainerProxy,
+        remediation_actions: ContainerProxy,
     ) -> None:
         self._client = client
         self._db = db
@@ -61,6 +81,17 @@ class CosmosRepo:
         self._projects = projects
         self._project_members = project_members
         self._scan_history = scan_history
+        self._scan_schedules = scan_schedules
+        self._alert_rules = alert_rules
+        self._app_registrations = app_registrations
+        self._mfa_records = mfa_records
+        self._ca_policies = ca_policies
+        self._risk_detections = risk_detections
+        self._groups = groups
+        self._access_reviews = access_reviews
+        self._sod_rules = sod_rules
+        self._custom_roles = custom_roles
+        self._remediation_actions = remediation_actions
 
     @classmethod
     async def create(cls, settings: Settings) -> CosmosRepo:
@@ -122,13 +153,59 @@ class CosmosRepo:
             id="scan_history",
             partition_key=PartitionKey(path="/projectId"),
         )
+        scan_schedules = await db.create_container_if_not_exists(
+            id="scan_schedules",
+            partition_key=PartitionKey(path="/projectId"),
+        )
+        alert_rules = await db.create_container_if_not_exists(
+            id="alert_rules",
+            partition_key=PartitionKey(path="/projectId"),
+        )
+        app_registrations = await db.create_container_if_not_exists(
+            id="app_registrations",
+            partition_key=PartitionKey(path="/tenantId"),
+        )
+        mfa_records = await db.create_container_if_not_exists(
+            id="mfa_records",
+            partition_key=PartitionKey(path="/tenantId"),
+        )
+        ca_policies = await db.create_container_if_not_exists(
+            id="ca_policies",
+            partition_key=PartitionKey(path="/tenantId"),
+        )
+        risk_detections = await db.create_container_if_not_exists(
+            id="risk_detections",
+            partition_key=PartitionKey(path="/tenantId"),
+        )
+        groups = await db.create_container_if_not_exists(
+            id="groups",
+            partition_key=PartitionKey(path="/tenantId"),
+        )
+        access_reviews = await db.create_container_if_not_exists(
+            id="access_reviews",
+            partition_key=PartitionKey(path="/tenantId"),
+        )
+        sod_rules = await db.create_container_if_not_exists(
+            id="sod_rules",
+            partition_key=PartitionKey(path="/tenantId"),
+        )
+        custom_roles = await db.create_container_if_not_exists(
+            id="custom_roles",
+            partition_key=PartitionKey(path="/tenantId"),
+        )
+        remediation_actions = await db.create_container_if_not_exists(
+            id="remediation_actions",
+            partition_key=PartitionKey(path="/tenantId"),
+        )
 
         logger.info(
             "Cosmos DB initialised — database=%s, containers="
             "tenant_configs,identity_profiles,action_events,sync_state,"
             "role_recommendations,drift_alerts,baselines,"
             "best_practice_violations,narratives,projects,"
-            "project_members,scan_history",
+            "project_members,scan_history,scan_schedules,alert_rules,"
+            "app_registrations,mfa_records,ca_policies,risk_detections,"
+            "groups,access_reviews,sod_rules,custom_roles,remediation_actions",
             settings.cosmos_database,
         )
         return cls(
@@ -146,6 +223,17 @@ class CosmosRepo:
             projects=projects,
             project_members=project_members,
             scan_history=scan_history,
+            scan_schedules=scan_schedules,
+            alert_rules=alert_rules,
+            app_registrations=app_registrations,
+            mfa_records=mfa_records,
+            ca_policies=ca_policies,
+            risk_detections=risk_detections,
+            groups=groups,
+            access_reviews=access_reviews,
+            sod_rules=sod_rules,
+            custom_roles=custom_roles,
+            remediation_actions=remediation_actions,
         )
 
     # ------------------------------------------------------------------
@@ -996,6 +1084,638 @@ class CosmosRepo:
         return items[0] if items else None
 
     # ------------------------------------------------------------------
+    # Scan schedule operations
+    # ------------------------------------------------------------------
+
+    async def get_scan_schedules(self) -> list[ScanSchedule]:
+        """Return all enabled scan schedules (cross-partition)."""
+        query = "SELECT * FROM c WHERE c.enabled = true"
+        return [
+            ScanSchedule.model_validate(item)
+            async for item in self._scan_schedules.query_items(
+                query=query, parameters=[], enable_cross_partition_query=True,
+            )
+        ]
+
+    async def get_scan_schedules_for_project(
+        self, project_id: str,
+    ) -> list[ScanSchedule]:
+        """List all scan schedules for a project."""
+        query = "SELECT * FROM c WHERE c.projectId = @projectId"
+        params: list[dict[str, str]] = [{"name": "@projectId", "value": project_id}]
+        return [
+            ScanSchedule.model_validate(item)
+            async for item in self._scan_schedules.query_items(
+                query=query, parameters=params, partition_key=project_id,
+            )
+        ]
+
+    async def upsert_scan_schedule(self, schedule: ScanSchedule) -> ScanSchedule:
+        """Insert or replace a scan schedule document."""
+        body = schedule.model_dump(mode="json")
+        body["projectId"] = schedule.project_id
+        try:
+            result: dict[str, Any] = await self._scan_schedules.upsert_item(body=body)
+            return ScanSchedule.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos upsert_scan_schedule failed for %s/%s: %s",
+                schedule.project_id, schedule.id, exc.message,
+            )
+            raise
+
+    async def delete_scan_schedule(self, project_id: str, schedule_id: str) -> None:
+        """Delete a scan schedule."""
+        try:
+            await self._scan_schedules.delete_item(
+                item=schedule_id, partition_key=project_id,
+            )
+        except CosmosResourceNotFoundError:
+            pass
+
+    # ------------------------------------------------------------------
+    # Alert rule operations
+    # ------------------------------------------------------------------
+
+    async def get_alert_rules_for_project(
+        self, project_id: str,
+    ) -> list[AlertRule]:
+        """List all alert rules for a project."""
+        query = "SELECT * FROM c WHERE c.projectId = @projectId"
+        params: list[dict[str, str]] = [{"name": "@projectId", "value": project_id}]
+        return [
+            AlertRule.model_validate(item)
+            async for item in self._alert_rules.query_items(
+                query=query, parameters=params, partition_key=project_id,
+            )
+        ]
+
+    async def get_alert_rule(
+        self, project_id: str, rule_id: str,
+    ) -> AlertRule | None:
+        """Point-read an alert rule."""
+        try:
+            item: dict[str, Any] = await self._alert_rules.read_item(
+                item=rule_id, partition_key=project_id,
+            )
+            return AlertRule.model_validate(item)
+        except CosmosResourceNotFoundError:
+            return None
+
+    async def upsert_alert_rule(self, rule: AlertRule) -> AlertRule:
+        """Insert or replace an alert rule document."""
+        body = rule.model_dump(mode="json")
+        body["projectId"] = rule.project_id
+        try:
+            result: dict[str, Any] = await self._alert_rules.upsert_item(body=body)
+            return AlertRule.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos upsert_alert_rule failed for %s/%s: %s",
+                rule.project_id, rule.id, exc.message,
+            )
+            raise
+
+    async def delete_alert_rule(self, project_id: str, rule_id: str) -> None:
+        """Delete an alert rule."""
+        try:
+            await self._alert_rules.delete_item(
+                item=rule_id, partition_key=project_id,
+            )
+        except CosmosResourceNotFoundError:
+            pass
+
+    # ------------------------------------------------------------------
+    # App registration operations
+    # ------------------------------------------------------------------
+
+    async def upsert_app_registration(
+        self, tenant_id: str, app: AppRegistrationProfile,
+    ) -> AppRegistrationProfile:
+        """Insert or replace an app registration profile."""
+        body = app.model_dump(mode="json")
+        body["tenantId"] = tenant_id
+        try:
+            result: dict[str, Any] = await self._app_registrations.upsert_item(body=body)
+            return AppRegistrationProfile.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos upsert_app_registration failed for %s/%s: %s",
+                tenant_id,
+                app.id,
+                exc.message,
+            )
+            raise
+
+    async def get_app_registration(
+        self, tenant_id: str, app_id: str,
+    ) -> AppRegistrationProfile | None:
+        """Point-read an app registration by tenant and app ID."""
+        try:
+            item: dict[str, Any] = await self._app_registrations.read_item(
+                item=app_id,
+                partition_key=tenant_id,
+            )
+            return AppRegistrationProfile.model_validate(item)
+        except CosmosResourceNotFoundError:
+            return None
+
+    async def list_app_registrations(
+        self, tenant_id: str, offset: int = 0, limit: int = 50,
+    ) -> tuple[list[AppRegistrationProfile], int]:
+        """List app registrations for a tenant with pagination.
+
+        Returns (items, total_count).
+        """
+        conditions = ["c.tenantId = @tenantId"]
+        parameters: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
+        where_clause = " AND ".join(conditions)
+
+        # Total count
+        count_query = f"SELECT VALUE COUNT(1) FROM c WHERE {where_clause}"
+        count_results: list[int] = [
+            item
+            async for item in self._app_registrations.query_items(
+                query=count_query,
+                parameters=parameters,
+                partition_key=tenant_id,
+            )
+        ]
+        total = count_results[0] if count_results else 0
+
+        # Paged results
+        data_query = (
+            f"SELECT * FROM c WHERE {where_clause}"
+            f" ORDER BY c.display_name OFFSET @offset LIMIT @limit"
+        )
+        data_params: list[dict[str, Any]] = [
+            *parameters,
+            {"name": "@offset", "value": offset},
+            {"name": "@limit", "value": limit},
+        ]
+        items: list[AppRegistrationProfile] = [
+            AppRegistrationProfile.model_validate(item)
+            async for item in self._app_registrations.query_items(
+                query=data_query,
+                parameters=data_params,
+                partition_key=tenant_id,
+            )
+        ]
+        return items, total
+
+    # ------------------------------------------------------------------
+    # MFA record operations
+    # ------------------------------------------------------------------
+
+    async def upsert_mfa_record(
+        self, tenant_id: str, record: MfaRegistrationRecord,
+    ) -> MfaRegistrationRecord:
+        """Insert or replace an MFA registration record."""
+        body = record.model_dump(mode="json")
+        body["tenantId"] = tenant_id
+        try:
+            result: dict[str, Any] = await self._mfa_records.upsert_item(body=body)
+            return MfaRegistrationRecord.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos upsert_mfa_record failed for %s/%s: %s",
+                tenant_id,
+                record.id,
+                exc.message,
+            )
+            raise
+
+    async def get_mfa_record(
+        self, tenant_id: str, record_id: str,
+    ) -> MfaRegistrationRecord | None:
+        """Point-read an MFA record by tenant and record ID."""
+        try:
+            item: dict[str, Any] = await self._mfa_records.read_item(
+                item=record_id,
+                partition_key=tenant_id,
+            )
+            return MfaRegistrationRecord.model_validate(item)
+        except CosmosResourceNotFoundError:
+            return None
+
+    async def list_mfa_records(
+        self, tenant_id: str, offset: int = 0, limit: int = 50,
+    ) -> tuple[list[MfaRegistrationRecord], int]:
+        """List MFA registration records for a tenant with pagination.
+
+        Returns (items, total_count).
+        """
+        conditions = ["c.tenantId = @tenantId"]
+        parameters: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
+        where_clause = " AND ".join(conditions)
+
+        # Total count
+        count_query = f"SELECT VALUE COUNT(1) FROM c WHERE {where_clause}"
+        count_results: list[int] = [
+            item
+            async for item in self._mfa_records.query_items(
+                query=count_query,
+                parameters=parameters,
+                partition_key=tenant_id,
+            )
+        ]
+        total = count_results[0] if count_results else 0
+
+        # Paged results
+        data_query = (
+            f"SELECT * FROM c WHERE {where_clause}"
+            f" ORDER BY c.id OFFSET @offset LIMIT @limit"
+        )
+        data_params: list[dict[str, Any]] = [
+            *parameters,
+            {"name": "@offset", "value": offset},
+            {"name": "@limit", "value": limit},
+        ]
+        items: list[MfaRegistrationRecord] = [
+            MfaRegistrationRecord.model_validate(item)
+            async for item in self._mfa_records.query_items(
+                query=data_query,
+                parameters=data_params,
+                partition_key=tenant_id,
+            )
+        ]
+        return items, total
+
+    # ------------------------------------------------------------------
+    # Conditional access policy operations
+    # ------------------------------------------------------------------
+
+    async def upsert_ca_policy(
+        self, tenant_id: str, policy: ConditionalAccessPolicyRecord,
+    ) -> ConditionalAccessPolicyRecord:
+        """Insert or replace a conditional access policy record."""
+        body = policy.model_dump(mode="json")
+        body["tenantId"] = tenant_id
+        try:
+            result: dict[str, Any] = await self._ca_policies.upsert_item(body=body)
+            return ConditionalAccessPolicyRecord.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos upsert_ca_policy failed for %s/%s: %s",
+                tenant_id,
+                policy.id,
+                exc.message,
+            )
+            raise
+
+    async def list_ca_policies(
+        self, tenant_id: str,
+    ) -> list[ConditionalAccessPolicyRecord]:
+        """List all conditional access policies for a tenant."""
+        query = "SELECT * FROM c WHERE c.tenantId = @tenantId"
+        parameters: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
+        return [
+            ConditionalAccessPolicyRecord.model_validate(item)
+            async for item in self._ca_policies.query_items(
+                query=query,
+                parameters=parameters,
+                partition_key=tenant_id,
+            )
+        ]
+
+    # ------------------------------------------------------------------
+    # Risk detection operations
+    # ------------------------------------------------------------------
+
+    async def upsert_risk_detection(
+        self, tenant_id: str, detection: dict[str, Any],
+    ) -> None:
+        """Insert or replace a risk detection summary (stored as raw dict)."""
+        detection["tenantId"] = tenant_id
+        try:
+            await self._risk_detections.upsert_item(body=detection)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos upsert_risk_detection failed for %s/%s: %s",
+                tenant_id,
+                detection.get("id", "unknown"),
+                exc.message,
+            )
+            raise
+
+    async def list_risk_detections(
+        self, tenant_id: str, limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List risk detection summaries for a tenant."""
+        query = (
+            "SELECT * FROM c WHERE c.tenantId = @tenantId"
+            " ORDER BY c._ts DESC OFFSET 0 LIMIT @limit"
+        )
+        parameters: list[dict[str, Any]] = [
+            {"name": "@tenantId", "value": tenant_id},
+            {"name": "@limit", "value": limit},
+        ]
+        return [
+            item
+            async for item in self._risk_detections.query_items(
+                query=query,
+                parameters=parameters,
+                partition_key=tenant_id,
+            )
+        ]
+
+    # ------------------------------------------------------------------
+    # Group operations
+    # ------------------------------------------------------------------
+
+    async def upsert_group(
+        self, tenant_id: str, group: GroupProfile,
+    ) -> GroupProfile:
+        """Insert or replace a group profile."""
+        body = group.model_dump(mode="json")
+        body["tenantId"] = tenant_id
+        try:
+            result: dict[str, Any] = await self._groups.upsert_item(body=body)
+            return GroupProfile.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos upsert_group failed for %s/%s: %s",
+                tenant_id,
+                group.id,
+                exc.message,
+            )
+            raise
+
+    async def get_group(
+        self, tenant_id: str, group_id: str,
+    ) -> GroupProfile | None:
+        """Point-read a group profile by tenant and group ID."""
+        try:
+            item: dict[str, Any] = await self._groups.read_item(
+                item=group_id,
+                partition_key=tenant_id,
+            )
+            return GroupProfile.model_validate(item)
+        except CosmosResourceNotFoundError:
+            return None
+
+    async def list_groups(
+        self, tenant_id: str, offset: int = 0, limit: int = 50,
+    ) -> tuple[list[GroupProfile], int]:
+        """List group profiles for a tenant with pagination.
+
+        Returns (items, total_count).
+        """
+        conditions = ["c.tenantId = @tenantId"]
+        parameters: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
+        where_clause = " AND ".join(conditions)
+
+        # Total count
+        count_query = f"SELECT VALUE COUNT(1) FROM c WHERE {where_clause}"
+        count_results: list[int] = [
+            item
+            async for item in self._groups.query_items(
+                query=count_query,
+                parameters=parameters,
+                partition_key=tenant_id,
+            )
+        ]
+        total = count_results[0] if count_results else 0
+
+        # Paged results
+        data_query = (
+            f"SELECT * FROM c WHERE {where_clause}"
+            f" ORDER BY c.display_name OFFSET @offset LIMIT @limit"
+        )
+        data_params: list[dict[str, Any]] = [
+            *parameters,
+            {"name": "@offset", "value": offset},
+            {"name": "@limit", "value": limit},
+        ]
+        items: list[GroupProfile] = [
+            GroupProfile.model_validate(item)
+            async for item in self._groups.query_items(
+                query=data_query,
+                parameters=data_params,
+                partition_key=tenant_id,
+            )
+        ]
+        return items, total
+
+    # ------------------------------------------------------------------
+    # Access review operations
+    # ------------------------------------------------------------------
+
+    async def upsert_access_review(
+        self, tenant_id: str, review: AccessReviewDefinition,
+    ) -> AccessReviewDefinition:
+        """Insert or replace an access review definition."""
+        body = review.model_dump(mode="json")
+        body["tenantId"] = tenant_id
+        try:
+            result: dict[str, Any] = await self._access_reviews.upsert_item(body=body)
+            return AccessReviewDefinition.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos upsert_access_review failed for %s/%s: %s",
+                tenant_id,
+                review.id,
+                exc.message,
+            )
+            raise
+
+    async def list_access_reviews(
+        self, tenant_id: str,
+    ) -> list[AccessReviewDefinition]:
+        """List all access review definitions for a tenant."""
+        query = "SELECT * FROM c WHERE c.tenantId = @tenantId"
+        parameters: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
+        return [
+            AccessReviewDefinition.model_validate(item)
+            async for item in self._access_reviews.query_items(
+                query=query,
+                parameters=parameters,
+                partition_key=tenant_id,
+            )
+        ]
+
+    # ------------------------------------------------------------------
+    # SoD rule operations
+    # ------------------------------------------------------------------
+
+    async def get_sod_rules(
+        self, tenant_id: str,
+    ) -> list[SodConflictRule]:
+        """List all separation-of-duty conflict rules for a tenant."""
+        query = "SELECT * FROM c WHERE c.tenantId = @tenantId"
+        parameters: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
+        return [
+            SodConflictRule.model_validate(item)
+            async for item in self._sod_rules.query_items(
+                query=query,
+                parameters=parameters,
+                partition_key=tenant_id,
+            )
+        ]
+
+    async def upsert_sod_rule(
+        self, tenant_id: str, rule: SodConflictRule,
+    ) -> SodConflictRule:
+        """Insert or replace a separation-of-duty conflict rule."""
+        body = rule.model_dump(mode="json")
+        body["tenantId"] = tenant_id
+        try:
+            result: dict[str, Any] = await self._sod_rules.upsert_item(body=body)
+            return SodConflictRule.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos upsert_sod_rule failed for %s/%s: %s",
+                tenant_id,
+                rule.id,
+                exc.message,
+            )
+            raise
+
+    async def delete_sod_rule(
+        self, tenant_id: str, rule_id: str,
+    ) -> None:
+        """Delete a separation-of-duty conflict rule."""
+        try:
+            await self._sod_rules.delete_item(
+                item=rule_id, partition_key=tenant_id,
+            )
+        except CosmosResourceNotFoundError:
+            pass
+
+    # ------------------------------------------------------------------
+    # Custom role operations
+    # ------------------------------------------------------------------
+
+    async def upsert_custom_role(
+        self, tenant_id: str, role: CustomRoleProfile,
+    ) -> CustomRoleProfile:
+        """Insert or replace a custom role profile."""
+        body = role.model_dump(mode="json")
+        body["tenantId"] = tenant_id
+        try:
+            result: dict[str, Any] = await self._custom_roles.upsert_item(body=body)
+            return CustomRoleProfile.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos upsert_custom_role failed for %s/%s: %s",
+                tenant_id,
+                role.id,
+                exc.message,
+            )
+            raise
+
+    async def list_custom_roles(
+        self, tenant_id: str,
+    ) -> list[CustomRoleProfile]:
+        """List all custom role profiles for a tenant."""
+        query = "SELECT * FROM c WHERE c.tenantId = @tenantId"
+        parameters: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
+        return [
+            CustomRoleProfile.model_validate(item)
+            async for item in self._custom_roles.query_items(
+                query=query,
+                parameters=parameters,
+                partition_key=tenant_id,
+            )
+        ]
+
+    # ------------------------------------------------------------------
+    # Remediation action operations
+    # ------------------------------------------------------------------
+
+    async def create_remediation_action(
+        self, tenant_id: str, action: RemediationAction,
+    ) -> RemediationAction:
+        """Insert a new remediation action."""
+        body = action.model_dump(mode="json")
+        body["tenantId"] = tenant_id
+        try:
+            result: dict[str, Any] = await self._remediation_actions.upsert_item(body=body)
+            return RemediationAction.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos create_remediation_action failed for %s/%s: %s",
+                tenant_id,
+                action.id,
+                exc.message,
+            )
+            raise
+
+    async def get_remediation_action(
+        self, tenant_id: str, action_id: str,
+    ) -> RemediationAction | None:
+        """Point-read a remediation action by tenant and action ID."""
+        try:
+            item: dict[str, Any] = await self._remediation_actions.read_item(
+                item=action_id,
+                partition_key=tenant_id,
+            )
+            return RemediationAction.model_validate(item)
+        except CosmosResourceNotFoundError:
+            return None
+
+    async def update_remediation_status(
+        self, tenant_id: str, action: RemediationAction,
+    ) -> RemediationAction:
+        """Update (upsert) a remediation action, typically to change its status."""
+        body = action.model_dump(mode="json")
+        body["tenantId"] = tenant_id
+        try:
+            result: dict[str, Any] = await self._remediation_actions.upsert_item(body=body)
+            return RemediationAction.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos update_remediation_status failed for %s/%s: %s",
+                tenant_id,
+                action.id,
+                exc.message,
+            )
+            raise
+
+    async def list_remediation_actions(
+        self, tenant_id: str, offset: int = 0, limit: int = 50,
+    ) -> tuple[list[RemediationAction], int]:
+        """List remediation actions for a tenant with pagination.
+
+        Returns (items, total_count).
+        """
+        conditions = ["c.tenantId = @tenantId"]
+        parameters: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
+        where_clause = " AND ".join(conditions)
+
+        # Total count
+        count_query = f"SELECT VALUE COUNT(1) FROM c WHERE {where_clause}"
+        count_results: list[int] = [
+            item
+            async for item in self._remediation_actions.query_items(
+                query=count_query,
+                parameters=parameters,
+                partition_key=tenant_id,
+            )
+        ]
+        total = count_results[0] if count_results else 0
+
+        # Paged results
+        data_query = (
+            f"SELECT * FROM c WHERE {where_clause}"
+            f" ORDER BY c._ts DESC OFFSET @offset LIMIT @limit"
+        )
+        data_params: list[dict[str, Any]] = [
+            *parameters,
+            {"name": "@offset", "value": offset},
+            {"name": "@limit", "value": limit},
+        ]
+        items: list[RemediationAction] = [
+            RemediationAction.model_validate(item)
+            async for item in self._remediation_actions.query_items(
+                query=data_query,
+                parameters=data_params,
+                partition_key=tenant_id,
+            )
+        ]
+        return items, total
+
+    # ------------------------------------------------------------------
     # Generic count query
     # ------------------------------------------------------------------
 
@@ -1014,6 +1734,17 @@ class CosmosRepo:
             "projects": self._projects,
             "project_members": self._project_members,
             "scan_history": self._scan_history,
+            "scan_schedules": self._scan_schedules,
+            "alert_rules": self._alert_rules,
+            "app_registrations": self._app_registrations,
+            "mfa_records": self._mfa_records,
+            "ca_policies": self._ca_policies,
+            "risk_detections": self._risk_detections,
+            "groups": self._groups,
+            "access_reviews": self._access_reviews,
+            "sod_rules": self._sod_rules,
+            "custom_roles": self._custom_roles,
+            "remediation_actions": self._remediation_actions,
         }
         container = container_map.get(container_name)
         if container is None:

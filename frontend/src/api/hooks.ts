@@ -23,6 +23,15 @@ import type {
   Narrative,
   TenantSettings,
   AnalyticsData,
+  AppRegistrationProfile,
+  ConditionalAccessPolicy,
+  GroupProfile,
+  CustomRoleProfile,
+  AccessReviewDefinition,
+  SodConflictRule,
+  RemediationAction,
+  ScanSchedule,
+  AlertRule,
 } from "./types";
 
 /**
@@ -547,5 +556,230 @@ export function useDownloadReport(format: "pdf" | "pptx") {
         `/api/projects/${projectId}/reports/executive?format=${format}`,
       ),
     enabled: false,
+  });
+}
+
+// --- App Registrations ---
+
+/**
+ * Fetch a paginated list of app registrations for the active project.
+ */
+export function useAppRegistrations(page = 1, size = 50) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["app-registrations", projectId, page, size],
+    queryFn: () =>
+      client.get<PaginatedResponse<AppRegistrationProfile>>(
+        `/api/projects/${projectId}/app-registrations?page=${page}&size=${size}`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+/**
+ * Fetch a single app registration by app ID.
+ */
+export function useAppRegistration(appId: string) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["app-registration", projectId, appId],
+    queryFn: () =>
+      client.get<AppRegistrationProfile>(
+        `/api/projects/${projectId}/app-registrations/${appId}`,
+      ),
+    enabled: !!projectId && !!appId,
+  });
+}
+
+// --- Conditional Access ---
+
+/**
+ * Fetch a list of conditional access policies for the active project.
+ */
+export function useCAPolicies() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["ca-policies", projectId],
+    queryFn: () =>
+      client.get<ConditionalAccessPolicy[]>(
+        `/api/projects/${projectId}/conditional-access`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+// --- Groups ---
+
+/**
+ * Fetch a paginated list of groups for the active project.
+ */
+export function useGroups(page = 1, size = 50) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["groups", projectId, page, size],
+    queryFn: () =>
+      client.get<PaginatedResponse<GroupProfile>>(
+        `/api/projects/${projectId}/groups?page=${page}&size=${size}`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+/**
+ * Fetch a single group by ID.
+ */
+export function useGroup(groupId: string) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["group", projectId, groupId],
+    queryFn: () =>
+      client.get<GroupProfile>(
+        `/api/projects/${projectId}/groups/${groupId}`,
+      ),
+    enabled: !!projectId && !!groupId,
+  });
+}
+
+// --- Custom Roles ---
+
+/**
+ * Fetch a list of custom roles for the active project.
+ */
+export function useCustomRoles() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["custom-roles", projectId],
+    queryFn: () =>
+      client.get<CustomRoleProfile[]>(
+        `/api/projects/${projectId}/custom-roles`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+// --- Access Reviews ---
+
+/**
+ * Fetch a list of access review definitions for the active project.
+ */
+export function useAccessReviews() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["access-reviews", projectId],
+    queryFn: () =>
+      client.get<AccessReviewDefinition[]>(
+        `/api/projects/${projectId}/access-reviews`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+// --- SoD Rules ---
+
+/**
+ * Fetch separation-of-duties conflict rules for the active project.
+ */
+export function useSodRules() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["sod-rules", projectId],
+    queryFn: () =>
+      client.get<SodConflictRule[]>(
+        `/api/projects/${projectId}/settings/sod-rules`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+// --- Remediation ---
+
+/**
+ * Fetch a paginated list of remediation actions for the active project.
+ */
+export function useRemediationActions(page = 1, size = 50) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["remediation", projectId, page, size],
+    queryFn: () =>
+      client.get<PaginatedResponse<RemediationAction>>(
+        `/api/projects/${projectId}/remediation?page=${page}&size=${size}`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+// --- Scan Schedules ---
+
+/**
+ * Fetch scan schedules for the active project.
+ */
+export function useScanSchedules() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["scan-schedules", projectId],
+    queryFn: () =>
+      client.get<ScanSchedule[]>(
+        `/api/projects/${projectId}/settings/scan-schedules`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+// --- Alert Rules ---
+
+/**
+ * Fetch alert rules for the active project.
+ */
+export function useAlertRules() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["alert-rules", projectId],
+    queryFn: () =>
+      client.get<AlertRule[]>(
+        `/api/projects/${projectId}/settings/alert-rules`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+// --- Compliance Report ---
+
+/**
+ * Fetch a compliance report for the given framework.
+ * Disabled when no framework is provided.
+ */
+export function useComplianceReport(framework: string) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["compliance-report", projectId, framework],
+    queryFn: () =>
+      client.get<Record<string, unknown>>(
+        `/api/projects/${projectId}/reports/compliance?framework=${encodeURIComponent(framework)}`,
+      ),
+    enabled: !!projectId && !!framework,
   });
 }

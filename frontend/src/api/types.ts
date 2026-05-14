@@ -387,3 +387,141 @@ export interface AnalyticsData {
   recent_drift_alerts: DriftAlert[];
   computed_at: string;
 }
+
+// --- App Registrations ---
+
+export interface CredentialInfo {
+  key_id: string;
+  credential_type: 'password' | 'certificate';
+  display_name: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  days_until_expiry: number | null;
+  age_days: number | null;
+  is_expired: boolean;
+}
+
+export interface AppRegistrationProfile {
+  id: string;
+  tenant_id: string;
+  app_id: string;
+  display_name: string;
+  sign_in_audience: string;
+  is_multi_tenant: boolean;
+  password_credentials: CredentialInfo[];
+  key_credentials: CredentialInfo[];
+  owner_count: number;
+  high_risk_permissions: string[];
+  fetched_at: string;
+}
+
+// --- Conditional Access ---
+
+export interface ConditionalAccessPolicy {
+  id: string;
+  tenant_id: string;
+  display_name: string;
+  state: string;
+  created_date_time: string | null;
+  modified_date_time: string | null;
+  conditions: Record<string, unknown>;
+  grant_controls: Record<string, unknown>;
+}
+
+// --- Groups ---
+
+export interface GroupProfile {
+  id: string;
+  tenant_id: string;
+  display_name: string;
+  is_role_assignable: boolean;
+  is_dynamic: boolean;
+  membership_rule: string | null;
+  member_count: number;
+  transitive_member_count: number;
+  owner_count: number;
+  roles_assigned: string[];
+  created_at: string | null;
+}
+
+// --- Custom Roles ---
+
+export interface CustomRoleProfile {
+  id: string;
+  tenant_id: string;
+  display_name: string;
+  description: string;
+  is_enabled: boolean;
+  permissions: string[];
+  assignment_count: number;
+  has_wildcard: boolean;
+  has_escalation_paths: boolean;
+  created_at: string | null;
+}
+
+// --- Access Reviews ---
+
+export interface AccessReviewDefinition {
+  id: string;
+  tenant_id: string;
+  display_name: string;
+  status: string;
+  scope_type: string | null;
+  created_at: string | null;
+}
+
+// --- SoD Rules ---
+
+export interface SodConflictRule {
+  id: string;
+  tenant_id: string;
+  role_a_name: string;
+  role_b_name: string;
+  severity: string;
+  rationale: string;
+  is_custom: boolean;
+  enabled: boolean;
+}
+
+// --- Remediation ---
+
+export interface RemediationAction {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  action_type: string;
+  target_identity_id: string;
+  target_resource_id: string | null;
+  requested_by: string;
+  approved_by: string | null;
+  status: string;
+  justification: string;
+  created_at: string;
+  completed_at: string | null;
+  error_message: string | null;
+}
+
+// --- Scan Schedule ---
+
+export interface ScanSchedule {
+  id: string;
+  project_id: string;
+  cron_expression: string | null;
+  job_types: string[];
+  enabled: boolean;
+  last_run_at: string | null;
+  next_run_at: string | null;
+}
+
+// --- Alert Rule ---
+
+export interface AlertRule {
+  id: string;
+  project_id: string;
+  tenant_id: string;
+  rule_type: string;
+  condition: Record<string, unknown>;
+  channel: { channel_type: string; config: Record<string, unknown> };
+  severity_filter: string | null;
+  enabled: boolean;
+}

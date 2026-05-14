@@ -32,7 +32,6 @@ class IngestPipeline:
     async def _update_phase(
         self, scan: ScanRecord | None, phase_name: str, status: str, items: int = 0,
     ) -> None:
-        """Update a scan phase status if a scan record is provided."""
         if scan is None:
             return
         for phase in scan.phases:
@@ -52,20 +51,6 @@ class IngestPipeline:
         full_sync: bool = False,
         scan_record: ScanRecord | None = None,
     ) -> dict[str, Any]:
-        """Execute a full or incremental sync for a tenant.
-
-        Steps:
-        1. Load sync state (delta links, last sync timestamps)
-        2. Fetch audit logs (delta or full 30 days)
-        3. Fetch sign-in logs (since last sync or 30 days)
-        4. Parse events, extract actor identities
-        5. Fetch role assignments for all identities
-        6. For each identity: create/update IdentityProfile, merge observed actions,
-           update current_roles, update timestamps
-        7. Bulk insert ActionEvent records
-        8. Update sync state with new delta links and timestamps
-        9. Return summary
-        """
         start_time = time.monotonic()
         now = datetime.now(UTC)
 
@@ -102,7 +87,6 @@ class IngestPipeline:
 
         # 4. Parse events, extract actor identities
         all_events: list[ActionEvent] = []
-        # actor_id -> (display_name, identity_type_prefix)
         actor_registry: dict[str, tuple[str, str]] = {}
 
         for raw in raw_audit_events:
@@ -121,11 +105,18 @@ class IngestPipeline:
             if actor_id != "unknown":
                 actor_registry[event.identity_id] = (actor_name, event.identity_id)
 
-        # 5. Fetch role assignments
+        # 5. Fetch role assignments (PIM-aware) and user/SP enrichment data
         await self._update_phase(scan_record, "role_assignments", "running")
         logger.info("Fetching role assignments for tenant %s", tenant_id)
-        roles_map = await self._roles.get_identity_roles(tenant_id)
-        await self._update_phase(scan_record, "role_assignments", "completed", len(roles_map))
+        active_roles_map, eligible_roles_map = await self._roles.get_identity_roles(tenant_id)
+        await self._update_phase(scan_record, "role_assignments", "completed", len(active_roles_map))
+
+        # Fetch users and SPs for enrichment (UPN, app_id, user_type)
+        users_raw = await self._graph.fetch_users(tenant_id)
+        sps_raw = await self._graph.fetch_service_principals(tenant_id)
+
+        user_lookup: dict[str, dict[str, Any]] = {u["id"]: u for u in users_raw if "id" in u}
+        sp_lookup: dict[str, dict[str, Any]] = {sp["id"]: sp for sp in sps_raw if "id" in sp}
 
         # 6. For each identity, create/update profile
         await self._update_phase(scan_record, "identity_profiles", "running")
@@ -135,16 +126,13 @@ class IngestPipeline:
             identity_type_str = parts[0] if len(parts) == 2 else "User"
             object_id = parts[1] if len(parts) == 2 else identity_id
 
-            # Resolve identity type
             try:
                 identity_type = IdentityType(identity_type_str)
             except ValueError:
                 identity_type = IdentityType.USER
 
-            # Load existing or create new
             existing = await self._repo.get_identity(tenant_id, identity_id)
 
-            # Collect this identity's events
             identity_events = [e for e in all_events if e.identity_id == identity_id]
 
             # Merge observed actions
@@ -175,9 +163,8 @@ class IngestPipeline:
                     )
 
             observed_actions = list(observed_map.values())
-
-            # Determine current roles for this identity's object_id
-            current_roles = roles_map.get(object_id, [])
+            current_roles = active_roles_map.get(object_id, [])
+            eligible_roles = eligible_roles_map.get(object_id, [])
 
             # Timestamps
             event_timestamps = [e.timestamp for e in identity_events]
@@ -203,22 +190,46 @@ class IngestPipeline:
                 created_at = now
                 total_action_count = len(identity_events)
 
+            # Enrich UPN and app_id from user/SP lookups
+            upn: str | None = None
+            app_id: str | None = None
+            user_type: str | None = None
+            external_user_state: str | None = None
+
+            if identity_type == IdentityType.USER and object_id in user_lookup:
+                user_data = user_lookup[object_id]
+                upn = user_data.get("userPrincipalName")
+                user_type = user_data.get("userType")
+                external_user_state = user_data.get("externalUserState")
+            elif identity_type == IdentityType.SERVICE_PRINCIPAL and object_id in sp_lookup:
+                sp_data = sp_lookup[object_id]
+                app_id = sp_data.get("appId")
+
+            if existing:
+                upn = upn or existing.upn
+                app_id = app_id or existing.app_id
+                user_type = user_type or existing.user_type
+                external_user_state = external_user_state or existing.external_user_state
+
             profile = IdentityProfile(
                 id=identity_id,
                 tenant_id=tenant_id,
                 identity_type=identity_type,
                 object_id=object_id,
                 display_name=display_name,
-                upn=None,  # populated by a future user-fetch enrichment
-                app_id=None,
+                upn=upn,
+                app_id=app_id,
                 current_roles=current_roles,
+                eligible_roles=eligible_roles,
                 observed_actions=observed_actions,
-                risk_score=0.0,  # computed by a separate analysis step
+                risk_score=0.0,
                 action_count=total_action_count,
                 last_seen=last_seen,
                 first_seen=first_seen,
                 created_at=created_at,
                 updated_at=now,
+                user_type=user_type,
+                external_user_state=external_user_state,
             )
             await self._repo.upsert_identity(tenant_id, profile)
             identities_processed += 1
@@ -228,7 +239,6 @@ class IngestPipeline:
         # 7. Bulk insert action events
         await self._update_phase(scan_record, "action_events", "running")
         events_inserted = await self._repo.append_action_events(tenant_id, all_events)
-
         await self._update_phase(scan_record, "action_events", "completed", events_inserted)
 
         # 8. Update sync state

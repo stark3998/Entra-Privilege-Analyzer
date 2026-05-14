@@ -16,6 +16,15 @@ REQUIRED_PERMISSIONS: list[str] = [
     "User.Read.All",
     "Application.Read.All",
     "RoleManagement.Read.Directory",
+    "RoleManagement.Read.All",
+    "Policy.Read.All",
+    "GroupMember.Read.All",
+]
+
+OPTIONAL_PERMISSIONS: list[str] = [
+    "IdentityRiskEvent.Read.All",
+    "IdentityRiskyServicePrincipal.Read.All",
+    "AccessReview.Read.All",
 ]
 
 

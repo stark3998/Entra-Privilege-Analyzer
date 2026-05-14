@@ -150,11 +150,195 @@ class GraphIngestService:
         return await self._graph_get_all_pages(token, url, params)
 
     async def fetch_users(self, tenant_id: str) -> list[dict[str, Any]]:
-        """Fetch users with selected fields."""
+        """Fetch users with selected fields including guest properties."""
         token = await self._get_client_credential_token(tenant_id)
         url = f"{_GRAPH_BASE}/users"
-        params = {"$select": "id,displayName,userPrincipalName,userType"}
+        params = {
+            "$select": (
+                "id,displayName,userPrincipalName,userType,accountEnabled,"
+                "creationType,externalUserState,externalUserStateChangeDateTime,"
+                "createdDateTime"
+            ),
+        }
         return await self._graph_get_all_pages(token, url, params)
+
+    # ------------------------------------------------------------------
+    # PIM schedule instance APIs (GA v1.0)
+    # ------------------------------------------------------------------
+
+    async def fetch_role_assignment_schedule_instances(
+        self, tenant_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch all active role assignments including PIM-activated ones."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/roleManagement/directory/roleAssignmentScheduleInstances"
+        return await self._graph_get_all_pages(token, url)
+
+    async def fetch_role_eligibility_schedule_instances(
+        self, tenant_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch all PIM-eligible role assignments."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/roleManagement/directory/roleEligibilityScheduleInstances"
+        return await self._graph_get_all_pages(token, url)
+
+    # ------------------------------------------------------------------
+    # App registration & credential APIs
+    # ------------------------------------------------------------------
+
+    async def fetch_applications(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Fetch app registrations with credential and permission details."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/applications"
+        params = {
+            "$select": (
+                "id,appId,displayName,signInAudience,passwordCredentials,"
+                "keyCredentials,requiredResourceAccess,createdDateTime,"
+                "verifiedPublisher,disabledByMicrosoftStatus"
+            ),
+        }
+        return await self._graph_get_all_pages(token, url, params)
+
+    async def fetch_application_owners(
+        self, tenant_id: str, app_object_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch owners of a specific app registration."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/applications/{app_object_id}/owners"
+        params = {"$select": "id,displayName,userPrincipalName"}
+        return await self._graph_get_all_pages(token, url, params)
+
+    async def fetch_oauth2_permission_grants(
+        self, tenant_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch delegated permission grants."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/oauth2PermissionGrants"
+        return await self._graph_get_all_pages(token, url)
+
+    # ------------------------------------------------------------------
+    # MFA registration (bulk reporting API)
+    # ------------------------------------------------------------------
+
+    async def fetch_mfa_registration_details(
+        self, tenant_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch bulk MFA registration status for all users."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/reports/authenticationMethods/userRegistrationDetails"
+        return await self._graph_get_all_pages(token, url)
+
+    # ------------------------------------------------------------------
+    # Conditional Access policies
+    # ------------------------------------------------------------------
+
+    async def fetch_conditional_access_policies(
+        self, tenant_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch all Conditional Access policies."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/identity/conditionalAccess/policies"
+        return await self._graph_get_all_pages(token, url)
+
+    # ------------------------------------------------------------------
+    # Identity Protection
+    # ------------------------------------------------------------------
+
+    async def fetch_risky_users(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Fetch risky users from Identity Protection. Requires P2 license."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/identityProtection/riskyUsers"
+        return await self._graph_get_all_pages(token, url)
+
+    async def fetch_risk_detections(
+        self, tenant_id: str, since: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch risk detections. Requires P1+ license."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/identityProtection/riskDetections"
+        params: dict[str, str] | None = None
+        if since:
+            cutoff = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+            params = {"$filter": f"detectedDateTime ge {cutoff}"}
+        return await self._graph_get_all_pages(token, url, params)
+
+    # ------------------------------------------------------------------
+    # Groups
+    # ------------------------------------------------------------------
+
+    async def fetch_groups(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Fetch all security groups with role-assignable and dynamic metadata."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/groups"
+        params = {
+            "$select": (
+                "id,displayName,groupTypes,securityEnabled,mailEnabled,"
+                "isAssignableToRole,membershipRule,"
+                "membershipRuleProcessingState,visibility,createdDateTime"
+            ),
+            "$filter": "securityEnabled eq true",
+        }
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "ConsistencyLevel": "eventual",
+        }
+        all_items: list[dict[str, Any]] = []
+        current_url: str | None = url
+        current_params: dict[str, str] | None = params
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            while current_url is not None:
+                resp = await client.get(
+                    current_url, headers=headers, params=current_params,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                all_items.extend(data.get("value", []))
+                current_url = data.get("@odata.nextLink")
+                current_params = None
+        return all_items
+
+    async def fetch_group_transitive_members(
+        self, tenant_id: str, group_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch transitive (nested) members of a group."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/groups/{group_id}/transitiveMembers"
+        params = {"$select": "id,displayName,userPrincipalName,@odata.type"}
+        return await self._graph_get_all_pages(token, url, params)
+
+    async def fetch_group_owners(
+        self, tenant_id: str, group_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch owners of a group."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/groups/{group_id}/owners"
+        params = {"$select": "id,displayName,userPrincipalName"}
+        return await self._graph_get_all_pages(token, url, params)
+
+    # ------------------------------------------------------------------
+    # Access Reviews
+    # ------------------------------------------------------------------
+
+    async def fetch_access_review_definitions(
+        self, tenant_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch access review definitions. Requires Entra ID Governance."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/identityGovernance/accessReviews/definitions"
+        return await self._graph_get_all_pages(token, url)
+
+    # ------------------------------------------------------------------
+    # Cross-tenant access
+    # ------------------------------------------------------------------
+
+    async def fetch_cross_tenant_access_partners(
+        self, tenant_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch cross-tenant access policy partner configurations."""
+        token = await self._get_client_credential_token(tenant_id)
+        url = f"{_GRAPH_BASE}/policies/crossTenantAccessPolicy/partners"
+        return await self._graph_get_all_pages(token, url)
 
     # ------------------------------------------------------------------
     # Parsing helpers

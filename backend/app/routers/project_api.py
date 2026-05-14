@@ -10,6 +10,7 @@ import io
 import json
 import logging
 import re
+import uuid
 import zipfile
 from datetime import UTC, datetime
 from typing import Any
@@ -605,6 +606,426 @@ async def download_executive_report(
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={"Content-Disposition": f'attachment; filename="report_{project_id}.pptx"'},
     )
+
+
+# ------------------------------------------------------------------
+# App Registrations
+# ------------------------------------------------------------------
+
+
+@router.get("/app-registrations")
+async def list_app_registrations(
+    project_id: str,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=200),
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    offset = (page - 1) * size
+    items, total = await repo.list_app_registrations(tid, offset, size)
+    return {
+        "items": [i.model_dump(mode="json") for i in items],
+        "total": total, "page": page, "size": size,
+    }
+
+
+@router.get("/app-registrations/{app_id}")
+async def get_app_registration(
+    project_id: str,
+    app_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    app = await repo.get_app_registration(tid, app_id)
+    if app is None:
+        raise HTTPException(status_code=404, detail="App registration not found")
+    return app.model_dump(mode="json")
+
+
+# ------------------------------------------------------------------
+# Conditional Access
+# ------------------------------------------------------------------
+
+
+@router.get("/conditional-access")
+async def list_ca_policies(
+    project_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    policies = await repo.list_ca_policies(tid)
+    return {"items": [p.model_dump(mode="json") for p in policies], "total": len(policies)}
+
+
+@router.post("/conditional-access/analyze", status_code=status.HTTP_202_ACCEPTED)
+async def analyze_ca_policies(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    from app.services.ca_analyzer import ConditionalAccessAnalyzer
+    async def _run(t: str, r: CosmosRepo) -> None:
+        policies = await r.list_ca_policies(t)
+        analyzer = ConditionalAccessAnalyzer()
+        violations = analyzer.evaluate_policies(t, policies)
+        for v in violations:
+            await r.upsert_violation(t, v)
+    background_tasks.add_task(_run, tid, repo)
+    return {"status": "accepted", "message": "CA policy analysis started"}
+
+
+# ------------------------------------------------------------------
+# Groups
+# ------------------------------------------------------------------
+
+
+@router.get("/groups")
+async def list_groups(
+    project_id: str,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=200),
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    offset = (page - 1) * size
+    items, total = await repo.list_groups(tid, offset, size)
+    return {
+        "items": [i.model_dump(mode="json") for i in items],
+        "total": total, "page": page, "size": size,
+    }
+
+
+@router.get("/groups/{group_id}")
+async def get_group(
+    project_id: str,
+    group_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    group = await repo.get_group(tid, group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return group.model_dump(mode="json")
+
+
+# ------------------------------------------------------------------
+# Custom Roles
+# ------------------------------------------------------------------
+
+
+@router.get("/custom-roles")
+async def list_custom_roles(
+    project_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    items = await repo.list_custom_roles(tid)
+    return {"items": [i.model_dump(mode="json") for i in items], "total": len(items)}
+
+
+# ------------------------------------------------------------------
+# Access Reviews
+# ------------------------------------------------------------------
+
+
+@router.get("/access-reviews")
+async def list_access_reviews(
+    project_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    items = await repo.list_access_reviews(tid)
+    return {"items": [i.model_dump(mode="json") for i in items], "total": len(items)}
+
+
+# ------------------------------------------------------------------
+# SoD Rules
+# ------------------------------------------------------------------
+
+
+@router.get("/settings/sod-rules")
+async def list_sod_rules(
+    project_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    rules = await repo.get_sod_rules(tid)
+    return {"items": [r.model_dump(mode="json") for r in rules], "total": len(rules)}
+
+
+@router.post("/settings/sod-rules")
+async def create_sod_rule(
+    project_id: str,
+    body: dict[str, Any],
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    from app.models.sod_policy import SodConflictRule
+    rule = SodConflictRule(
+        id=str(uuid.uuid4()),
+        tenant_id=tid,
+        role_a_name=body["role_a_name"],
+        role_b_name=body["role_b_name"],
+        severity=body.get("severity", "high"),
+        rationale=body.get("rationale", ""),
+        is_custom=True,
+        enabled=True,
+    )
+    saved = await repo.upsert_sod_rule(tid, rule)
+    return saved.model_dump(mode="json")
+
+
+@router.delete("/settings/sod-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_sod_rule(
+    project_id: str,
+    rule_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    await repo.delete_sod_rule(tid, rule_id)
+
+
+# ------------------------------------------------------------------
+# Remediation
+# ------------------------------------------------------------------
+
+
+@router.get("/remediation")
+async def list_remediation_actions(
+    project_id: str,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=200),
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    offset = (page - 1) * size
+    items, total = await repo.list_remediation_actions(tid, offset, size)
+    return {
+        "items": [i.model_dump(mode="json") for i in items],
+        "total": total, "page": page, "size": size,
+    }
+
+
+@router.post("/remediation/request")
+async def request_remediation(
+    project_id: str,
+    body: dict[str, Any],
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    from app.services.remediation_engine import RemediationEngine
+    engine = RemediationEngine(repo)
+    action = await engine.request_action(
+        tenant_id=tid,
+        project_id=project_id,
+        action_type=body["action_type"],
+        target_identity_id=body["target_identity_id"],
+        target_resource_id=body.get("target_resource_id"),
+        justification=body.get("justification", ""),
+        requested_by=user.email,
+    )
+    return action.model_dump(mode="json")
+
+
+@router.post("/remediation/{action_id}/approve")
+async def approve_remediation(
+    project_id: str,
+    action_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    from app.services.remediation_engine import RemediationEngine
+    engine = RemediationEngine(repo)
+    action = await engine.approve_action(tid, action_id, user.email)
+    return action.model_dump(mode="json")
+
+
+@router.post("/remediation/{action_id}/reject")
+async def reject_remediation(
+    project_id: str,
+    action_id: str,
+    body: dict[str, Any] | None = None,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    from app.services.remediation_engine import RemediationEngine
+    engine = RemediationEngine(repo)
+    reason = (body or {}).get("reason", "")
+    action = await engine.reject_action(tid, action_id, user.email, reason)
+    return action.model_dump(mode="json")
+
+
+# ------------------------------------------------------------------
+# Scan Schedules
+# ------------------------------------------------------------------
+
+
+@router.get("/settings/scan-schedules")
+async def list_scan_schedules(
+    project_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    await _tenant_id(project_id, user, repo, settings)
+    schedules = await repo.get_scan_schedules_for_project(project_id)
+    return {"items": [s.model_dump(mode="json") for s in schedules], "total": len(schedules)}
+
+
+@router.post("/settings/scan-schedules")
+async def create_scan_schedule(
+    project_id: str,
+    body: dict[str, Any],
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    from app.models.alert_rules import ScanSchedule
+    schedule = ScanSchedule(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        cron_expression=body.get("cron_expression"),
+        job_types=body.get("job_types", ["incremental_sync"]),
+        enabled=body.get("enabled", True),
+    )
+    saved = await repo.upsert_scan_schedule(schedule)
+    return saved.model_dump(mode="json")
+
+
+@router.delete("/settings/scan-schedules/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_scan_schedule(
+    project_id: str,
+    schedule_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    await repo.delete_scan_schedule(project_id, schedule_id)
+
+
+# ------------------------------------------------------------------
+# Alert Rules
+# ------------------------------------------------------------------
+
+
+@router.get("/settings/alert-rules")
+async def list_alert_rules(
+    project_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    await _tenant_id(project_id, user, repo, settings)
+    rules = await repo.get_alert_rules_for_project(project_id)
+    return {"items": [r.model_dump(mode="json") for r in rules], "total": len(rules)}
+
+
+@router.post("/settings/alert-rules")
+async def create_alert_rule(
+    project_id: str,
+    body: dict[str, Any],
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    from app.models.alert_rules import AlertRule, AlertChannel, AlertChannelType, AlertRuleType
+    channel = AlertChannel(
+        channel_type=AlertChannelType(body["channel"]["channel_type"]),
+        config=body["channel"].get("config", {}),
+    )
+    rule = AlertRule(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        tenant_id=body.get("tenant_id", ""),
+        rule_type=AlertRuleType(body.get("rule_type", "event")),
+        condition=body.get("condition", {}),
+        channel=channel,
+        severity_filter=body.get("severity_filter"),
+        enabled=body.get("enabled", True),
+    )
+    saved = await repo.upsert_alert_rule(rule)
+    return saved.model_dump(mode="json")
+
+
+@router.delete("/settings/alert-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_alert_rule(
+    project_id: str,
+    rule_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    await repo.delete_alert_rule(project_id, rule_id)
+
+
+# ------------------------------------------------------------------
+# Compliance Reports
+# ------------------------------------------------------------------
+
+
+@router.get("/reports/compliance")
+async def get_compliance_report(
+    project_id: str,
+    framework: str = Query(pattern="^(soc2|iso27001|nist80053)$"),
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    from app.data.compliance_mappings import get_compliance_controls, SUPPORTED_FRAMEWORKS
+    violations, _ = await repo.list_violations(tid, offset=0, limit=1000)
+    controls: list[dict[str, Any]] = []
+    for v in violations:
+        mapping = get_compliance_controls(v.violation_type, framework)
+        if mapping:
+            controls.append({
+                "violation_id": v.id,
+                "violation_type": v.violation_type,
+                "severity": v.priority,
+                "resolved": v.resolved,
+                "controls": mapping,
+            })
+    return {
+        "framework": framework,
+        "tenant_id": tid,
+        "total_mapped_violations": len(controls),
+        "controls": controls,
+    }
 
 
 # ------------------------------------------------------------------

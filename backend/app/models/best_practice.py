@@ -20,6 +20,32 @@ class ViolationType(StrEnum):
     MFA_GAP = "mfa_gap"
     ROLE_ASSIGNABLE_GROUP = "role_assignable_group"
 
+    # App registration (Phase 1.2)
+    APP_NO_OWNER = "app_no_owner"
+    APP_MULTI_TENANT = "app_multi_tenant"
+    APP_EXCESSIVE_PERMISSIONS = "app_excessive_permissions"
+    APP_STALE_CREDENTIAL = "app_stale_credential"
+
+    # Guest governance (Phase 2.4)
+    GUEST_STALE = "guest_stale"
+    GUEST_PENDING_INVITATION = "guest_pending_invitation"
+    GUEST_ADMIN = "guest_admin"
+    GUEST_NO_MFA = "guest_no_mfa"
+
+    # Conditional Access (Phase 2.1)
+    CA_LEGACY_AUTH_NOT_BLOCKED = "ca_legacy_auth_not_blocked"
+    CA_NO_MFA_FOR_ADMINS = "ca_no_mfa_for_admins"
+    CA_NO_MFA_FOR_ALL = "ca_no_mfa_for_all"
+    CA_EXCESSIVE_EXCLUSIONS = "ca_excessive_exclusions"
+    CA_ADMIN_EXCLUDED = "ca_admin_excluded"
+    CA_NO_RISK_POLICY = "ca_no_risk_policy"
+    CA_REPORT_ONLY_CRITICAL = "ca_report_only_critical"
+    CA_NO_DEVICE_COMPLIANCE = "ca_no_device_compliance"
+    CA_NO_GUEST_MFA = "ca_no_guest_mfa"
+    CA_GRANT_OR_OPERATOR = "ca_grant_or_operator"
+    CA_NO_AZURE_MGMT_MFA = "ca_no_azure_mgmt_mfa"
+    CA_ALL_APPS_EXCLUSIONS = "ca_all_apps_exclusions"
+
 
 class ViolationPriority(StrEnum):
     """Priority level for a violation."""

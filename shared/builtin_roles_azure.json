@@ -105,7 +105,7 @@
       }
     },
     {
-      "id": "acdd72a7-3385-48ef-bd42-f606fba81ae7",
+      "id": "4633458b-17de-408a-b874-0445c86b69e6",
       "roleName": "Key Vault Secrets User",
       "description": "Read secret contents.",
       "type": "BuiltInRole",
@@ -129,6 +129,874 @@
           "Microsoft.Authorization/*/read",
           "Microsoft.DocumentDB/*/read",
           "Microsoft.DocumentDB/databaseAccounts/readonlykeys/action",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "4d97b98b-1d4f-4787-a291-c67834d212e7",
+      "roleName": "Network Contributor",
+      "description": "Lets you manage networks, but not access to them.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Network/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "befefa01-2a29-4197-83a8-272ff33ce314",
+      "roleName": "DNS Zone Contributor",
+      "description": "Lets you manage DNS zones and record sets in Azure DNS, but does not let you control who has access to them.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Network/dnsZones/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "9b7fa17d-e63e-47b0-bb0a-15c516ac86ec",
+      "roleName": "SQL DB Contributor",
+      "description": "Lets you manage SQL databases, but not access to them. Also, you can't manage their security-related policies or their parent SQL servers.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Sql/locations/*/read",
+          "Microsoft.Sql/servers/databases/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [
+          "Microsoft.Sql/servers/databases/auditingSettings/*",
+          "Microsoft.Sql/servers/databases/securityAlertPolicies/*",
+          "Microsoft.Sql/servers/databases/vulnerabilityAssessments/*"
+        ],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "6d8ee4ec-f05a-4a1d-8b00-a9b17e38b437",
+      "roleName": "SQL Server Contributor",
+      "description": "Lets you manage SQL servers and databases, but not access to them, and not their security-related policies.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Sql/servers/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [
+          "Microsoft.Sql/servers/auditingSettings/*",
+          "Microsoft.Sql/servers/securityAlertPolicies/*"
+        ],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "056cd41c-7e88-42e1-933e-88ba6a50c9c3",
+      "roleName": "SQL Security Manager",
+      "description": "Lets you manage the security-related policies of SQL servers and databases, but not access to them.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Sql/servers/auditingSettings/*",
+          "Microsoft.Sql/servers/securityAlertPolicies/*",
+          "Microsoft.Sql/servers/databases/auditingSettings/*",
+          "Microsoft.Sql/servers/databases/securityAlertPolicies/*",
+          "Microsoft.Sql/servers/databases/vulnerabilityAssessments/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "00482a5a-887f-4fb3-b363-3b7fe8e74483",
+      "roleName": "Key Vault Administrator",
+      "description": "Perform all data plane operations on a key vault and all objects in it, including certificates, keys, and secrets.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.KeyVault/vaults/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read"
+        ],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.KeyVault/vaults/certificates/*",
+          "Microsoft.KeyVault/vaults/keys/*",
+          "Microsoft.KeyVault/vaults/secrets/*"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "b86a8fe4-44ce-4948-aee5-eccb2c155cd7",
+      "roleName": "Key Vault Secrets Officer",
+      "description": "Perform any action on the secrets of a key vault, except manage permissions.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.KeyVault/vaults/secrets/*"
+        ],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.KeyVault/vaults/secrets/*"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "14b46e9e-c2b7-41b4-b07b-48a6ebf60603",
+      "roleName": "Key Vault Crypto Officer",
+      "description": "Perform any action on the keys of a key vault, except manage permissions.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.KeyVault/vaults/keys/*"
+        ],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.KeyVault/vaults/keys/*"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "21090545-7ca7-4776-b22c-e363652d74d2",
+      "roleName": "Key Vault Reader",
+      "description": "Read metadata of key vaults and its certificates, keys, and secrets. Cannot read sensitive values such as secret contents or key material.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.KeyVault/vaults/*/read",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read"
+        ],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.KeyVault/vaults/*/readMetadata/action"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "17d1049b-9a84-46fb-8f53-869881c3d3ab",
+      "roleName": "Storage Account Contributor",
+      "description": "Lets you manage storage accounts, including accessing storage account keys which provide full access to storage account data.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Storage/storageAccounts/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
+      "roleName": "Storage Blob Data Owner",
+      "description": "Allows for full access to Azure Storage blob containers and data, including assigning POSIX access control.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Storage/storageAccounts/blobServices/containers/*"
+        ],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/*"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1",
+      "roleName": "Storage Blob Data Reader",
+      "description": "Allows for read access to Azure Storage blob containers and data.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Storage/storageAccounts/blobServices/containers/read"
+        ],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
+      "roleName": "Storage Queue Data Contributor",
+      "description": "Allows for read, write, and delete access to Azure Storage queues and queue messages.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Storage/storageAccounts/queueServices/queues/delete",
+          "Microsoft.Storage/storageAccounts/queueServices/queues/read",
+          "Microsoft.Storage/storageAccounts/queueServices/queues/write"
+        ],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.Storage/storageAccounts/queueServices/queues/messages/*"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "de139f84-1756-47ae-9be6-808fbbe84772",
+      "roleName": "Website Contributor",
+      "description": "Lets you manage websites (not web plans), but not access to them.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Web/sites/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "2cc479cb-7b4d-49a8-b449-8c00fd0f0a4b",
+      "roleName": "Web Plan Contributor",
+      "description": "Lets you manage the web plans for websites, but not access to them.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Web/serverFarms/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "8311e382-0749-4cb8-b61a-304f252e45ec",
+      "roleName": "AcrPush",
+      "description": "Push artifacts to or pull artifacts from a container registry.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.ContainerRegistry/registries/pull/read",
+          "Microsoft.ContainerRegistry/registries/push/write"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "7f951dda-4ed3-4680-a7ca-43fe172d538d",
+      "roleName": "AcrPull",
+      "description": "Pull artifacts from a container registry.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.ContainerRegistry/registries/pull/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "c2f4ef07-c644-48eb-af81-4b1b4947fb11",
+      "roleName": "AcrDelete",
+      "description": "Delete repositories, tags, or manifests from a container registry.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.ContainerRegistry/registries/artifacts/delete"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "0ab0b1a8-8aac-4efd-b8c2-3ee1fb270be8",
+      "roleName": "Azure Kubernetes Service Cluster Admin Role",
+      "description": "List cluster admin credential action.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.ContainerService/managedClusters/listClusterAdminCredential/action",
+          "Microsoft.ContainerService/managedClusters/read",
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Resources/subscriptions/resourceGroups/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "ed7f3fbd-7b88-4dd4-9017-9adb7ce333f8",
+      "roleName": "Azure Kubernetes Service Contributor",
+      "description": "Grants access to read and write Azure Kubernetes Service clusters.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.ContainerService/managedClusters/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Authorization/*/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "749f88d5-cbae-40b8-bcfc-e573ddc772fa",
+      "roleName": "Monitoring Contributor",
+      "description": "Can read all monitoring data and update monitoring settings.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "*/read",
+          "Microsoft.AlertsManagement/alerts/*",
+          "Microsoft.Insights/actionGroups/*",
+          "Microsoft.Insights/alertRules/*",
+          "Microsoft.Insights/components/*",
+          "Microsoft.Insights/diagnosticSettings/*",
+          "Microsoft.Insights/metricAlerts/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "43d0d8ad-25c7-4714-9337-8ba259a9fe05",
+      "roleName": "Monitoring Reader",
+      "description": "Can read all monitoring data.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "*/read",
+          "Microsoft.Insights/alertRules/*/read",
+          "Microsoft.Insights/diagnosticSettings/*/read",
+          "Microsoft.Insights/metricDefinitions/*/read",
+          "Microsoft.Insights/metrics/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "92aaf0da-9dab-42b6-94a3-d43ce8d16293",
+      "roleName": "Log Analytics Contributor",
+      "description": "Can read all monitoring data and edit monitoring settings. Includes managing Log Analytics workspaces.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "*/read",
+          "Microsoft.OperationalInsights/workspaces/*",
+          "Microsoft.OperationsManagement/solutions/*",
+          "Microsoft.Automation/automationAccounts/*",
+          "Microsoft.Resources/deployments/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "73c42c96-874c-492b-b04d-ab87d138a893",
+      "roleName": "Log Analytics Reader",
+      "description": "Can view and search all monitoring data. Also can view Log Analytics workspace settings.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "*/read",
+          "Microsoft.OperationalInsights/workspaces/analytics/query/action",
+          "Microsoft.OperationalInsights/workspaces/search/action"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "fb1c8493-542b-48eb-b624-b4c8fea62acd",
+      "roleName": "Security Admin",
+      "description": "Can view security policies, view security states, edit security policies, view alerts and recommendations, dismiss alerts and recommendations.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Security/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "39bc4728-0917-49c7-9d2c-d95423bc2eb4",
+      "roleName": "Security Reader",
+      "description": "Can view security recommendations and alerts, view security policies, view security states, but cannot make changes.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Security/*/read",
+          "Microsoft.Resources/subscriptions/resourceGroups/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "e40ec5ca-96e0-45a2-b4ff-59039f2c2b59",
+      "roleName": "Managed Identity Contributor",
+      "description": "Create, read, update, and delete user assigned managed identities.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.ManagedIdentity/userAssignedIdentities/*",
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "f1a07417-d97a-45cb-824c-7a7467783830",
+      "roleName": "Managed Identity Operator",
+      "description": "Read and assign user assigned managed identity.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.ManagedIdentity/userAssignedIdentities/*/read",
+          "Microsoft.ManagedIdentity/userAssignedIdentities/*/assign/action",
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Resources/subscriptions/resourceGroups/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "87a39d53-fc1b-424a-814c-f7e04687dc9e",
+      "roleName": "Logic App Contributor",
+      "description": "Lets you manage logic apps, but not change access to them.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Logic/workflows/*",
+          "Microsoft.Logic/integrationAccounts/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "f353d9bd-d4a6-484e-a77a-8050b599b867",
+      "roleName": "Automation Contributor",
+      "description": "Manage Automation resources and other resources using Azure Automation.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Automation/automationAccounts/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "5e467623-bb1f-42f4-a55d-6e525e11384b",
+      "roleName": "Backup Contributor",
+      "description": "Lets you manage backup service, but can't create vaults and give access to others.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.RecoveryServices/Vaults/backupFabrics/protectionContainers/*",
+          "Microsoft.RecoveryServices/Vaults/backupPolicies/*",
+          "Microsoft.RecoveryServices/Vaults/backupProtectedItems/*",
+          "Microsoft.RecoveryServices/Vaults/backupJobs/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "00c29273-979b-4161-815c-10b084fb9324",
+      "roleName": "Backup Operator",
+      "description": "Lets you manage backup services, except removal of backup, vault creation, and giving access to others.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.RecoveryServices/Vaults/backupFabrics/protectionContainers/protectedItems/backup/action",
+          "Microsoft.RecoveryServices/Vaults/backupFabrics/protectionContainers/protectedItems/read",
+          "Microsoft.RecoveryServices/Vaults/backupJobs/*",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "a795c7a0-d4a2-40c1-ae25-d81f01202912",
+      "roleName": "Backup Reader",
+      "description": "Can view backup services, but can't make changes.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.RecoveryServices/Vaults/backupFabrics/protectionContainers/protectedItems/read",
+          "Microsoft.RecoveryServices/Vaults/backupPolicies/read",
+          "Microsoft.RecoveryServices/Vaults/backupJobs/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "434105ed-43f6-45c7-a02f-909b2ba83430",
+      "roleName": "Cost Management Contributor",
+      "description": "Can view costs and manage cost configuration (e.g. budgets, exports).",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.CostManagement/*",
+          "Microsoft.Consumption/*",
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Resources/subscriptions/resourceGroups/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "72fafb9e-0641-4937-9268-a91bfd8191a3",
+      "roleName": "Cost Management Reader",
+      "description": "Can view cost data and configuration (e.g. budgets, exports).",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.CostManagement/*/read",
+          "Microsoft.Consumption/*/read",
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Resources/subscriptions/resourceGroups/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "36243c78-bf99-498c-9df9-86d9f8d28608",
+      "roleName": "Resource Policy Contributor",
+      "description": "Users with rights to create/modify resource policy, create support ticket, and read resources/hierarchy.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "*/read",
+          "Microsoft.Authorization/policyAssignments/*",
+          "Microsoft.Authorization/policyDefinitions/*",
+          "Microsoft.Authorization/policyExemptions/*",
+          "Microsoft.Authorization/policySetDefinitions/*",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "4a9ae827-6dc8-4573-8ac7-8239d42aa03f",
+      "roleName": "Tag Contributor",
+      "description": "Lets you manage tags on entities, without providing access to the entities themselves.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Resources/tags/*",
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Resources/subscriptions/resourceGroups/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "76283e04-6283-4c54-8f91-bcf1374a3c64",
+      "roleName": "DevTest Labs User",
+      "description": "Lets you connect, start, restart, and shutdown virtual machines in your Azure DevTest Labs.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.DevTestLab/labs/*/read",
+          "Microsoft.DevTestLab/labs/virtualMachines/start/action",
+          "Microsoft.DevTestLab/labs/virtualMachines/stop/action",
+          "Microsoft.DevTestLab/labs/virtualMachines/restart/action",
+          "Microsoft.Resources/subscriptions/resourceGroups/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "b12aa53e-6015-4669-85d0-8515ebb3ae7f",
+      "roleName": "API Management Service Contributor",
+      "description": "Can manage service and the APIs.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.ApiManagement/service/*",
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "e147488a-f6f5-4113-8e2d-b22465e65bf6",
+      "roleName": "Cosmos DB Operator",
+      "description": "Lets you manage Azure Cosmos DB accounts, but not access data in them.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.DocumentDB/databaseAccounts/*",
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read"
+        ],
+        "notActions": [
+          "Microsoft.DocumentDB/databaseAccounts/readonlykeys/action",
+          "Microsoft.DocumentDB/databaseAccounts/regenerateKey/action",
+          "Microsoft.DocumentDB/databaseAccounts/listKeys/action"
+        ],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "426e0c7f-0c7e-4658-b36f-ff54d6c29b45",
+      "roleName": "Azure Event Hubs Data Owner",
+      "description": "Allows for full access to Azure Event Hubs resources.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.EventHub/*"
+        ],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.EventHub/*"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "090c5cfd-751d-490a-894a-3ce6f1109419",
+      "roleName": "Azure Service Bus Data Owner",
+      "description": "Allows for full access to Azure Service Bus resources.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.ServiceBus/*"
+        ],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.ServiceBus/*"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "a4417e6f-fecd-4de8-b567-7b0420556985",
+      "roleName": "Cognitive Services Contributor",
+      "description": "Lets you create, read, update, delete, and manage keys of Cognitive Services.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.CognitiveServices/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "a97b65f3-24c7-4388-baec-2e87135dc908",
+      "roleName": "Cognitive Services User",
+      "description": "Lets you read and list keys of Cognitive Services.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.CognitiveServices/*/read",
+          "Microsoft.CognitiveServices/accounts/listkeys/action"
+        ],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.CognitiveServices/*"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "8bbe83f1-e2a6-4df7-8cb4-4e04d4e5c827",
+      "roleName": "Cosmos DB Built-in Data Contributor",
+      "description": "Can read, write, and delete data in Cosmos DB containers.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers/items/*",
+          "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers/executeQuery",
+          "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers/readChangeFeed"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "fbdf93bf-df7d-467e-a4d2-9458aa1360c8",
+      "roleName": "Cosmos DB Built-in Data Reader",
+      "description": "Can read data in Cosmos DB containers.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [],
+        "notActions": [],
+        "dataActions": [
+          "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers/items/read",
+          "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers/executeQuery",
+          "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers/readChangeFeed"
+        ],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "c12c1c16-33a1-487b-954d-41c89c60f349",
+      "roleName": "Redis Cache Contributor",
+      "description": "Lets you manage Redis caches, but not access to them.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Cache/redis/*",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "5ae67dd6-50cb-40e7-96ff-dc2bfa4b606b",
+      "roleName": "Container App Contributor",
+      "description": "Lets you manage Container Apps resources.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.App/containerApps/*",
+          "Microsoft.App/managedEnvironments/*",
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Resources/deployments/*",
+          "Microsoft.Resources/subscriptions/resourceGroups/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    },
+    {
+      "id": "7f6c6a51-bcf8-42ba-9220-52d62157d06b",
+      "roleName": "Azure Functions Contributor",
+      "description": "Lets you manage Function Apps resources.",
+      "type": "BuiltInRole",
+      "permissions": {
+        "actions": [
+          "Microsoft.Authorization/*/read",
+          "Microsoft.Web/sites/functions/*",
+          "Microsoft.Web/sites/*",
+          "Microsoft.Web/serverFarms/*",
+          "Microsoft.Resources/deployments/*",
           "Microsoft.Resources/subscriptions/resourceGroups/read",
           "Microsoft.Support/*"
         ],

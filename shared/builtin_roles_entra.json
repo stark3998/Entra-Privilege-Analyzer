@@ -118,6 +118,673 @@
         "microsoft.directory/*/read",
         "microsoft.azure.serviceHealth/allEntities/allTasks"
       ]
+    },
+    {
+      "id": "b1be1c3e-b65d-4f19-8427-f6fa0d97feb9",
+      "displayName": "Conditional Access Administrator",
+      "description": "Can manage conditional access policies and named locations.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/conditionalAccessPolicies/allProperties/allTasks",
+        "microsoft.directory/namedLocations/allProperties/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "c4e39bd9-1100-46d3-8c65-fb160da0071f",
+      "displayName": "Authentication Administrator",
+      "description": "Can manage authentication methods for non-admin users, including password resets and MFA registration.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/users/authenticationMethods/allProperties/allTasks",
+        "microsoft.directory/users/password/update",
+        "microsoft.directory/users/invalidateAllRefreshTokens",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "7be44c8a-adaf-4e2a-84d6-ab2649e08a13",
+      "displayName": "Privileged Authentication Administrator",
+      "description": "Can manage authentication methods for any user including Global Administrators.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/users/authenticationMethods/allProperties/allTasks",
+        "microsoft.directory/users/password/update",
+        "microsoft.directory/users/invalidateAllRefreshTokens",
+        "microsoft.directory/deletedItems.users/restore"
+      ]
+    },
+    {
+      "id": "158c047a-c907-4556-b7ef-446551a6b5f7",
+      "displayName": "Cloud Application Administrator",
+      "description": "Can create and manage all aspects of app registrations and enterprise apps except App Proxy.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/applications/allProperties/allTasks",
+        "microsoft.directory/servicePrincipals/allProperties/allTasks",
+        "microsoft.directory/oAuth2PermissionGrants/allProperties/allTasks",
+        "microsoft.directory/appRoleAssignments/allProperties/allTasks"
+      ]
+    },
+    {
+      "id": "3a2c62db-5318-420d-8d74-23affee5d9d5",
+      "displayName": "Intune Administrator",
+      "description": "Can manage all aspects of the Intune product.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/devices/allProperties/allTasks",
+        "microsoft.directory/users/basic/update",
+        "microsoft.intune/allEntities/allTasks",
+        "microsoft.azure.supportTickets/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "f023fd81-a637-4b56-95fd-791ac0226033",
+      "displayName": "SharePoint Administrator",
+      "description": "Can manage all aspects of the SharePoint service.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/groups/unified/allProperties/allTasks",
+        "microsoft.office365.sharepoint/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks",
+        "microsoft.azure.supportTickets/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "17315797-102d-40b4-93e0-432062caca18",
+      "displayName": "Compliance Administrator",
+      "description": "Can read and manage compliance configuration and reports in Azure AD and Office 365.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/policies/standard/read",
+        "microsoft.office365.complianceManager/allEntities/allTasks",
+        "microsoft.office365.serviceHealth/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "e6d1a23a-da11-4be4-9570-befc86d067a7",
+      "displayName": "Compliance Data Administrator",
+      "description": "Creates and manages compliance content and data classification labels.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/cloudAppSecurity/allProperties/allTasks",
+        "microsoft.office365.complianceManager/allEntities/allTasks",
+        "microsoft.azure.informationProtection/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "b0f54661-2d74-4c50-afa3-1ec803f12efe",
+      "displayName": "Billing Administrator",
+      "description": "Can perform common billing related tasks like updating payment information.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/organization/basic/update",
+        "microsoft.commerce.billing/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks",
+        "microsoft.azure.supportTickets/allEntities/allTasks",
+        "microsoft.office365.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "4d6ac14f-3453-41d0-bef9-a3e0c569773a",
+      "displayName": "License Administrator",
+      "description": "Can manage product licenses on users and groups.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/groups/assignLicense",
+        "microsoft.directory/users/assignLicense",
+        "microsoft.directory/users/reprocessLicenseAssignment",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "69091246-20e8-4a56-aa4d-066075b2a7a8",
+      "displayName": "Teams Administrator",
+      "description": "Can manage the Microsoft Teams service.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/groups/unified/allProperties/allTasks",
+        "microsoft.office365.teams/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks",
+        "microsoft.azure.supportTickets/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "baf37b3a-610e-45da-9e62-d9d1e5e8914b",
+      "displayName": "Teams Communications Administrator",
+      "description": "Can manage calling and meetings features within the Microsoft Teams service.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.teams/callQuality/allProperties/read",
+        "microsoft.office365.teams/meetings/allProperties/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "11648597-926c-4cf3-9c36-bcebb0ba8dcc",
+      "displayName": "Power Platform Administrator",
+      "description": "Can create and manage all aspects of Microsoft Power Platform.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.powerApps/allEntities/allTasks",
+        "microsoft.flow/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks",
+        "microsoft.azure.supportTickets/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "44367163-eba1-44c3-98af-f5787879f96a",
+      "displayName": "Dynamics 365 Administrator",
+      "description": "Can manage all aspects of the Dynamics 365 product.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.dynamics365/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks",
+        "microsoft.azure.supportTickets/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "e3973bdf-4987-49ae-837a-ba8e231c7286",
+      "displayName": "Azure DevOps Administrator",
+      "description": "Can manage Azure DevOps organization policy and settings.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.azure.devOps/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "7495fdc4-34c4-4d15-a289-98788ce399fd",
+      "displayName": "Azure Information Protection Administrator",
+      "description": "Can manage all aspects of the Azure Information Protection product.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.azure.informationProtection/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks",
+        "microsoft.azure.supportTickets/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "38a96431-2bdf-4b4c-8b6e-5d3d8abac1a4",
+      "displayName": "Desktop Analytics Administrator",
+      "description": "Can access and manage Desktop management tools and services.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/organization/basic/read",
+        "microsoft.office365.desktopAnalytics/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "b5a8dcf3-09d5-43a9-a639-8e29ef291470",
+      "displayName": "Knowledge Administrator",
+      "description": "Can configure knowledge, learning, and other intelligent features.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.knowledge/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "eb1f4a8d-243a-41f0-9fbd-c7cdf6c5ef7c",
+      "displayName": "Insights Administrator",
+      "description": "Can manage Microsoft 365 Insights application settings.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.insights/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "be2f45a1-457d-42af-a067-6ec1fa63bc45",
+      "displayName": "External Identity Provider Administrator",
+      "description": "Can configure identity providers for use in direct federation.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/identityProviders/allProperties/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "8329153b-31d0-4727-b945-745eb3bc5f31",
+      "displayName": "Domain Name Administrator",
+      "description": "Can manage domain names in cloud and on-premises.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/domains/allProperties/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "8ac3fc64-6bbe-49df-ba1f-518228b36e6e",
+      "displayName": "Hybrid Identity Administrator",
+      "description": "Can manage AD to Azure AD cloud provisioning, Azure AD Connect, and federation settings.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/applications/audience/update",
+        "microsoft.directory/applications/authentication/update",
+        "microsoft.directory/hybridAuthenticationPolicy/allProperties/allTasks",
+        "microsoft.directory/organization/dirSync/update",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "45d8d3c5-c802-45c6-b32a-1d70b5e1e86e",
+      "displayName": "Identity Governance Administrator",
+      "description": "Can manage access reviews, entitlement management catalogs, access packages, and policies.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/accessReviews/allProperties/allTasks",
+        "microsoft.directory/entitlementManagement/allProperties/allTasks",
+        "microsoft.directory/termsOfUse/allProperties/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "88d8e3e3-8f55-4a1e-953a-9b9898b8876b",
+      "displayName": "Directory Readers",
+      "description": "Can read basic directory information. Commonly used to grant directory read access to applications and guests.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/administrativeUnits/standard/read",
+        "microsoft.directory/applications/standard/read",
+        "microsoft.directory/groups/standard/read",
+        "microsoft.directory/users/standard/read",
+        "microsoft.directory/organization/standard/read"
+      ]
+    },
+    {
+      "id": "9360feb5-f418-4baa-8175-e2a00bac4301",
+      "displayName": "Directory Writers",
+      "description": "Can read and write basic directory information. For granting access to applications, not intended for users.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/groups/create",
+        "microsoft.directory/groups/members/update",
+        "microsoft.directory/oAuth2PermissionGrants/basic/update",
+        "microsoft.directory/servicePrincipals/basic/update"
+      ]
+    },
+    {
+      "id": "7698a772-787b-4ac8-901f-60d6b08affd2",
+      "displayName": "Cloud Device Administrator",
+      "description": "Can enable, disable, and delete devices in Azure AD and read Windows 10 BitLocker keys.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/devices/delete",
+        "microsoft.directory/devices/disable",
+        "microsoft.directory/devices/enable",
+        "microsoft.directory/devices/basic/read",
+        "microsoft.directory/bitlockerKeys/key/read"
+      ]
+    },
+    {
+      "id": "966707d0-3269-4727-9be2-8c3a10f19b9d",
+      "displayName": "Password Administrator",
+      "description": "Can reset passwords for non-administrators and Password Administrators.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/users/password/update",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "790c1fb9-7f7d-4f88-86a1-ef1f95c05c1b",
+      "displayName": "Message Center Reader",
+      "description": "Can read messages and updates for their organization in Office 365 Message Center only.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.messageCenter/messages/read",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "4a5d8f65-41da-4de4-8968-e035b65339cf",
+      "displayName": "Reports Reader",
+      "description": "Can read sign-in and audit reports.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/auditLogs/allProperties/read",
+        "microsoft.directory/provisioningLogs/allProperties/read",
+        "microsoft.directory/signInReports/allProperties/read",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "95e79109-95c0-4d8e-aee3-d01accf2d47a",
+      "displayName": "Guest Inviter",
+      "description": "Can invite guest users independent of the members can invite guests setting.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/users/inviteGuest",
+        "microsoft.directory/users/standard/read"
+      ]
+    },
+    {
+      "id": "f2ef992c-3afb-46b9-b7cf-a126ee74c451",
+      "displayName": "Service Support Administrator",
+      "description": "Can read service health information and manage support tickets.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.azure.serviceHealth/allEntities/allTasks",
+        "microsoft.azure.supportTickets/allEntities/allTasks",
+        "microsoft.office365.serviceHealth/allEntities/allTasks",
+        "microsoft.office365.supportTickets/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "b0f54661-2d74-4c50-afa3-1ec803f12efe2",
+      "displayName": "Authentication Policy Administrator",
+      "description": "Can create and manage the authentication methods policy, tenant-wide MFA settings, password protection policy, and verifiable credentials.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/authenticationMethodPolicies/allProperties/allTasks",
+        "microsoft.directory/organization/strongAuthentication/allTasks",
+        "microsoft.directory/verifiableCredentials/configuration/allProperties/allTasks"
+      ]
+    },
+    {
+      "id": "7698a772-787b-4ac8-901f-60d6b08affd3",
+      "displayName": "Security Operator",
+      "description": "Creates and manages security events and triggers alerts.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/auditLogs/allProperties/read",
+        "microsoft.directory/signInReports/allProperties/read",
+        "microsoft.azure.advancedThreatProtection/allEntities/allTasks",
+        "microsoft.azure.sentinel/incidents/allProperties/allTasks"
+      ]
+    },
+    {
+      "id": "0526716b-113d-4c15-b2c8-68e3c22b9f80",
+      "displayName": "Attack Simulation Administrator",
+      "description": "Can create and manage all aspects of attack simulation campaigns.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.protectionCenter/attackSimulator/payload/allProperties/allTasks",
+        "microsoft.office365.protectionCenter/attackSimulator/reports/allProperties/read",
+        "microsoft.office365.protectionCenter/attackSimulator/simulation/allProperties/allTasks"
+      ]
+    },
+    {
+      "id": "be2f45a1-457d-42af-a067-6ec1fa63bc46",
+      "displayName": "Attribute Assignment Administrator",
+      "description": "Can assign custom security attribute keys and values to supported Azure AD objects.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/customSecurityAttributeDefinitions/allProperties/read",
+        "microsoft.directory/attributeSets/allProperties/read",
+        "microsoft.directory/users/customSecurityAttributes/update",
+        "microsoft.directory/servicePrincipals/customSecurityAttributes/update"
+      ]
+    },
+    {
+      "id": "58a13ea3-c632-46ae-9ee0-9c0d43cd7f3d",
+      "displayName": "Attribute Definition Administrator",
+      "description": "Can define and manage the definition of custom security attributes.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/customSecurityAttributeDefinitions/allProperties/allTasks",
+        "microsoft.directory/attributeSets/allProperties/allTasks"
+      ]
+    },
+    {
+      "id": "74ef975b-6605-40af-a5d2-b9539d836353",
+      "displayName": "Azure AD Joined Device Local Administrator",
+      "description": "Users assigned to this role are added to the local administrators group on Azure AD-joined devices.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/devices/localAdministrators/read"
+      ]
+    },
+    {
+      "id": "2b745bdf-0803-4d80-aa65-822c4493daac",
+      "displayName": "Office Apps Administrator",
+      "description": "Can manage Office apps cloud services, including policy and settings management.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.apps/allEntities/allTasks",
+        "microsoft.office365.serviceHealth/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks",
+        "microsoft.azure.supportTickets/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "892c5842-a9a6-463a-8041-72aa08ca3cf6",
+      "displayName": "Application Developer",
+      "description": "Can create application registrations independent of the users can register applications setting.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/applications/createAsOwner",
+        "microsoft.directory/oAuth2PermissionGrants/createAsOwner",
+        "microsoft.directory/servicePrincipals/createAsOwner"
+      ]
+    },
+    {
+      "id": "a9ea8996-122f-4c74-9520-8edcd192826c",
+      "displayName": "Fabric Administrator",
+      "description": "Can manage all aspects of Microsoft Fabric and Power BI.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.powerBI/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks",
+        "microsoft.azure.supportTickets/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "7be44c8a-adaf-4e2a-84d6-ab2649e08a14",
+      "displayName": "Lifecycle Workflows Administrator",
+      "description": "Can create and manage all aspects of workflows and tasks associated with Lifecycle Workflows.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/lifecycleWorkflows/allProperties/allTasks",
+        "microsoft.directory/users/lifeCycleInfo/read"
+      ]
+    },
+    {
+      "id": "ac16e43d-7b2d-40e0-ac05-243ff356ab5b",
+      "displayName": "Message Center Privacy Reader",
+      "description": "Can read security messages and updates in Office 365 Message Center for data privacy messages only.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.messageCenter/messages/read",
+        "microsoft.office365.messageCenter/securityMessages/read"
+      ]
+    },
+    {
+      "id": "9c6df0f2-1e7c-4dc3-b195-66dfbd24aa8f",
+      "displayName": "Knowledge Manager",
+      "description": "Can organize, create, manage, and promote topics and knowledge.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.knowledge/contentUnderstanding/allProperties/allTasks",
+        "microsoft.office365.knowledge/knowledgeNetwork/allProperties/allTasks"
+      ]
+    },
+    {
+      "id": "3d762c5a-1b6c-493f-843e-55a3b42923d4",
+      "displayName": "Teams Communications Support Engineer",
+      "description": "Can troubleshoot communications issues within Teams using advanced tools.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.teams/callQuality/allProperties/read",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "fcf91098-03e3-41a9-b5ba-6f0ec8188a12",
+      "displayName": "Teams Communications Support Specialist",
+      "description": "Can troubleshoot communications issues within Teams using basic tools.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.teams/callQuality/standard/read",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "9f06204d-73c1-4d4c-880a-6edb90606fd8",
+      "displayName": "Teams Devices Administrator",
+      "description": "Can manage devices certified for use with the Teams service.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.teams/devices/allProperties/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "3f1acade-1e04-4fbc-9b69-f66bc7b95981",
+      "displayName": "Windows Update Deployment Administrator",
+      "description": "Can create and manage all aspects of Windows Update deployments through the Windows Update for Business deployment service.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.windows.updatesDeployments/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "11451d60-acb2-45eb-a7d6-43d0f0125c13",
+      "displayName": "Windows 365 Administrator",
+      "description": "Can provision and manage all aspects of Cloud PCs.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/devices/basic/read",
+        "microsoft.windows365/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "0964bb5e-9bdb-4d7b-ac29-58e794862a40",
+      "displayName": "Search Administrator",
+      "description": "Can create and manage all aspects of Microsoft Search settings.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.search/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "8835291a-918c-4fd7-a9ce-faa49f0cf7d9",
+      "displayName": "Search Editor",
+      "description": "Can create and manage the editorial content such as bookmarks, Q&As, locations, and floor plans.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.search/content/allProperties/allTasks"
+      ]
+    },
+    {
+      "id": "644ef478-e28f-4e28-b9dc-3fdde9aa0b1f",
+      "displayName": "Printer Administrator",
+      "description": "Can manage all aspects of printers and printer connectors.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/printers/allProperties/allTasks",
+        "microsoft.directory/printerConnectors/allProperties/allTasks"
+      ]
+    },
+    {
+      "id": "e8cef6f1-e4bd-4ea8-bc07-4b8d950f4477",
+      "displayName": "Printer Technician",
+      "description": "Can register and unregister printers and update printer status.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/printers/register",
+        "microsoft.directory/printers/basic/update"
+      ]
+    },
+    {
+      "id": "c430b396-e693-46cc-96f3-db01bf8bb62a",
+      "displayName": "Kaara Administrator",
+      "description": "Can manage settings for Microsoft Kaizala.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.kaizala/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "b5a8dcf3-09d5-43a9-a639-8e29ef291471",
+      "displayName": "Virtual Visits Administrator",
+      "description": "Can manage and share Virtual Visits information and metrics.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.virtualVisits/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "a776c8f6-2333-4c5e-98fb-66ce9a1e7c26",
+      "displayName": "Edge Administrator",
+      "description": "Can manage all aspects of Microsoft Edge.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.edge/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "3edaf663-341e-4475-9f94-5c398ef6c070",
+      "displayName": "Yammer Administrator",
+      "description": "Can manage all aspects of the Yammer service.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.yammer/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks",
+        "microsoft.azure.supportTickets/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "580cfc2a-69dc-4ca9-88f5-60fcd7e6e5c3",
+      "displayName": "Permissions Management Administrator",
+      "description": "Can manage all aspects of Entra Permissions Management.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.permissionsManagement/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "59d46f88-662b-457b-bceb-5c3809e5908f",
+      "displayName": "Organizational Messages Writer",
+      "description": "Can write organizational messages for end users through Microsoft product surfaces.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.organizationalMessages/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "25df335f-86eb-4119-b717-0ff02de207e9",
+      "displayName": "Microsoft Hardware Warranty Administrator",
+      "description": "Can create and manage all aspects of warranty claims and entitlements for Microsoft manufactured hardware.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.hardware.warranty/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "44d8b09d-97ec-4949-becd-3684b8099ea8",
+      "displayName": "Tenant Creator",
+      "description": "Can create new Azure AD or Azure AD B2C tenants.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/tenants/create"
+      ]
+    },
+    {
+      "id": "d37c8bed-0711-4417-ba38-b4abe66ce4c2",
+      "displayName": "Network Administrator",
+      "description": "Can manage network locations and review enterprise network design insights for Microsoft 365 Software as a Service applications.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.office365.network/allEntities/allTasks",
+        "microsoft.azure.serviceHealth/allEntities/allTasks"
+      ]
+    },
+    {
+      "id": "e48398e2-f4bb-4074-8f31-4586725e205b",
+      "displayName": "Usage Summary Reports Reader",
+      "description": "Can see only tenant-level aggregates in Microsoft 365 Usage Analytics and Productivity Score.",
+      "isBuiltIn": true,
+      "permissions": [
+        "microsoft.directory/usageSummaryReports/allProperties/read"
+      ]
     }
   ]
 }
