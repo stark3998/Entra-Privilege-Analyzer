@@ -26,6 +26,7 @@ from app.models.group import GroupProfile
 from app.models.mfa_status import MfaRegistrationRecord
 from app.models.remediation import RemediationAction
 from app.models.sod_policy import SodConflictRule
+from app.models.pim_session import PimSession, PimSessionAnalytics
 from app.models.tenant import TenantConfig
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,7 @@ class CosmosRepo:
         sod_rules: ContainerProxy,
         custom_roles: ContainerProxy,
         remediation_actions: ContainerProxy,
+        pim_sessions: ContainerProxy,
     ) -> None:
         self._client = client
         self._db = db
@@ -92,6 +94,7 @@ class CosmosRepo:
         self._sod_rules = sod_rules
         self._custom_roles = custom_roles
         self._remediation_actions = remediation_actions
+        self._pim_sessions = pim_sessions
 
     @classmethod
     async def create(cls, settings: Settings) -> CosmosRepo:
@@ -197,6 +200,10 @@ class CosmosRepo:
             id="remediation_actions",
             partition_key=PartitionKey(path="/tenantId"),
         )
+        pim_sessions = await db.create_container_if_not_exists(
+            id="pim_sessions",
+            partition_key=PartitionKey(path="/tenantId"),
+        )
 
         logger.info(
             "Cosmos DB initialised — database=%s, containers="
@@ -205,7 +212,8 @@ class CosmosRepo:
             "best_practice_violations,narratives,projects,"
             "project_members,scan_history,scan_schedules,alert_rules,"
             "app_registrations,mfa_records,ca_policies,risk_detections,"
-            "groups,access_reviews,sod_rules,custom_roles,remediation_actions",
+            "groups,access_reviews,sod_rules,custom_roles,remediation_actions,"
+            "pim_sessions",
             settings.cosmos_database,
         )
         return cls(
@@ -234,6 +242,7 @@ class CosmosRepo:
             sod_rules=sod_rules,
             custom_roles=custom_roles,
             remediation_actions=remediation_actions,
+            pim_sessions=pim_sessions,
         )
 
     # ------------------------------------------------------------------
@@ -1716,6 +1725,251 @@ class CosmosRepo:
         return items, total
 
     # ------------------------------------------------------------------
+    # PIM Session operations
+    # ------------------------------------------------------------------
+
+    async def upsert_pim_session(
+        self, tenant_id: str, session: PimSession,
+    ) -> PimSession:
+        body = session.model_dump(mode="json")
+        body["tenantId"] = tenant_id
+        result = await self._pim_sessions.upsert_item(body)
+        return PimSession.model_validate(result)
+
+    async def get_pim_session(
+        self, tenant_id: str, session_id: str,
+    ) -> PimSession | None:
+        try:
+            item: dict[str, Any] = await self._pim_sessions.read_item(
+                item=session_id, partition_key=tenant_id,
+            )
+            return PimSession.model_validate(item)
+        except CosmosResourceNotFoundError:
+            return None
+
+    async def list_pim_sessions(
+        self,
+        tenant_id: str,
+        status: str | None = None,
+        principal_id: str | None = None,
+        role_name: str | None = None,
+        has_anomalies: bool | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[PimSession], int]:
+        conditions = ["c.tenantId = @tenantId"]
+        params: list[dict[str, Any]] = [{"name": "@tenantId", "value": tenant_id}]
+
+        if status:
+            conditions.append("c.status = @status")
+            params.append({"name": "@status", "value": status})
+        if principal_id:
+            conditions.append("c.principal_id = @principalId")
+            params.append({"name": "@principalId", "value": principal_id})
+        if role_name:
+            conditions.append("c.role_name = @roleName")
+            params.append({"name": "@roleName", "value": role_name})
+        if has_anomalies is True:
+            conditions.append("ARRAY_LENGTH(c.anomalies) > 0")
+        elif has_anomalies is False:
+            conditions.append("ARRAY_LENGTH(c.anomalies) = 0")
+
+        where = " AND ".join(conditions)
+
+        count_query = f"SELECT VALUE COUNT(1) FROM c WHERE {where}"
+        count_results: list[int] = [
+            item async for item in self._pim_sessions.query_items(
+                query=count_query, parameters=params, partition_key=tenant_id,
+            )
+        ]
+        total = count_results[0] if count_results else 0
+
+        data_query = (
+            f"SELECT * FROM c WHERE {where} "
+            "ORDER BY c.activation_time DESC "
+            "OFFSET @offset LIMIT @limit"
+        )
+        data_params = [
+            *params,
+            {"name": "@offset", "value": offset},
+            {"name": "@limit", "value": limit},
+        ]
+        items: list[PimSession] = [
+            PimSession.model_validate(item)
+            async for item in self._pim_sessions.query_items(
+                query=data_query, parameters=data_params, partition_key=tenant_id,
+            )
+        ]
+        return items, total
+
+    async def get_active_pim_sessions(
+        self, tenant_id: str,
+    ) -> list[PimSession]:
+        query = (
+            "SELECT * FROM c WHERE c.tenantId = @tenantId AND c.status = 'active' "
+            "ORDER BY c.activation_time DESC"
+        )
+        params: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
+        return [
+            PimSession.model_validate(item)
+            async for item in self._pim_sessions.query_items(
+                query=query, parameters=params, partition_key=tenant_id,
+            )
+        ]
+
+    async def get_pim_sessions_for_identity(
+        self, tenant_id: str, identity_id: str, offset: int = 0, limit: int = 20,
+    ) -> tuple[list[PimSession], int]:
+        base_where = "c.tenantId = @tenantId AND c.identity_id = @identityId"
+        params: list[dict[str, str]] = [
+            {"name": "@tenantId", "value": tenant_id},
+            {"name": "@identityId", "value": identity_id},
+        ]
+
+        count_query = f"SELECT VALUE COUNT(1) FROM c WHERE {base_where}"
+        count_results: list[int] = [
+            item async for item in self._pim_sessions.query_items(
+                query=count_query, parameters=params, partition_key=tenant_id,
+            )
+        ]
+        total = count_results[0] if count_results else 0
+
+        data_query = (
+            f"SELECT * FROM c WHERE {base_where} "
+            "ORDER BY c.activation_time DESC "
+            "OFFSET @offset LIMIT @limit"
+        )
+        data_params: list[dict[str, Any]] = [
+            *params,
+            {"name": "@offset", "value": offset},
+            {"name": "@limit", "value": limit},
+        ]
+        items: list[PimSession] = [
+            PimSession.model_validate(item)
+            async for item in self._pim_sessions.query_items(
+                query=data_query, parameters=data_params, partition_key=tenant_id,
+            )
+        ]
+        return items, total
+
+    async def get_pim_session_analytics(
+        self, tenant_id: str, days: int = 30,
+    ) -> dict[str, Any]:
+        from collections import Counter
+        from datetime import UTC, timedelta
+
+        now = datetime.now(UTC)
+        cutoff = (now - timedelta(days=days)).isoformat()
+        params: list[dict[str, Any]] = [
+            {"name": "@tenantId", "value": tenant_id},
+            {"name": "@cutoff", "value": cutoff},
+        ]
+        base_where = "c.tenantId = @tenantId AND c.activation_time >= @cutoff"
+
+        all_query = f"SELECT * FROM c WHERE {base_where}"
+        sessions: list[dict[str, Any]] = [
+            item async for item in self._pim_sessions.query_items(
+                query=all_query, parameters=params, partition_key=tenant_id,
+            )
+        ]
+
+        total = len(sessions)
+        active = sum(1 for s in sessions if s.get("status") == "active")
+        expired = sum(1 for s in sessions if s.get("status") == "expired")
+        with_anomalies = sum(1 for s in sessions if len(s.get("anomalies", [])) > 0)
+
+        durations = [s.get("duration_minutes", 0) for s in sessions]
+        avg_duration = sum(durations) / len(durations) if durations else 0.0
+
+        role_counter: Counter[str] = Counter()
+        activator_counter: Counter[str] = Counter()
+        hour_counter: Counter[int] = Counter()
+        day_counter: Counter[str] = Counter()
+        anomaly_type_counter: Counter[str] = Counter()
+
+        for s in sessions:
+            role_counter[s.get("role_name", "Unknown")] += 1
+            activator_counter[s.get("principal_display_name", "Unknown")] += 1
+
+            act_time = s.get("activation_time", "")
+            if isinstance(act_time, str) and len(act_time) >= 13:
+                try:
+                    dt = datetime.fromisoformat(act_time.replace("Z", "+00:00"))
+                    hour_counter[dt.hour] += 1
+                    day_counter[dt.strftime("%Y-%m-%d")] += 1
+                except (ValueError, TypeError):
+                    pass
+
+            for a in s.get("anomalies", []):
+                anomaly_type_counter[a.get("anomaly_type", "unknown")] += 1
+
+        return {
+            "tenant_id": tenant_id,
+            "total_sessions": total,
+            "active_sessions": active,
+            "expired_sessions": expired,
+            "sessions_with_anomalies": with_anomalies,
+            "avg_session_duration_minutes": round(avg_duration, 1),
+            "top_activated_roles": [
+                {"role_name": name, "count": cnt}
+                for name, cnt in role_counter.most_common(10)
+            ],
+            "top_activators": [
+                {"principal_display_name": name, "count": cnt}
+                for name, cnt in activator_counter.most_common(10)
+            ],
+            "activations_by_hour": dict(hour_counter),
+            "activations_by_day": [
+                {"date": d, "count": c}
+                for d, c in sorted(day_counter.items())
+            ],
+            "anomaly_counts_by_type": dict(anomaly_type_counter),
+            "computed_at": now.isoformat(),
+        }
+
+    async def get_session_action_events(
+        self, tenant_id: str, identity_id: str,
+        start: datetime, end: datetime,
+        offset: int = 0, limit: int = 50,
+    ) -> tuple[list[ActionEvent], int]:
+        where = (
+            "c.tenantId = @tenantId AND c.identity_id = @identityId "
+            "AND c.timestamp >= @start AND c.timestamp <= @end"
+        )
+        params: list[dict[str, Any]] = [
+            {"name": "@tenantId", "value": tenant_id},
+            {"name": "@identityId", "value": identity_id},
+            {"name": "@start", "value": start.isoformat()},
+            {"name": "@end", "value": end.isoformat()},
+        ]
+
+        count_query = f"SELECT VALUE COUNT(1) FROM c WHERE {where}"
+        count_results: list[int] = [
+            item async for item in self._action_events.query_items(
+                query=count_query, parameters=params, partition_key=tenant_id,
+            )
+        ]
+        total = count_results[0] if count_results else 0
+
+        data_query = (
+            f"SELECT * FROM c WHERE {where} "
+            "ORDER BY c.timestamp ASC "
+            "OFFSET @offset LIMIT @limit"
+        )
+        data_params = [
+            *params,
+            {"name": "@offset", "value": offset},
+            {"name": "@limit", "value": limit},
+        ]
+        items: list[ActionEvent] = [
+            ActionEvent.model_validate(item)
+            async for item in self._action_events.query_items(
+                query=data_query, parameters=data_params, partition_key=tenant_id,
+            )
+        ]
+        return items, total
+
+    # ------------------------------------------------------------------
     # Generic count query
     # ------------------------------------------------------------------
 
@@ -1745,6 +1999,7 @@ class CosmosRepo:
             "sod_rules": self._sod_rules,
             "custom_roles": self._custom_roles,
             "remediation_actions": self._remediation_actions,
+            "pim_sessions": self._pim_sessions,
         }
         container = container_map.get(container_name)
         if container is None:

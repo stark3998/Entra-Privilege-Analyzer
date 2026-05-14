@@ -12,6 +12,7 @@ import { PermissionUtilization } from "@/components/analytics/PermissionUtilizat
 import { OverprivilegedCard } from "@/components/analytics/OverprivilegedCard";
 import { StaleIdentities } from "@/components/analytics/StaleIdentities";
 import { RecentDriftActivity } from "@/components/analytics/RecentDriftActivity";
+import { PimSessionWidget } from "@/components/analytics/PimSessionWidget";
 
 type TimeRange = 7 | 30 | 90;
 
@@ -497,6 +498,14 @@ export function AnalyticsPage() {
           </div>
         ) : null}
       </div>
+
+      {/* ===== PIM Session Analytics Section ===== */}
+      <SectionHeader
+        title="PIM Session Analytics"
+        subtitle="Privileged role activation patterns and anomaly detection"
+      />
+
+      <PimSessionWidget />
     </div>
   );
 }

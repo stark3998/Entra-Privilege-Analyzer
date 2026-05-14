@@ -32,6 +32,7 @@ _DEFAULT_PHASES = [
     "role_assignments",
     "identity_profiles",
     "action_events",
+    "pim_sessions",
 ]
 
 

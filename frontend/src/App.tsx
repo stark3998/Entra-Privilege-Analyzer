@@ -27,6 +27,8 @@ import { ConditionalAccessPage } from "@/pages/ConditionalAccessPage";
 import { GroupsPage } from "@/pages/GroupsPage";
 import { CustomRolesPage } from "@/pages/CustomRolesPage";
 import { RemediationHistoryPage } from "@/pages/RemediationHistoryPage";
+import { PimSessionsPage } from "@/pages/PimSessionsPage";
+import { PimSessionDetailPage } from "@/pages/PimSessionDetailPage";
 import { useAuth } from "@/auth/useAuth";
 import { ProjectProvider } from "@/store/projectContext";
 import { getApiClient } from "@/api/client";
@@ -62,6 +64,8 @@ function AuthenticatedApp() {
         <Route path="recommendations/:id" element={<RecommendationDetailPage />} />
         <Route path="drift" element={<DriftPage />} />
         <Route path="drift/:id" element={<DriftDetailPage />} />
+        <Route path="pim-sessions" element={<PimSessionsPage />} />
+        <Route path="pim-sessions/:id" element={<PimSessionDetailPage />} />
         <Route path="best-practices" element={<BestPracticesPage />} />
         <Route path="best-practices/:id" element={<BestPracticeDetailPage />} />
         <Route path="app-registrations" element={<AppRegistrationsPage />} />

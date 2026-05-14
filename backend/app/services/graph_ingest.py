@@ -357,6 +357,88 @@ class GraphIngestService:
     # Beta-only: Service Principal & App Credential sign-in reports
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # PIM Session tracking APIs
+    # ------------------------------------------------------------------
+
+    async def fetch_role_assignment_schedule_requests(
+        self, tenant_id: str, since: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch PIM activation requests (selfActivate) for Entra directory roles."""
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/roleManagement/directory/roleAssignmentScheduleRequests"
+        filter_parts = ["action eq 'selfActivate'"]
+        if since:
+            cutoff = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+            filter_parts.append(f"createdDateTime ge {cutoff}")
+        params: dict[str, str] = {
+            "$filter": " and ".join(filter_parts),
+            "$expand": "roleDefinition,principal,activatedUsing,targetSchedule",
+        }
+        return await self._graph_get_all_pages(token, url, params)
+
+    async def fetch_pim_audit_events(
+        self, tenant_id: str, since: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch audit events for PIM role management activities."""
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/auditLogs/directoryAudits"
+        cutoff = (since or (datetime.now(UTC) - timedelta(days=30))).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        params = {
+            "$filter": f"category eq 'RoleManagement' and activityDateTime ge {cutoff}",
+            "$top": "999",
+        }
+        return await self._graph_get_all_pages(token, url, params)
+
+    async def fetch_sign_ins_for_user(
+        self, tenant_id: str, user_id: str, start: datetime, end: datetime,
+    ) -> list[dict[str, Any]]:
+        """Fetch sign-in logs for a specific user within a time window."""
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/auditLogs/signIns"
+        start_str = start.strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_str = end.strftime("%Y-%m-%dT%H:%M:%SZ")
+        params = {
+            "$filter": (
+                f"userId eq '{user_id}' "
+                f"and createdDateTime ge {start_str} "
+                f"and createdDateTime le {end_str}"
+            ),
+            "$top": "999",
+        }
+        return await self._graph_get_all_pages(token, url, params)
+
+    async def fetch_audit_events_for_user(
+        self, tenant_id: str, user_id: str, start: datetime, end: datetime,
+    ) -> list[dict[str, Any]]:
+        """Fetch audit events initiated by a specific user within a time window.
+
+        Graph doesn't support filtering by initiatedBy.user.id server-side,
+        so we fetch all events in the window and filter client-side.
+        """
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/auditLogs/directoryAudits"
+        start_str = start.strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_str = end.strftime("%Y-%m-%dT%H:%M:%SZ")
+        params = {
+            "$filter": (
+                f"activityDateTime ge {start_str} "
+                f"and activityDateTime le {end_str}"
+            ),
+            "$top": "999",
+        }
+        all_events = await self._graph_get_all_pages(token, url, params)
+        return [
+            e for e in all_events
+            if (e.get("initiatedBy", {}).get("user") or {}).get("id") == user_id
+        ]
+
+    # ------------------------------------------------------------------
+    # Beta-only sign-in activity reports
+    # ------------------------------------------------------------------
+
     async def fetch_service_principal_sign_in_activities(
         self, tenant_id: str,
     ) -> list[dict[str, Any]]:

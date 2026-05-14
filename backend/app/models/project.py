@@ -69,5 +69,6 @@ class Project(BaseModel):
     risk_score: float = 0.0
     sync_schedule_hours: int = 6
     baseline_window_days: int = 30
+    azure_subscription_ids: list[str] = []
     created_at: datetime
     updated_at: datetime

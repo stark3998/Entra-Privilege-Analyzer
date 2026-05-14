@@ -533,3 +533,92 @@ export interface AlertRule {
   severity_filter: string | null;
   enabled: boolean;
 }
+
+// --- PIM Sessions ---
+
+export type PimSessionStatus = "active" | "expired" | "deactivated";
+export type PimSessionScope = "entra_directory" | "azure_rbac";
+export type PimSessionAnomalyType =
+  | "unusual_activation_time"
+  | "new_location"
+  | "first_time_role"
+  | "high_volume_actions"
+  | "sensitive_action"
+  | "no_justification";
+
+export interface TicketInfo {
+  ticket_number: string | null;
+  ticket_system: string | null;
+}
+
+export interface ApprovalInfo {
+  approval_id: string | null;
+  approver_id: string | null;
+  approver_display_name: string | null;
+  approval_status: string | null;
+  approved_at: string | null;
+}
+
+export interface SessionLocationInfo {
+  ip_address: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+export interface PimSessionAnomaly {
+  anomaly_type: PimSessionAnomalyType;
+  severity: string;
+  details: string;
+  detected_at: string;
+}
+
+export interface PimSession {
+  id: string;
+  tenant_id: string;
+  principal_id: string;
+  principal_display_name: string;
+  principal_upn: string | null;
+  identity_id: string;
+  role_definition_id: string;
+  role_name: string;
+  scope: string;
+  session_scope: PimSessionScope;
+  activation_time: string;
+  expiry_time: string;
+  actual_deactivation_time: string | null;
+  duration_minutes: number;
+  status: PimSessionStatus;
+  is_active: boolean;
+  justification: string | null;
+  ticket_info: TicketInfo | null;
+  approval_info: ApprovalInfo | null;
+  activation_request_id: string | null;
+  audit_event_count: number;
+  sign_in_event_count: number;
+  total_event_count: number;
+  unique_actions: string[];
+  locations: SessionLocationInfo[];
+  anomalies: PimSessionAnomaly[];
+  risk_score: number;
+  created_at: string;
+  updated_at: string;
+  last_event_sync_at: string | null;
+}
+
+export interface PimSessionAnalytics {
+  tenant_id: string;
+  total_sessions: number;
+  active_sessions: number;
+  expired_sessions: number;
+  sessions_with_anomalies: number;
+  avg_session_duration_minutes: number;
+  top_activated_roles: { role_name: string; count: number }[];
+  top_activators: { principal_display_name: string; count: number }[];
+  activations_by_hour: Record<number, number>;
+  activations_by_day: { date: string; count: number }[];
+  anomaly_counts_by_type: Record<string, number>;
+  computed_at: string;
+}

@@ -1092,3 +1092,165 @@ async def get_sync_status(
     audit_state = await repo.get_sync_state(tid, "audit_logs")
     signin_state = await repo.get_sync_state(tid, "sign_in_logs")
     return {"tenant_id": tid, "audit_logs": audit_state, "sign_in_logs": signin_state}
+
+
+# ------------------------------------------------------------------
+# PIM Sessions
+# ------------------------------------------------------------------
+
+
+@router.get("/pim-sessions")
+async def list_pim_sessions(
+    project_id: str,
+    pim_status: str | None = Query(default=None, alias="status"),
+    principal_id: str | None = None,
+    role_name: str | None = None,
+    has_anomalies: bool | None = None,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=200),
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    offset = (page - 1) * size
+    items, total = await repo.list_pim_sessions(
+        tid, status=pim_status, principal_id=principal_id,
+        role_name=role_name, has_anomalies=has_anomalies,
+        offset=offset, limit=size,
+    )
+    return {
+        "items": [s.model_dump(mode="json") for s in items],
+        "total": total,
+        "page": page,
+        "size": size,
+    }
+
+
+@router.get("/pim-sessions/analytics")
+async def get_pim_session_analytics(
+    project_id: str,
+    days: int = Query(default=30, ge=7, le=90),
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    return await repo.get_pim_session_analytics(tid, days=days)
+
+
+@router.get("/pim-sessions/active")
+async def get_active_pim_sessions(
+    project_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    items = await repo.get_active_pim_sessions(tid)
+    return {"items": [s.model_dump(mode="json") for s in items], "total": len(items)}
+
+
+@router.get("/pim-sessions/{session_id}")
+async def get_pim_session_detail(
+    project_id: str,
+    session_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    session = await repo.get_pim_session(tid, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="PIM session not found")
+    return session.model_dump(mode="json")
+
+
+@router.get("/pim-sessions/{session_id}/events")
+async def get_pim_session_events(
+    project_id: str,
+    session_id: str,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=200),
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    session = await repo.get_pim_session(tid, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="PIM session not found")
+    offset = (page - 1) * size
+    items, total = await repo.get_session_action_events(
+        tid, session.identity_id,
+        session.activation_time, session.expiry_time,
+        offset=offset, limit=size,
+    )
+    return {
+        "items": [e.model_dump(mode="json") for e in items],
+        "total": total,
+        "page": page,
+        "size": size,
+    }
+
+
+@router.get("/identities/{identity_id}/pim-sessions")
+async def get_identity_pim_sessions(
+    project_id: str,
+    identity_id: str,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=100),
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid = await _tenant_id(project_id, user, repo, settings)
+    offset = (page - 1) * size
+    items, total = await repo.get_pim_sessions_for_identity(
+        tid, identity_id, offset=offset, limit=size,
+    )
+    return {
+        "items": [s.model_dump(mode="json") for s in items],
+        "total": total,
+        "page": page,
+        "size": size,
+    }
+
+
+@router.post("/pim-sessions/sync", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_pim_session_sync(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    from app.pipelines.pim_session_pipeline import PimSessionPipeline
+    from app.services.crypto import CryptoService
+    from app.services.graph_ingest import GraphIngestService
+
+    project = await validate_project_access(project_id, user, repo, settings)
+    tid = project.target_tenant_id
+
+    crypto = CryptoService(settings)
+    secret = crypto.decrypt(project.encrypted_client_secret) if project.encrypted_client_secret else ""
+    graph = GraphIngestService(
+        settings,
+        client_id=project.client_id or None,
+        client_secret=secret or None,
+    )
+    pipeline = PimSessionPipeline(
+        repo, graph,
+        business_hours_start=settings.pim_session_business_hours_start,
+        business_hours_end=settings.pim_session_business_hours_end,
+    )
+
+    async def _run() -> None:
+        await pipeline.run(
+            tid,
+            subscription_ids=project.azure_subscription_ids or None,
+            backfill_days=settings.pim_session_backfill_days,
+        )
+
+    background_tasks.add_task(_run)
+    return {"status": "accepted", "message": "PIM session sync started"}

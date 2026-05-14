@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     # Encryption (base64-encoded 32-byte key for AES-256-GCM)
     encryption_key: str = ""
 
+    # PIM Privileged Session Tracking
+    pim_session_enabled: bool = True
+    pim_session_poll_interval_minutes: int = 15
+    pim_session_backfill_days: int = 30
+    pim_session_business_hours_start: int = 7
+    pim_session_business_hours_end: int = 19
+
     # App Insights
     applicationinsights_connection_string: str = ""
 

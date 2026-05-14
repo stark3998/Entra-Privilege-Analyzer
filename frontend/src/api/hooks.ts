@@ -32,6 +32,8 @@ import type {
   RemediationAction,
   ScanSchedule,
   AlertRule,
+  PimSession,
+  PimSessionAnalytics,
 } from "./types";
 
 /**
@@ -781,5 +783,135 @@ export function useComplianceReport(framework: string) {
         `/api/projects/${projectId}/reports/compliance?framework=${encodeURIComponent(framework)}`,
       ),
     enabled: !!projectId && !!framework,
+  });
+}
+
+// ------------------------------------------------------------------
+// PIM Sessions
+// ------------------------------------------------------------------
+
+export function usePimSessions(params: {
+  status?: string;
+  principalId?: string;
+  roleName?: string;
+  hasAnomalies?: boolean;
+  page?: number;
+  size?: number;
+}) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+  const { status, principalId, roleName, hasAnomalies, page = 1, size = 50 } = params;
+
+  const qs = new URLSearchParams();
+  if (status) qs.set("status", status);
+  if (principalId) qs.set("principal_id", principalId);
+  if (roleName) qs.set("role_name", roleName);
+  if (hasAnomalies !== undefined) qs.set("has_anomalies", String(hasAnomalies));
+  qs.set("page", String(page));
+  qs.set("size", String(size));
+
+  return useQuery({
+    queryKey: ["pim-sessions", projectId, params],
+    queryFn: () =>
+      client.get<{ items: PimSession[]; total: number; page: number; size: number }>(
+        `/api/projects/${projectId}/pim-sessions?${qs.toString()}`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export function usePimSessionDetail(sessionId: string) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["pim-session", projectId, sessionId],
+    queryFn: () =>
+      client.get<PimSession>(
+        `/api/projects/${projectId}/pim-sessions/${sessionId}`,
+      ),
+    enabled: !!projectId && !!sessionId,
+  });
+}
+
+export function usePimSessionEvents(
+  sessionId: string,
+  params: { page?: number; size?: number } = {},
+) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+  const { page = 1, size = 50 } = params;
+
+  return useQuery({
+    queryKey: ["pim-session-events", projectId, sessionId, page, size],
+    queryFn: () =>
+      client.get<{ items: ActionEvent[]; total: number; page: number; size: number }>(
+        `/api/projects/${projectId}/pim-sessions/${sessionId}/events?page=${page}&size=${size}`,
+      ),
+    enabled: !!projectId && !!sessionId,
+  });
+}
+
+export function usePimSessionAnalytics(days: number = 30) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["pim-session-analytics", projectId, days],
+    queryFn: () =>
+      client.get<PimSessionAnalytics>(
+        `/api/projects/${projectId}/pim-sessions/analytics?days=${days}`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export function useActivePimSessions() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["pim-sessions-active", projectId],
+    queryFn: () =>
+      client.get<{ items: PimSession[]; total: number }>(
+        `/api/projects/${projectId}/pim-sessions/active`,
+      ),
+    enabled: !!projectId,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useIdentityPimSessions(
+  identityId: string,
+  params: { page?: number; size?: number } = {},
+) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+  const { page = 1, size = 20 } = params;
+
+  return useQuery({
+    queryKey: ["identity-pim-sessions", projectId, identityId, page, size],
+    queryFn: () =>
+      client.get<{ items: PimSession[]; total: number; page: number; size: number }>(
+        `/api/projects/${projectId}/identities/${identityId}/pim-sessions?page=${page}&size=${size}`,
+      ),
+    enabled: !!projectId && !!identityId,
+  });
+}
+
+export function useSyncPimSessions() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      client.post<{ status: string; message: string }>(
+        `/api/projects/${projectId}/pim-sessions/sync`,
+        {},
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pim-sessions"] });
+    },
   });
 }

@@ -13,6 +13,8 @@ from app.services.cosmos import CosmosRepo
 from app.services.graph_ingest import GraphIngestService
 from app.services.graph_roles import GraphRolesService
 
+from app.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -266,6 +268,32 @@ class IngestPipeline:
             "events_count": len(raw_signin_events),
         })
 
+        # 9. PIM Session discovery and backfill
+        pim_sessions_processed = 0
+        settings = get_settings()
+        if settings.pim_session_enabled:
+            await self._update_phase(scan_record, "pim_sessions", "running")
+            try:
+                from app.pipelines.pim_session_pipeline import PimSessionPipeline
+
+                pim_pipeline = PimSessionPipeline(
+                    self._repo, self._graph,
+                    business_hours_start=settings.pim_session_business_hours_start,
+                    business_hours_end=settings.pim_session_business_hours_end,
+                )
+                pim_summary = await pim_pipeline.run(
+                    tenant_id,
+                    backfill_days=settings.pim_session_backfill_days,
+                    scan_record=scan_record,
+                )
+                pim_sessions_processed = pim_summary.get("sessions_processed", 0)
+                await self._update_phase(
+                    scan_record, "pim_sessions", "completed", pim_sessions_processed,
+                )
+            except Exception:
+                logger.warning("PIM session phase failed", exc_info=True)
+                await self._update_phase(scan_record, "pim_sessions", "failed")
+
         duration_ms = int((time.monotonic() - start_time) * 1000)
 
         summary: dict[str, Any] = {
@@ -275,6 +303,7 @@ class IngestPipeline:
             "events_ingested": events_inserted,
             "audit_events_fetched": len(raw_audit_events),
             "signin_events_fetched": len(raw_signin_events),
+            "pim_sessions_processed": pim_sessions_processed,
             "duration_ms": duration_ms,
         }
         logger.info("Ingest pipeline complete: %s", summary)
