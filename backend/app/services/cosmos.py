@@ -15,6 +15,7 @@ from app.models.best_practice import BestPracticeViolation
 from app.models.drift import BaselineStats, DriftAlert
 from app.models.identity import IdentityProfile
 from app.models.narrative import Narrative
+from app.models.project import Project, ProjectMember, ScanRecord
 from app.models.role import RoleRecommendation
 from app.models.tenant import TenantConfig
 
@@ -42,6 +43,9 @@ class CosmosRepo:
         baselines: ContainerProxy,
         best_practice_violations: ContainerProxy,
         narratives: ContainerProxy,
+        projects: ContainerProxy,
+        project_members: ContainerProxy,
+        scan_history: ContainerProxy,
     ) -> None:
         self._client = client
         self._db = db
@@ -54,6 +58,9 @@ class CosmosRepo:
         self._baselines = baselines
         self._best_practice_violations = best_practice_violations
         self._narratives = narratives
+        self._projects = projects
+        self._project_members = project_members
+        self._scan_history = scan_history
 
     @classmethod
     async def create(cls, settings: Settings) -> CosmosRepo:
@@ -103,12 +110,25 @@ class CosmosRepo:
             partition_key=PartitionKey(path="/tenantId"),
             default_ttl=_NARRATIVES_TTL,
         )
+        projects = await db.create_container_if_not_exists(
+            id="projects",
+            partition_key=PartitionKey(path="/ownerId"),
+        )
+        project_members = await db.create_container_if_not_exists(
+            id="project_members",
+            partition_key=PartitionKey(path="/projectId"),
+        )
+        scan_history = await db.create_container_if_not_exists(
+            id="scan_history",
+            partition_key=PartitionKey(path="/projectId"),
+        )
 
         logger.info(
             "Cosmos DB initialised — database=%s, containers="
             "tenant_configs,identity_profiles,action_events,sync_state,"
             "role_recommendations,drift_alerts,baselines,"
-            "best_practice_violations,narratives",
+            "best_practice_violations,narratives,projects,"
+            "project_members,scan_history",
             settings.cosmos_database,
         )
         return cls(
@@ -123,6 +143,9 @@ class CosmosRepo:
             baselines=baselines,
             best_practice_violations=best_practice_violations,
             narratives=narratives,
+            projects=projects,
+            project_members=project_members,
+            scan_history=scan_history,
         )
 
     # ------------------------------------------------------------------
@@ -736,6 +759,243 @@ class CosmosRepo:
             raise
 
     # ------------------------------------------------------------------
+    # Project operations
+    # ------------------------------------------------------------------
+
+    async def get_project(self, project_id: str) -> Project | None:
+        """Read a project by ID. Requires a cross-partition point-read."""
+        query = "SELECT * FROM c WHERE c.id = @id"
+        params: list[dict[str, str]] = [{"name": "@id", "value": project_id}]
+        items: list[Project] = [
+            Project.model_validate(item)
+            async for item in self._projects.query_items(
+                query=query, parameters=params, enable_cross_partition_query=True,
+            )
+        ]
+        return items[0] if items else None
+
+    async def upsert_project(self, project: Project) -> Project:
+        """Insert or replace a project document."""
+        body = project.model_dump(mode="json")
+        body["ownerId"] = project.owner_id
+        try:
+            result: dict[str, Any] = await self._projects.upsert_item(body=body)
+            return Project.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error("Cosmos upsert_project failed for %s: %s", project.id, exc.message)
+            raise
+
+    async def list_projects_for_user(
+        self, user_id: str, email: str = "",
+    ) -> list[Project]:
+        """List all projects owned by a user plus projects they are a member of."""
+        owned_query = "SELECT * FROM c WHERE c.ownerId = @userId"
+        owned_params: list[dict[str, str]] = [{"name": "@userId", "value": user_id}]
+        owned: list[Project] = [
+            Project.model_validate(item)
+            async for item in self._projects.query_items(
+                query=owned_query, parameters=owned_params, partition_key=user_id,
+            )
+        ]
+
+        memberships = await self.list_user_memberships(user_id, email)
+        member_project_ids = {m.project_id for m in memberships} - {p.id for p in owned}
+
+        for pid in member_project_ids:
+            proj = await self.get_project(pid)
+            if proj is not None:
+                owned.append(proj)
+
+        return owned
+
+    async def delete_project(self, owner_id: str, project_id: str) -> None:
+        """Delete a project and all its members and scan history."""
+        try:
+            await self._projects.delete_item(item=project_id, partition_key=owner_id)
+        except CosmosResourceNotFoundError:
+            pass
+
+        members = await self.list_project_members(project_id)
+        for m in members:
+            try:
+                await self._project_members.delete_item(item=m.id, partition_key=project_id)
+            except CosmosResourceNotFoundError:
+                pass
+
+    # ------------------------------------------------------------------
+    # Project member operations
+    # ------------------------------------------------------------------
+
+    async def get_project_member(
+        self, project_id: str, user_id: str,
+    ) -> ProjectMember | None:
+        """Find a member record by project and user ID."""
+        query = (
+            "SELECT * FROM c WHERE c.projectId = @projectId "
+            "AND c.user_id = @userId"
+        )
+        params: list[dict[str, str]] = [
+            {"name": "@projectId", "value": project_id},
+            {"name": "@userId", "value": user_id},
+        ]
+        items: list[ProjectMember] = [
+            ProjectMember.model_validate(item)
+            async for item in self._project_members.query_items(
+                query=query, parameters=params, partition_key=project_id,
+            )
+        ]
+        return items[0] if items else None
+
+    async def get_project_member_by_email(
+        self, project_id: str, email: str,
+    ) -> ProjectMember | None:
+        """Find a member record by project and email (case-insensitive)."""
+        query = (
+            "SELECT * FROM c WHERE c.projectId = @projectId "
+            "AND LOWER(c.email) = LOWER(@email)"
+        )
+        params: list[dict[str, str]] = [
+            {"name": "@projectId", "value": project_id},
+            {"name": "@email", "value": email},
+        ]
+        items: list[ProjectMember] = [
+            ProjectMember.model_validate(item)
+            async for item in self._project_members.query_items(
+                query=query, parameters=params, partition_key=project_id,
+            )
+        ]
+        return items[0] if items else None
+
+    async def upsert_project_member(self, member: ProjectMember) -> ProjectMember:
+        """Insert or replace a project member document."""
+        body = member.model_dump(mode="json")
+        body["projectId"] = member.project_id
+        try:
+            result: dict[str, Any] = await self._project_members.upsert_item(body=body)
+            return ProjectMember.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error(
+                "Cosmos upsert_project_member failed for %s/%s: %s",
+                member.project_id, member.id, exc.message,
+            )
+            raise
+
+    async def list_project_members(self, project_id: str) -> list[ProjectMember]:
+        """List all members of a project."""
+        query = "SELECT * FROM c WHERE c.projectId = @projectId"
+        params: list[dict[str, str]] = [{"name": "@projectId", "value": project_id}]
+        return [
+            ProjectMember.model_validate(item)
+            async for item in self._project_members.query_items(
+                query=query, parameters=params, partition_key=project_id,
+            )
+        ]
+
+    async def delete_project_member(self, project_id: str, member_id: str) -> None:
+        """Delete a project member."""
+        try:
+            await self._project_members.delete_item(item=member_id, partition_key=project_id)
+        except CosmosResourceNotFoundError:
+            pass
+
+    async def list_user_memberships(
+        self, user_id: str, email: str = "",
+    ) -> list[ProjectMember]:
+        """Find all project memberships for a user (cross-partition).
+
+        Matches on user_id (OID) OR email to include unclaimed invites.
+        """
+        if email:
+            query = (
+                "SELECT * FROM c WHERE c.user_id = @userId "
+                "OR LOWER(c.email) = LOWER(@email)"
+            )
+            params: list[dict[str, str]] = [
+                {"name": "@userId", "value": user_id},
+                {"name": "@email", "value": email},
+            ]
+        else:
+            query = "SELECT * FROM c WHERE c.user_id = @userId"
+            params = [{"name": "@userId", "value": user_id}]
+        return [
+            ProjectMember.model_validate(item)
+            async for item in self._project_members.query_items(
+                query=query, parameters=params, enable_cross_partition_query=True,
+            )
+        ]
+
+    # ------------------------------------------------------------------
+    # Scan history operations
+    # ------------------------------------------------------------------
+
+    async def get_scan(self, project_id: str, scan_id: str) -> ScanRecord | None:
+        """Point-read a scan record."""
+        try:
+            item: dict[str, Any] = await self._scan_history.read_item(
+                item=scan_id, partition_key=project_id,
+            )
+            return ScanRecord.model_validate(item)
+        except CosmosResourceNotFoundError:
+            return None
+
+    async def upsert_scan(self, scan: ScanRecord) -> ScanRecord:
+        """Insert or replace a scan record."""
+        body = scan.model_dump(mode="json")
+        body["projectId"] = scan.project_id
+        try:
+            result: dict[str, Any] = await self._scan_history.upsert_item(body=body)
+            return ScanRecord.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            logger.error("Cosmos upsert_scan failed for %s/%s: %s", scan.project_id, scan.id, exc.message)
+            raise
+
+    async def list_scans(
+        self, project_id: str, offset: int = 0, limit: int = 20,
+    ) -> tuple[list[ScanRecord], int]:
+        """List scan history for a project, newest first."""
+        count_query = "SELECT VALUE COUNT(1) FROM c WHERE c.projectId = @projectId"
+        params: list[dict[str, str]] = [{"name": "@projectId", "value": project_id}]
+        count_results: list[int] = [
+            item
+            async for item in self._scan_history.query_items(
+                query=count_query, parameters=params, partition_key=project_id,
+            )
+        ]
+        total = count_results[0] if count_results else 0
+
+        data_query = (
+            "SELECT * FROM c WHERE c.projectId = @projectId "
+            "ORDER BY c.started_at DESC OFFSET @offset LIMIT @limit"
+        )
+        data_params: list[dict[str, Any]] = [
+            *params,
+            {"name": "@offset", "value": offset},
+            {"name": "@limit", "value": limit},
+        ]
+        items: list[ScanRecord] = [
+            ScanRecord.model_validate(item)
+            async for item in self._scan_history.query_items(
+                query=data_query, parameters=data_params, partition_key=project_id,
+            )
+        ]
+        return items, total
+
+    async def get_latest_scan(self, project_id: str) -> ScanRecord | None:
+        """Get the most recent scan for a project."""
+        query = (
+            "SELECT * FROM c WHERE c.projectId = @projectId "
+            "ORDER BY c.started_at DESC OFFSET 0 LIMIT 1"
+        )
+        params: list[dict[str, str]] = [{"name": "@projectId", "value": project_id}]
+        items: list[ScanRecord] = [
+            ScanRecord.model_validate(item)
+            async for item in self._scan_history.query_items(
+                query=query, parameters=params, partition_key=project_id,
+            )
+        ]
+        return items[0] if items else None
+
+    # ------------------------------------------------------------------
     # Generic count query
     # ------------------------------------------------------------------
 
@@ -751,6 +1011,9 @@ class CosmosRepo:
             "baselines": self._baselines,
             "best_practice_violations": self._best_practice_violations,
             "narratives": self._narratives,
+            "projects": self._projects,
+            "project_members": self._project_members,
+            "scan_history": self._scan_history,
         }
         container = container_map.get(container_name)
         if container is None:
@@ -955,6 +1218,299 @@ class CosmosRepo:
             "risk_score_trend": risk_score_trend,
             "drift_alerts_trend": drift_alerts_trend,
             "actions_trend": actions_trend,
+        }
+
+    # ------------------------------------------------------------------
+    # Analytics aggregation helpers
+    # ------------------------------------------------------------------
+
+    async def get_analytics_data(self, tenant_id: str, days: int = 30) -> dict[str, Any]:
+        """Run cross-container aggregation queries for the Analytics page."""
+        from collections import Counter
+        from datetime import UTC, datetime, timedelta
+
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+        base_params: list[dict[str, Any]] = [
+            {"name": "@tenantId", "value": tenant_id},
+            {"name": "@cutoff", "value": cutoff},
+        ]
+
+        # --- action_events: totals ---
+        totals_query = (
+            "SELECT VALUE {"
+            "  total: COUNT(1),"
+            "  failures: COUNT(c.result = 'failure' ? 1 : undefined)"
+            "} FROM c WHERE c.tenantId = @tenantId AND c.timestamp >= @cutoff"
+        )
+        totals_results: list[dict[str, Any]] = [
+            item async for item in self._action_events.query_items(
+                query=totals_query, parameters=base_params, partition_key=tenant_id,
+            )
+        ]
+        total_actions = totals_results[0].get("total", 0) if totals_results else 0
+        failures = totals_results[0].get("failures", 0) if totals_results else 0
+        failed_action_pct = (failures / total_actions * 100.0) if total_actions > 0 else 0.0
+
+        # --- action_events: unique active identities ---
+        unique_query = (
+            "SELECT VALUE COUNT(1) FROM "
+            "(SELECT DISTINCT c.identity_id FROM c "
+            "WHERE c.tenantId = @tenantId AND c.timestamp >= @cutoff)"
+        )
+        unique_results: list[int] = [
+            item async for item in self._action_events.query_items(
+                query=unique_query, parameters=base_params, partition_key=tenant_id,
+            )
+        ]
+        unique_active = unique_results[0] if unique_results else 0
+        avg_actions = (total_actions / unique_active) if unique_active > 0 else 0.0
+
+        # --- action_events: daily action counts ---
+        daily_query = (
+            "SELECT SUBSTRING(c.timestamp, 0, 10) AS date, COUNT(1) AS cnt "
+            "FROM c WHERE c.tenantId = @tenantId AND c.timestamp >= @cutoff "
+            "GROUP BY SUBSTRING(c.timestamp, 0, 10)"
+        )
+        daily_action_counts: list[dict[str, Any]] = []
+        async for item in self._action_events.query_items(
+            query=daily_query, parameters=base_params, partition_key=tenant_id,
+        ):
+            daily_action_counts.append({
+                "date": item.get("date", ""),
+                "value": float(item.get("cnt", 0)),
+            })
+        daily_action_counts.sort(key=lambda x: x["date"])
+
+        # --- action_events: top actions ---
+        top_actions_query = (
+            "SELECT c.action, COUNT(1) AS cnt "
+            "FROM c WHERE c.tenantId = @tenantId AND c.timestamp >= @cutoff "
+            "GROUP BY c.action"
+        )
+        top_actions_raw: list[dict[str, Any]] = [
+            item async for item in self._action_events.query_items(
+                query=top_actions_query, parameters=base_params, partition_key=tenant_id,
+            )
+        ]
+        top_actions_raw.sort(key=lambda x: x.get("cnt", 0), reverse=True)
+        top_actions = [
+            {"action": r.get("action", ""), "count": r.get("cnt", 0)}
+            for r in top_actions_raw[:10]
+        ]
+
+        # --- action_events: most active identities ---
+        active_query = (
+            "SELECT c.identity_id, c.identity_display_name, COUNT(1) AS cnt "
+            "FROM c WHERE c.tenantId = @tenantId AND c.timestamp >= @cutoff "
+            "GROUP BY c.identity_id, c.identity_display_name"
+        )
+        active_raw: list[dict[str, Any]] = [
+            item async for item in self._action_events.query_items(
+                query=active_query, parameters=base_params, partition_key=tenant_id,
+            )
+        ]
+        active_raw.sort(key=lambda x: x.get("cnt", 0), reverse=True)
+        most_active = [
+            {
+                "identity_id": r.get("identity_id", ""),
+                "display_name": r.get("identity_display_name", ""),
+                "identity_type": r.get("identity_id", "").split("_")[0] if "_" in r.get("identity_id", "") else "User",
+                "count": r.get("cnt", 0),
+            }
+            for r in active_raw[:10]
+        ]
+
+        # --- action_events: by source ---
+        source_query = (
+            "SELECT c.source, COUNT(1) AS cnt "
+            "FROM c WHERE c.tenantId = @tenantId AND c.timestamp >= @cutoff "
+            "GROUP BY c.source"
+        )
+        actions_by_source: dict[str, int] = {}
+        async for item in self._action_events.query_items(
+            query=source_query, parameters=base_params, partition_key=tenant_id,
+        ):
+            actions_by_source[item.get("source", "unknown")] = item.get("cnt", 0)
+
+        # --- action_events: success vs failure ---
+        result_query = (
+            "SELECT c.result, COUNT(1) AS cnt "
+            "FROM c WHERE c.tenantId = @tenantId AND c.timestamp >= @cutoff "
+            "GROUP BY c.result"
+        )
+        success_vs_failure: dict[str, int] = {}
+        async for item in self._action_events.query_items(
+            query=result_query, parameters=base_params, partition_key=tenant_id,
+        ):
+            success_vs_failure[item.get("result", "unknown")] = item.get("cnt", 0)
+
+        # --- action_events: top resources ---
+        resource_query = (
+            "SELECT c.resource, c.resource_type, COUNT(1) AS cnt "
+            "FROM c WHERE c.tenantId = @tenantId AND c.timestamp >= @cutoff "
+            "AND c.resource != null "
+            "GROUP BY c.resource, c.resource_type"
+        )
+        resource_raw: list[dict[str, Any]] = [
+            item async for item in self._action_events.query_items(
+                query=resource_query, parameters=base_params, partition_key=tenant_id,
+            )
+        ]
+        resource_raw.sort(key=lambda x: x.get("cnt", 0), reverse=True)
+        top_resources = [
+            {
+                "resource": r.get("resource", ""),
+                "resource_type": r.get("resource_type", ""),
+                "count": r.get("cnt", 0),
+            }
+            for r in resource_raw[:10]
+        ]
+
+        # --- identity_profiles: roles (flatten in Python) ---
+        roles_query = (
+            "SELECT c.current_roles FROM c WHERE c.tenantId = @tenantId"
+        )
+        roles_params: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
+        role_counter: Counter[str] = Counter()
+        permanent_count = 0
+        pim_count = 0
+        async for item in self._identity_profiles.query_items(
+            query=roles_query, parameters=roles_params, partition_key=tenant_id,
+        ):
+            for role in item.get("current_roles", []):
+                role_counter[role.get("role_name", "Unknown")] += 1
+                if role.get("is_permanent", True):
+                    permanent_count += 1
+                else:
+                    pim_count += 1
+        top_roles = [
+            {"role_name": name, "count": cnt}
+            for name, cnt in role_counter.most_common(10)
+        ]
+
+        # --- identity_profiles: stale identities ---
+        now = datetime.now(UTC)
+        stale_counts: dict[str, int] = {}
+        for label, threshold_days in [("30d", 30), ("60d", 60), ("90d", 90)]:
+            threshold = (now - timedelta(days=threshold_days)).isoformat()
+            stale_query = (
+                "SELECT VALUE COUNT(1) FROM c "
+                "WHERE c.tenantId = @tenantId AND c.last_seen < @threshold"
+            )
+            stale_params: list[dict[str, Any]] = [
+                {"name": "@tenantId", "value": tenant_id},
+                {"name": "@threshold", "value": threshold},
+            ]
+            results: list[int] = [
+                item async for item in self._identity_profiles.query_items(
+                    query=stale_query, parameters=stale_params, partition_key=tenant_id,
+                )
+            ]
+            stale_counts[label] = results[0] if results else 0
+
+        # --- identity_profiles: new identities ---
+        new_query = (
+            "SELECT VALUE COUNT(1) FROM c "
+            "WHERE c.tenantId = @tenantId AND c.first_seen >= @cutoff"
+        )
+        new_results: list[int] = [
+            item async for item in self._identity_profiles.query_items(
+                query=new_query, parameters=base_params, partition_key=tenant_id,
+            )
+        ]
+        new_identities_count = new_results[0] if new_results else 0
+
+        # --- role_recommendations: permission utilization ---
+        perm_query = (
+            "SELECT c.permission_gaps FROM c WHERE c.tenantId = @tenantId"
+        )
+        perm_params: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
+        used_count = 0
+        unused_count = 0
+        async for item in self._role_recommendations.query_items(
+            query=perm_query, parameters=perm_params, partition_key=tenant_id,
+        ):
+            for gap in item.get("permission_gaps", []):
+                if gap.get("is_used", False):
+                    used_count += 1
+                else:
+                    unused_count += 1
+
+        # --- role_recommendations: overprivileged count ---
+        overpriv_query = (
+            "SELECT VALUE COUNT(1) FROM c "
+            "WHERE c.tenantId = @tenantId AND c.reduction_score > 30"
+        )
+        overpriv_results: list[int] = [
+            item async for item in self._role_recommendations.query_items(
+                query=overpriv_query, parameters=perm_params, partition_key=tenant_id,
+            )
+        ]
+        overprivileged_count = overpriv_results[0] if overpriv_results else 0
+
+        # --- best_practice_violations: by type ---
+        vtype_query = (
+            "SELECT c.violation_type, COUNT(1) AS cnt "
+            "FROM c WHERE c.tenantId = @tenantId AND c.resolved = false "
+            "GROUP BY c.violation_type"
+        )
+        vtype_params: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
+        violations_by_type: dict[str, int] = {}
+        async for item in self._best_practice_violations.query_items(
+            query=vtype_query, parameters=vtype_params, partition_key=tenant_id,
+        ):
+            violations_by_type[item.get("violation_type", "unknown")] = item.get("cnt", 0)
+
+        # --- best_practice_violations: credential expiry ---
+        cred_query = (
+            "SELECT c.identity_id, c.identity_display_name, c.detected_at "
+            "FROM c WHERE c.tenantId = @tenantId "
+            "AND c.violation_type = 'sp_credential_expiry' AND c.resolved = false "
+            "ORDER BY c.detected_at DESC OFFSET 0 LIMIT 10"
+        )
+        credential_expiry: list[dict[str, str]] = [
+            {
+                "identity_id": item.get("identity_id", ""),
+                "identity_display_name": item.get("identity_display_name", ""),
+                "detected_at": item.get("detected_at", ""),
+            }
+            async for item in self._best_practice_violations.query_items(
+                query=cred_query, parameters=vtype_params, partition_key=tenant_id,
+            )
+        ]
+
+        # --- drift_alerts: recent 5 ---
+        drift_query = (
+            "SELECT * FROM c WHERE c.tenantId = @tenantId "
+            "ORDER BY c.detected_at DESC OFFSET 0 LIMIT 5"
+        )
+        drift_params: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
+        recent_drift: list[dict[str, Any]] = [
+            item async for item in self._drift_alerts.query_items(
+                query=drift_query, parameters=drift_params, partition_key=tenant_id,
+            )
+        ]
+
+        return {
+            "total_actions": total_actions,
+            "unique_active_identities": unique_active,
+            "avg_actions_per_identity": round(avg_actions, 1),
+            "failed_action_pct": round(failed_action_pct, 1),
+            "new_identities_count": new_identities_count,
+            "daily_action_counts": daily_action_counts,
+            "top_actions": top_actions,
+            "most_active_identities": most_active,
+            "actions_by_source": actions_by_source,
+            "success_vs_failure": success_vs_failure,
+            "top_resources": top_resources,
+            "top_roles": top_roles,
+            "permission_utilization": {"used": used_count, "unused": unused_count},
+            "permanent_vs_pim": {"permanent": permanent_count, "pim": pim_count},
+            "overprivileged_count": overprivileged_count,
+            "violations_by_type": violations_by_type,
+            "stale_identity_counts": stale_counts,
+            "credential_expiry_violations": credential_expiry,
+            "recent_drift_alerts": recent_drift,
         }
 
     # ------------------------------------------------------------------

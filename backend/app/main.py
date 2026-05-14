@@ -20,8 +20,11 @@ from app.routers import (
     health,
     identities,
     narratives,
+    project_api,
+    projects,
     recommendations,
     reports,
+    scans,
     settings_router,
     sync,
     tenants,
@@ -142,6 +145,9 @@ def create_app() -> FastAPI:
     app.include_router(webhooks.router)
     app.include_router(reports.router)
     app.include_router(settings_router.router)
+    app.include_router(projects.router)
+    app.include_router(project_api.router)
+    app.include_router(scans.router)
 
     return app
 

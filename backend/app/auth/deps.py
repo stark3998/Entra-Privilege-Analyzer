@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
@@ -10,6 +11,7 @@ from pydantic import BaseModel
 
 from app.auth.jwt import MultiTenantJwtValidator
 from app.config import Settings, get_settings
+from app.models.project import Project
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +104,71 @@ def validate_tenant_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cross-tenant access denied",
         )
+
+
+_ROLE_HIERARCHY: dict[str, int] = {"viewer": 0, "operator": 1, "admin": 2}
+
+_MOCK_PROJECT = Project(
+    id="local-dev-project",
+    owner_id="local-dev-user",
+    name="Local Dev Project",
+    target_tenant_id="local-dev-tenant",
+    target_tenant_name="Local Dev Tenant",
+    client_id="local-dev-client",
+    encrypted_client_secret="",
+    status="active",
+    created_at=datetime(2024, 1, 1),
+    updated_at=datetime(2024, 1, 1),
+)
+
+
+async def validate_project_access(
+    project_id: str,
+    user: CurrentUser,
+    repo: Any,
+    settings: Settings | None = None,
+    required_role: str | None = None,
+) -> Project:
+    """Validate user has access to a project and return the project.
+
+    Owner is implicitly an admin. Otherwise checks project_members.
+    """
+    resolved = settings if settings is not None else get_settings()
+    if resolved.local_mode:
+        return _MOCK_PROJECT
+
+    project = await repo.get_project(project_id)
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    if project.owner_id == user.oid:
+        return project
+
+    member = await repo.get_project_member(project_id, user.oid)
+    if member is None:
+        member = await repo.get_project_member_by_email(project_id, user.email)
+        if member is not None:
+            member.user_id = user.oid
+            await repo.upsert_project_member(member)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this project",
+            )
+
+    if required_role is not None:
+        user_level = _ROLE_HIERARCHY.get(member.role, -1)
+        required_level = _ROLE_HIERARCHY.get(required_role, 999)
+        if user_level < required_level:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires project role: {required_role}",
+            )
+
+    return project
 
 
 def require_role(*roles: str) -> Callable[..., CurrentUser]:

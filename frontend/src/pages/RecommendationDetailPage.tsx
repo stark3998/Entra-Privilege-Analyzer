@@ -38,7 +38,7 @@ export function RecommendationDetailPage() {
     <div className="space-y-6">
       <button
         type="button"
-        onClick={() => navigate("/recommendations")}
+        onClick={() => navigate("../recommendations")}
         className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-brand-900/20 dark:hover:text-brand-300"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -83,7 +83,7 @@ export function RecommendationDetailPage() {
             </svg>
           }
           action={
-            <button type="button" onClick={() => navigate("/recommendations")} className="btn-primary">
+            <button type="button" onClick={() => navigate("../recommendations")} className="btn-primary">
               Return to Recommendations
             </button>
           }

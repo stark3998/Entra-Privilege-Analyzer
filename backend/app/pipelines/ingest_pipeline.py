@@ -8,6 +8,7 @@ from typing import Any
 
 from app.models.action import ActionEvent
 from app.models.identity import IdentityProfile, IdentityType, ObservedAction
+from app.models.project import ScanRecord
 from app.services.cosmos import CosmosRepo
 from app.services.graph_ingest import GraphIngestService
 from app.services.graph_roles import GraphRolesService
@@ -28,7 +29,29 @@ class IngestPipeline:
         self._graph = graph
         self._roles = roles_svc
 
-    async def run(self, tenant_id: str, full_sync: bool = False) -> dict[str, Any]:
+    async def _update_phase(
+        self, scan: ScanRecord | None, phase_name: str, status: str, items: int = 0,
+    ) -> None:
+        """Update a scan phase status if a scan record is provided."""
+        if scan is None:
+            return
+        for phase in scan.phases:
+            if phase.name == phase_name:
+                phase.status = status
+                if status == "running":
+                    phase.started_at = datetime.now(UTC)
+                elif status in ("completed", "failed"):
+                    phase.completed_at = datetime.now(UTC)
+                    phase.items_processed = items
+                break
+        await self._repo.upsert_scan(scan)
+
+    async def run(
+        self,
+        tenant_id: str,
+        full_sync: bool = False,
+        scan_record: ScanRecord | None = None,
+    ) -> dict[str, Any]:
         """Execute a full or incremental sync for a tenant.
 
         Steps:
@@ -62,16 +85,20 @@ class IngestPipeline:
                     signin_since = datetime.fromisoformat(last_ts)
 
         # 2. Fetch audit logs
+        await self._update_phase(scan_record, "audit_logs", "running")
         logger.info("Fetching audit logs for tenant %s (full=%s)", tenant_id, full_sync)
         raw_audit_events, new_delta_link = await self._graph.fetch_audit_logs(
             tenant_id, delta_link=delta_link if not full_sync else None
         )
+        await self._update_phase(scan_record, "audit_logs", "completed", len(raw_audit_events))
 
         # 3. Fetch sign-in logs
+        await self._update_phase(scan_record, "sign_in_logs", "running")
         logger.info("Fetching sign-in logs for tenant %s", tenant_id)
         raw_signin_events = await self._graph.fetch_sign_in_logs(
             tenant_id, since=signin_since if not full_sync else None
         )
+        await self._update_phase(scan_record, "sign_in_logs", "completed", len(raw_signin_events))
 
         # 4. Parse events, extract actor identities
         all_events: list[ActionEvent] = []
@@ -95,10 +122,13 @@ class IngestPipeline:
                 actor_registry[event.identity_id] = (actor_name, event.identity_id)
 
         # 5. Fetch role assignments
+        await self._update_phase(scan_record, "role_assignments", "running")
         logger.info("Fetching role assignments for tenant %s", tenant_id)
         roles_map = await self._roles.get_identity_roles(tenant_id)
+        await self._update_phase(scan_record, "role_assignments", "completed", len(roles_map))
 
         # 6. For each identity, create/update profile
+        await self._update_phase(scan_record, "identity_profiles", "running")
         identities_processed = 0
         for identity_id, (display_name, _) in actor_registry.items():
             parts = identity_id.split("_", 1)
@@ -193,8 +223,13 @@ class IngestPipeline:
             await self._repo.upsert_identity(tenant_id, profile)
             identities_processed += 1
 
+        await self._update_phase(scan_record, "identity_profiles", "completed", identities_processed)
+
         # 7. Bulk insert action events
+        await self._update_phase(scan_record, "action_events", "running")
         events_inserted = await self._repo.append_action_events(tenant_id, all_events)
+
+        await self._update_phase(scan_record, "action_events", "completed", events_inserted)
 
         # 8. Update sync state
         await self._repo.upsert_sync_state(tenant_id, "audit_logs", {

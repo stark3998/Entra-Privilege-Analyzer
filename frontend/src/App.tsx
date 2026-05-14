@@ -7,6 +7,7 @@ import {
 import { AppShell } from "@/components/layout/AppShell";
 import { LoginGate } from "@/auth/LoginGate";
 import { DashboardPage } from "@/pages/DashboardPage";
+import { AnalyticsPage } from "@/pages/AnalyticsPage";
 import { IdentitiesPage } from "@/pages/IdentitiesPage";
 import { IdentityDetailPage } from "@/pages/IdentityDetailPage";
 import { RecommendationsPage } from "@/pages/RecommendationsPage";
@@ -17,41 +18,59 @@ import { BestPracticesPage } from "@/pages/BestPracticesPage";
 import { BestPracticeDetailPage } from "@/pages/BestPracticeDetailPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { ReportsPage } from "@/pages/ReportsPage";
+import { ProjectsHomePage } from "@/pages/ProjectsHomePage";
+import { ProjectCreatePage } from "@/pages/ProjectCreatePage";
+import { ScanPage } from "@/pages/ScanPage";
+import { ProjectMembersPage } from "@/pages/ProjectMembersPage";
 import { useAuth } from "@/auth/useAuth";
-import { TenantProvider } from "@/store/tenantContext";
+import { ProjectProvider } from "@/store/projectContext";
 import { getApiClient } from "@/api/client";
 
 const isLocalMode = import.meta.env.VITE_LOCAL_MODE === "true";
 
 function AuthenticatedApp() {
-  const { user, acquireToken } = useAuth();
+  const { acquireToken } = useAuth();
 
   // Initialize the API client with the token provider
   getApiClient(acquireToken);
 
-  const tenantId = user?.tenantId ?? "unknown";
-  const tenantName = user?.name ?? "Unknown Tenant";
-
   return (
-    <TenantProvider tenantId={tenantId} tenantName={tenantName}>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/identities" element={<IdentitiesPage />} />
-          <Route path="/identities/:id" element={<IdentityDetailPage />} />
-          <Route path="/recommendations" element={<RecommendationsPage />} />
-          <Route path="/recommendations/:id" element={<RecommendationDetailPage />} />
-          <Route path="/drift" element={<DriftPage />} />
-          <Route path="/drift/:id" element={<DriftDetailPage />} />
-          <Route path="/best-practices" element={<BestPracticesPage />} />
-          <Route path="/best-practices/:id" element={<BestPracticeDetailPage />} />
-          <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Route>
-      </Routes>
-    </TenantProvider>
+    <Routes>
+      {/* Project list & creation — no AppShell */}
+      <Route path="/projects" element={<ProjectsHomePage />} />
+      <Route path="/projects/new" element={<ProjectCreatePage />} />
+
+      {/* Project-scoped pages — wrapped by ProjectProvider + AppShell */}
+      <Route
+        path="/projects/:projectId/*"
+        element={
+          <ProjectProvider>
+            <AppShell />
+          </ProjectProvider>
+        }
+      >
+        <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="identities" element={<IdentitiesPage />} />
+        <Route path="identities/:id" element={<IdentityDetailPage />} />
+        <Route path="recommendations" element={<RecommendationsPage />} />
+        <Route path="recommendations/:id" element={<RecommendationDetailPage />} />
+        <Route path="drift" element={<DriftPage />} />
+        <Route path="drift/:id" element={<DriftDetailPage />} />
+        <Route path="best-practices" element={<BestPracticesPage />} />
+        <Route path="best-practices/:id" element={<BestPracticeDetailPage />} />
+        <Route path="reports" element={<ReportsPage />} />
+        <Route path="scan" element={<ScanPage />} />
+        <Route path="members" element={<ProjectMembersPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="*" element={<Navigate to="dashboard" replace />} />
+      </Route>
+
+      {/* Root redirect */}
+      <Route path="/" element={<Navigate to="/projects" replace />} />
+      <Route path="*" element={<Navigate to="/projects" replace />} />
+    </Routes>
   );
 }
 

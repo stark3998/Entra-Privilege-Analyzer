@@ -84,7 +84,7 @@ export function DashboardPage() {
           <>
             {/* Compliance */}
             <div
-              onClick={() => navigate("/best-practices")}
+              onClick={() => navigate("../best-practices")}
               className="card-interactive p-6"
             >
               <div className="flex items-center gap-6">
@@ -108,7 +108,7 @@ export function DashboardPage() {
 
             {/* Recommendations */}
             <div
-              onClick={() => navigate("/recommendations")}
+              onClick={() => navigate("../recommendations")}
               className="card-interactive p-6"
             >
               <div className="flex items-center gap-2">

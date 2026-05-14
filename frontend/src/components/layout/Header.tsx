@@ -1,10 +1,12 @@
 import { useAuth } from "@/auth/useAuth";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { Tooltip } from "@/components/common/Tooltip";
+import { useProjectContext } from "@/store/projectContext";
 
 export function Header() {
   const { user, signOut } = useAuth();
   const [isDark, toggleDark] = useDarkMode();
+  const { project } = useProjectContext();
 
   const initials = user?.name
     ? user.name
@@ -35,9 +37,21 @@ export function Header() {
           </svg>
         </div>
         <div>
-          <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
-            Entra Analyzer
-          </h1>
+          <div className="flex items-center gap-1.5">
+            <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
+              Entra Analyzer
+            </h1>
+            {project && (
+              <>
+                <svg className="h-3.5 w-3.5 text-slate-300 dark:text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">
+                  {project.name}
+                </span>
+              </>
+            )}
+          </div>
           <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
             Least Privilege Advisory
           </p>

@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     azure_foundry_model: str = "gpt-4o"
     azure_openai_api_version: str = "2024-02-01"
 
+    # Encryption (base64-encoded 32-byte key for AES-256-GCM)
+    encryption_key: str = ""
+
     # App Insights
     applicationinsights_connection_string: str = ""
 

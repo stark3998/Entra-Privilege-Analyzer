@@ -1,7 +1,7 @@
 // frontend/src/api/hooks.ts
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getApiClient } from "./client";
-import { useTenant } from "@/store/tenantContext";
+import { useProjectContext } from "@/store/projectContext";
 import type {
   TenantInfo,
   IdentityType,
@@ -22,6 +22,7 @@ import type {
   DashboardTrends,
   Narrative,
   TenantSettings,
+  AnalyticsData,
 } from "./types";
 
 /**
@@ -49,7 +50,7 @@ interface IdentitiesParams {
  * Supports filtering by identity type and search string.
  */
 export function useIdentities(params: IdentitiesParams) {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   const queryString = new URLSearchParams();
@@ -59,10 +60,10 @@ export function useIdentities(params: IdentitiesParams) {
   queryString.set("size", String(params.size ?? 50));
 
   return useQuery({
-    queryKey: ["identities", tenantId, params],
+    queryKey: ["identities", projectId, params],
     queryFn: () =>
       client.get<PaginatedResponse<IdentityProfile>>(
-        `/api/tenants/${tenantId}/identities?${queryString}`,
+        `/api/projects/${projectId}/identities?${queryString}`,
       ),
   });
 }
@@ -71,14 +72,14 @@ export function useIdentities(params: IdentitiesParams) {
  * Fetch a single identity profile by ID for the active tenant.
  */
 export function useIdentityDetail(identityId: string) {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   return useQuery({
-    queryKey: ["identity", tenantId, identityId],
+    queryKey: ["identity", projectId, identityId],
     queryFn: () =>
       client.get<IdentityProfile>(
-        `/api/tenants/${tenantId}/identities/${identityId}`,
+        `/api/projects/${projectId}/identities/${identityId}`,
       ),
     enabled: !!identityId,
   });
@@ -94,14 +95,14 @@ interface ActionsParams {
  * Fetch paginated action events for a specific identity.
  */
 export function useActions(identityId: string, params: ActionsParams) {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   return useQuery({
-    queryKey: ["actions", tenantId, identityId, params],
+    queryKey: ["actions", projectId, identityId, params],
     queryFn: () =>
       client.get<PaginatedResponse<ActionEvent>>(
-        `/api/tenants/${tenantId}/identities/${identityId}/actions?page=${params.page ?? 1}&size=${params.size ?? 50}`,
+        `/api/projects/${projectId}/identities/${identityId}/actions?page=${params.page ?? 1}&size=${params.size ?? 50}`,
       ),
     enabled: !!identityId,
   });
@@ -123,7 +124,7 @@ interface RecommendationsParams {
  * Supports filtering by identity type, search string, and sort order.
  */
 export function useRecommendations(params: RecommendationsParams) {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   const queryString = new URLSearchParams();
@@ -134,10 +135,10 @@ export function useRecommendations(params: RecommendationsParams) {
   queryString.set("size", String(params.size ?? 20));
 
   return useQuery({
-    queryKey: ["recommendations", tenantId, params],
+    queryKey: ["recommendations", projectId, params],
     queryFn: () =>
       client.get<PaginatedResponse<RoleRecommendation>>(
-        `/api/tenants/${tenantId}/recommendations?${queryString}`,
+        `/api/projects/${projectId}/recommendations?${queryString}`,
       ),
   });
 }
@@ -146,14 +147,14 @@ export function useRecommendations(params: RecommendationsParams) {
  * Fetch a single role recommendation by identity ID.
  */
 export function useRecommendationDetail(identityId: string) {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   return useQuery({
-    queryKey: ["recommendation", tenantId, identityId],
+    queryKey: ["recommendation", projectId, identityId],
     queryFn: () =>
       client.get<RoleRecommendation>(
-        `/api/tenants/${tenantId}/recommendations/${identityId}`,
+        `/api/projects/${projectId}/recommendations/${identityId}`,
       ),
     enabled: !!identityId,
   });
@@ -164,18 +165,18 @@ export function useRecommendationDetail(identityId: string) {
  * Invalidates the recommendations query cache on success.
  */
 export function useComputeRecommendations() {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: () =>
       client.post<{ status: string }>(
-        `/api/tenants/${tenantId}/recommendations/compute`,
+        `/api/projects/${projectId}/recommendations/compute`,
         {},
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["recommendations", tenantId] });
+      queryClient.invalidateQueries({ queryKey: ["recommendations", projectId] });
     },
   });
 }
@@ -185,14 +186,14 @@ export function useComputeRecommendations() {
  * Disabled by default — call `refetch()` to trigger on demand.
  */
 export function useExport(identityId: string, format: ExportFormat) {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   return useQuery({
-    queryKey: ["export", tenantId, identityId, format],
+    queryKey: ["export", projectId, identityId, format],
     queryFn: () =>
       client.get<ExportResult>(
-        `/api/tenants/${tenantId}/exports/${identityId}?format=${format}`,
+        `/api/projects/${projectId}/exports/${identityId}?format=${format}`,
       ),
     enabled: false,
   });
@@ -214,7 +215,7 @@ interface DriftAlertsParams {
  * Supports filtering by severity, status, and search string.
  */
 export function useDriftAlerts(params: DriftAlertsParams) {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   const queryString = new URLSearchParams();
@@ -225,10 +226,10 @@ export function useDriftAlerts(params: DriftAlertsParams) {
   queryString.set("size", String(params.size ?? 20));
 
   return useQuery({
-    queryKey: ["driftAlerts", tenantId, params],
+    queryKey: ["driftAlerts", projectId, params],
     queryFn: () =>
       client.get<PaginatedResponse<DriftAlert>>(
-        `/api/tenants/${tenantId}/drift-alerts?${queryString}`,
+        `/api/projects/${projectId}/drift-alerts?${queryString}`,
       ),
   });
 }
@@ -237,14 +238,14 @@ export function useDriftAlerts(params: DriftAlertsParams) {
  * Fetch a single drift alert by ID.
  */
 export function useDriftAlertDetail(alertId: string) {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   return useQuery({
-    queryKey: ["driftAlert", tenantId, alertId],
+    queryKey: ["driftAlert", projectId, alertId],
     queryFn: () =>
       client.get<DriftAlert>(
-        `/api/tenants/${tenantId}/drift-alerts/${alertId}`,
+        `/api/projects/${projectId}/drift-alerts/${alertId}`,
       ),
     enabled: !!alertId,
   });
@@ -262,20 +263,20 @@ interface UpdateDriftAlertPayload {
  * Invalidates drift alert queries on success.
  */
 export function useUpdateDriftAlert() {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ alertId, status, notes }: UpdateDriftAlertPayload) =>
       client.patch<DriftAlert>(
-        `/api/tenants/${tenantId}/drift-alerts/${alertId}`,
+        `/api/projects/${projectId}/drift-alerts/${alertId}`,
         { status, notes },
       ),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["driftAlerts", tenantId] });
+      queryClient.invalidateQueries({ queryKey: ["driftAlerts", projectId] });
       queryClient.invalidateQueries({
-        queryKey: ["driftAlert", tenantId, variables.alertId],
+        queryKey: ["driftAlert", projectId, variables.alertId],
       });
     },
   });
@@ -286,18 +287,18 @@ export function useUpdateDriftAlert() {
  * Invalidates drift alert queries on success.
  */
 export function useDetectDrift() {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: () =>
       client.post<{ status: string }>(
-        `/api/tenants/${tenantId}/drift-alerts/detect`,
+        `/api/projects/${projectId}/drift-alerts/detect`,
         {},
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["driftAlerts", tenantId] });
+      queryClient.invalidateQueries({ queryKey: ["driftAlerts", projectId] });
     },
   });
 }
@@ -317,7 +318,7 @@ interface ViolationsParams {
  * Supports filtering by violation type and priority.
  */
 export function useViolations(params: ViolationsParams) {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   const queryString = new URLSearchParams();
@@ -327,10 +328,10 @@ export function useViolations(params: ViolationsParams) {
   queryString.set("size", String(params.size ?? 20));
 
   return useQuery({
-    queryKey: ["violations", tenantId, params],
+    queryKey: ["violations", projectId, params],
     queryFn: () =>
       client.get<PaginatedResponse<BestPracticeViolation>>(
-        `/api/tenants/${tenantId}/best-practices?${queryString}`,
+        `/api/projects/${projectId}/best-practices?${queryString}`,
       ),
   });
 }
@@ -339,14 +340,14 @@ export function useViolations(params: ViolationsParams) {
  * Fetch a single best practice violation by ID.
  */
 export function useViolationDetail(violationId: string) {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   return useQuery({
-    queryKey: ["violation", tenantId, violationId],
+    queryKey: ["violation", projectId, violationId],
     queryFn: () =>
       client.get<BestPracticeViolation>(
-        `/api/tenants/${tenantId}/best-practices/${violationId}`,
+        `/api/projects/${projectId}/best-practices/${violationId}`,
       ),
     enabled: !!violationId,
   });
@@ -356,14 +357,14 @@ export function useViolationDetail(violationId: string) {
  * Fetch the best practice compliance summary for the active tenant.
  */
 export function useBestPracticeSummary() {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   return useQuery({
-    queryKey: ["bestPracticeSummary", tenantId],
+    queryKey: ["bestPracticeSummary", projectId],
     queryFn: () =>
       client.get<BestPracticeSummary>(
-        `/api/tenants/${tenantId}/best-practices/summary`,
+        `/api/projects/${projectId}/best-practices/summary`,
       ),
   });
 }
@@ -373,20 +374,20 @@ export function useBestPracticeSummary() {
  * Invalidates violations and summary queries on success.
  */
 export function useEvaluateBestPractices() {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: () =>
       client.post<{ status: string }>(
-        `/api/tenants/${tenantId}/best-practices/evaluate`,
+        `/api/projects/${projectId}/best-practices/evaluate`,
         {},
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["violations", tenantId] });
+      queryClient.invalidateQueries({ queryKey: ["violations", projectId] });
       queryClient.invalidateQueries({
-        queryKey: ["bestPracticeSummary", tenantId],
+        queryKey: ["bestPracticeSummary", projectId],
       });
     },
   });
@@ -399,14 +400,31 @@ export function useEvaluateBestPractices() {
  * Includes identity counts, risk scores, drift alerts, and top risky identities.
  */
 export function useDashboardSummary() {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   return useQuery({
-    queryKey: ["dashboardSummary", tenantId],
+    queryKey: ["dashboardSummary", projectId],
     queryFn: () =>
       client.get<DashboardSummary>(
-        `/api/tenants/${tenantId}/dashboard`,
+        `/api/projects/${projectId}/dashboard`,
+      ),
+  });
+}
+
+/**
+ * Fetch analytics data for the active project.
+ * Supports variable time ranges (7d, 30d, 90d).
+ */
+export function useAnalytics(days: number = 30) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["analytics", projectId, days],
+    queryFn: () =>
+      client.get<AnalyticsData>(
+        `/api/projects/${projectId}/analytics?days=${days}`,
       ),
   });
 }
@@ -415,14 +433,14 @@ export function useDashboardSummary() {
  * Fetch 30-day trend data for risk score, drift alerts, and actions.
  */
 export function useDashboardTrends() {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   return useQuery({
-    queryKey: ["dashboardTrends", tenantId],
+    queryKey: ["dashboardTrends", projectId],
     queryFn: () =>
       client.get<DashboardTrends>(
-        `/api/tenants/${tenantId}/dashboard/trends`,
+        `/api/projects/${projectId}/dashboard/trends`,
       ),
   });
 }
@@ -431,14 +449,14 @@ export function useDashboardTrends() {
  * Fetch the AI-generated executive narrative for the active tenant.
  */
 export function useExecutiveNarrative() {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   return useQuery({
-    queryKey: ["executiveNarrative", tenantId],
+    queryKey: ["executiveNarrative", projectId],
     queryFn: () =>
       client.get<Narrative>(
-        `/api/tenants/${tenantId}/narratives/executive`,
+        `/api/projects/${projectId}/narratives/executive`,
       ),
   });
 }
@@ -448,19 +466,19 @@ export function useExecutiveNarrative() {
  * Invalidates the narrative query on success.
  */
 export function useRefreshNarrative() {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: () =>
       client.post<Narrative>(
-        `/api/tenants/${tenantId}/narratives/refresh`,
+        `/api/projects/${projectId}/narratives/refresh`,
         {},
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["executiveNarrative", tenantId],
+        queryKey: ["executiveNarrative", projectId],
       });
     },
   });
@@ -472,14 +490,14 @@ export function useRefreshNarrative() {
  * Fetch the tenant settings (sync schedule, baseline window).
  */
 export function useTenantSettings() {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   return useQuery({
-    queryKey: ["tenantSettings", tenantId],
+    queryKey: ["tenantSettings", projectId],
     queryFn: () =>
       client.get<TenantSettings>(
-        `/api/tenants/${tenantId}/settings`,
+        `/api/projects/${projectId}/settings`,
       ),
   });
 }
@@ -495,19 +513,19 @@ interface UpdateSettingsPayload {
  * Invalidates the tenant settings query on success.
  */
 export function useUpdateTenantSettings() {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (payload: UpdateSettingsPayload) =>
       client.put<TenantSettings>(
-        `/api/tenants/${tenantId}/settings`,
+        `/api/projects/${projectId}/settings`,
         payload,
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["tenantSettings", tenantId],
+        queryKey: ["tenantSettings", projectId],
       });
     },
   });
@@ -519,14 +537,14 @@ export function useUpdateTenantSettings() {
  * Returns a Blob that can be saved as a file.
  */
 export function useDownloadReport(format: "pdf" | "pptx") {
-  const { tenantId } = useTenant();
+  const { projectId } = useProjectContext();
   const client = getApiClient();
 
   return useQuery({
-    queryKey: ["downloadReport", tenantId, format],
+    queryKey: ["downloadReport", projectId, format],
     queryFn: () =>
       client.getBlob(
-        `/api/tenants/${tenantId}/reports/executive?format=${format}`,
+        `/api/projects/${projectId}/reports/executive?format=${format}`,
       ),
     enabled: false,
   });

@@ -262,3 +262,128 @@ export interface TenantSettings {
 export interface ReportFormat {
   format: "pdf" | "pptx";
 }
+
+// --- Projects ---
+
+export type ProjectStatus = "active" | "setup" | "error";
+export type MemberRole = "admin" | "operator" | "viewer" | "owner";
+export type ScanStatus = "queued" | "running" | "completed" | "failed";
+
+export interface PermissionValidationResult {
+  valid: boolean;
+  granted: string[];
+  missing: string[];
+  error?: string;
+}
+
+export interface Project {
+  id: string;
+  owner_id: string;
+  owner_email: string;
+  name: string;
+  target_tenant_id: string;
+  target_tenant_name: string;
+  client_id: string;
+  status: ProjectStatus;
+  permission_status: PermissionValidationResult | null;
+  last_scan_at: string | null;
+  last_scan_status: string | null;
+  identity_count: number;
+  risk_score: number;
+  sync_schedule_hours: number;
+  baseline_window_days: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateProjectPayload {
+  name: string;
+  target_tenant_id: string;
+  target_tenant_name: string;
+  client_id: string;
+  client_secret: string;
+}
+
+export interface UpdateProjectPayload {
+  name?: string;
+  sync_schedule_hours?: number;
+  baseline_window_days?: number;
+}
+
+export interface ProjectMember {
+  id: string;
+  user_id: string;
+  email: string;
+  role: MemberRole;
+  status: "pending" | "accepted";
+}
+
+export interface ProjectMembersResponse {
+  members: ProjectMember[];
+  current_user_role: MemberRole;
+}
+
+export interface InviteMemberPayload {
+  email: string;
+  role: string;
+}
+
+export interface ScanPhase {
+  name: string;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  items_processed: number;
+}
+
+export interface ScanRecord {
+  id: string;
+  project_id: string;
+  target_tenant_id: string;
+  scan_type: "full" | "incremental";
+  status: ScanStatus;
+  phases: ScanPhase[];
+  started_at: string;
+  completed_at: string | null;
+  error_message: string | null;
+}
+
+// --- Analytics ---
+
+export interface AnalyticsData {
+  tenant_id: string;
+  days: number;
+  total_actions: number;
+  unique_active_identities: number;
+  avg_actions_per_identity: number;
+  failed_action_pct: number;
+  new_identities_count: number;
+  daily_action_counts: TrendPoint[];
+  top_actions: { action: string; count: number }[];
+  most_active_identities: {
+    identity_id: string;
+    display_name: string;
+    identity_type: string;
+    count: number;
+  }[];
+  actions_by_source: Record<string, number>;
+  success_vs_failure: Record<string, number>;
+  top_resources: {
+    resource: string;
+    resource_type: string;
+    count: number;
+  }[];
+  top_roles: { role_name: string; count: number }[];
+  permission_utilization: { used: number; unused: number };
+  permanent_vs_pim: { permanent: number; pim: number };
+  overprivileged_count: number;
+  violations_by_type: Record<string, number>;
+  stale_identity_counts: Record<string, number>;
+  credential_expiry_violations: {
+    identity_id: string;
+    identity_display_name: string;
+    detected_at: string;
+  }[];
+  recent_drift_alerts: DriftAlert[];
+  computed_at: string;
+}

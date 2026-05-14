@@ -28,8 +28,15 @@ def _deterministic_id(*parts: str) -> str:
 class GraphIngestService:
     """Fetches audit logs, sign-in logs, and role assignments from Microsoft Graph."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+    ) -> None:
         self._settings = settings
+        self._client_id = client_id or settings.azure_client_id
+        self._client_secret = client_secret or settings.azure_client_secret
 
     async def _get_client_credential_token(self, tenant_id: str) -> str:
         """Get a token for a specific tenant using client credentials flow.
@@ -37,9 +44,9 @@ class GraphIngestService:
         Uses msal.ConfidentialClientApplication with the target tenant authority.
         """
         app = msal.ConfidentialClientApplication(
-            self._settings.azure_client_id,
+            self._client_id,
             authority=f"https://login.microsoftonline.com/{tenant_id}",
-            client_credential=self._settings.azure_client_secret,
+            client_credential=self._client_secret,
         )
         result: dict[str, Any] = app.acquire_token_for_client(scopes=_GRAPH_SCOPE)
         if "access_token" not in result:
