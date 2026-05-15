@@ -371,7 +371,9 @@ Jobs run as Azure Container Apps Jobs in sequence:
 
 The Terraform under [infra/envs/prod](c:\Users\jatmadan\Documents\GitHub\Entra-Permissions-Analyzer\infra\envs\prod) can now either create a new resource group and Entra app registration or reuse existing ones.
 
-For the exact manual flow used for `rg-dmig`, run [scripts/deploy-existing-rg.ps1](c:\Users\jatmadan\Documents\GitHub\Entra-Permissions-Analyzer\scripts\deploy-existing-rg.ps1). It creates a temporary local-state Terraform workspace, provisions shared infrastructure, builds bootstrap images in ACR, applies the Container Apps resources, rebuilds the frontend against the live backend URL, and then runs smoke tests against the live frontend bundle. The script requires backend `/healthz` and unauthenticated backend `/api/projects` to pass, and reports backend `/readyz` separately as a readiness gate with its response body if dependencies are not fully ready yet.
+For the exact manual flow used for `rg-dmig`, run [scripts/deploy-existing-rg.ps1](c:\Users\jatmadan\Documents\GitHub\Entra-Permissions-Analyzer\scripts\deploy-existing-rg.ps1). It uses the checked-in Azure Blob backend in [infra/envs/prod/backend.tf](c:\Users\jatmadan\Documents\GitHub\Entra-Permissions-Analyzer\infra\envs\prod\backend.tf), provisions shared infrastructure, builds bootstrap images in ACR, applies the Container Apps resources, rebuilds the frontend against the live backend URL, and then runs smoke tests against the live frontend bundle. The script requires backend `/healthz` to pass, checks `/api/projects` based on the requested auth mode, and reports backend `/readyz` separately as a readiness gate with its response body if dependencies are not fully ready yet.
+
+Run the script once with `-BootstrapAdoption` to import existing `rg-dmig` resources from Azure into the Azure Storage backend when the remote state is empty or missing addresses. After that first run, omit `-BootstrapAdoption` so normal deployments use remote state only and skip the repeated resource adoption path.
 
 Example:
 
@@ -382,10 +384,11 @@ Example:
    -ExistingApplicationClientSecret '<existing-app-secret>' \
    -FoundryEndpoint https://codex-jay-resource.openai.azure.com \
    -FoundryKey '<foundry-key>' \
-   -GitHubRepository stark3998/Entra-Privilege-Analyzer
+   -GitHubRepository stark3998/Entra-Privilege-Analyzer \
+   -BootstrapAdoption
 ```
 
-Add `-SkipSmokeTests` if you need to stop after deployment without validating the live endpoints.
+Later runs should omit `-BootstrapAdoption`. Add `-SkipSmokeTests` if you need to stop after deployment without validating the live endpoints.
 
 To deploy into an existing resource group such as `rg-dmig` and reuse an existing Entra app registration, provide these Terraform variables at plan/apply time:
 

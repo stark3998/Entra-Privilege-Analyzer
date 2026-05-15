@@ -24,6 +24,7 @@ param(
     [string]$FoundryModel = "gpt-4.1-mini",
     [string]$FrontendImageTag,
     [string]$EncryptionKey,
+    [switch]$BootstrapAdoption,
     [switch]$EnableLocalMode,
     [switch]$SkipBootstrapBuild,
     [switch]$SkipFrontendRedeploy,
@@ -75,68 +76,6 @@ function Get-TerraformOutputValue {
     }
     finally {
         Pop-Location
-    }
-}
-
-function Get-TerraformStatePaths {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$WorkingDirectory,
-
-        [Parameter(Mandatory = $true)]
-        [string]$PersistentDirectory
-    )
-
-    return [pscustomobject]@{
-        WorkingState       = Join-Path $WorkingDirectory "terraform.tfstate"
-        WorkingStateBackup = Join-Path $WorkingDirectory "terraform.tfstate.backup"
-        PersistentState    = Join-Path $PersistentDirectory "terraform.tfstate"
-        PersistentBackup   = Join-Path $PersistentDirectory "terraform.tfstate.backup"
-    }
-}
-
-function Restore-TerraformState {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$WorkingDirectory,
-
-        [Parameter(Mandatory = $true)]
-        [string]$PersistentDirectory
-    )
-
-    $statePaths = Get-TerraformStatePaths -WorkingDirectory $WorkingDirectory -PersistentDirectory $PersistentDirectory
-    $restored = $false
-
-    if (Test-Path $statePaths.PersistentState) {
-        Copy-Item -Force $statePaths.PersistentState $statePaths.WorkingState
-        $restored = $true
-    }
-
-    if (Test-Path $statePaths.PersistentBackup) {
-        Copy-Item -Force $statePaths.PersistentBackup $statePaths.WorkingStateBackup
-    }
-
-    return $restored
-}
-
-function Save-TerraformState {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$WorkingDirectory,
-
-        [Parameter(Mandatory = $true)]
-        [string]$PersistentDirectory
-    )
-
-    $statePaths = Get-TerraformStatePaths -WorkingDirectory $WorkingDirectory -PersistentDirectory $PersistentDirectory
-    New-Item -ItemType Directory -Path $PersistentDirectory -Force | Out-Null
-
-    if (Test-Path $statePaths.WorkingState) {
-        Copy-Item -Force $statePaths.WorkingState $statePaths.PersistentState
-    }
-
-    if (Test-Path $statePaths.WorkingStateBackup) {
-        Copy-Item -Force $statePaths.WorkingStateBackup $statePaths.PersistentBackup
     }
 }
 
@@ -399,7 +338,6 @@ function Get-CosmosSqlContainerId {
 function Initialize-TerraformExistingResourceState {
     param(
         [Parameter(Mandatory = $true)][string]$WorkingDirectory,
-        [Parameter(Mandatory = $true)][string]$PersistentDirectory,
         [Parameter(Mandatory = $true)][string]$ResourceGroupName,
         [Parameter(Mandatory = $true)][string]$ProjectName,
         [Parameter(Mandatory = $true)][string]$Environment
@@ -485,8 +423,6 @@ function Initialize-TerraformExistingResourceState {
         Write-Host "Adoption check: $address" -ForegroundColor DarkGray
         Import-TerraformResourceIfIdPresent -WorkingDirectory $WorkingDirectory -Address $address -ResourceId (Get-KeyVaultSecretId -VaultName $keyVaultName -SecretName $keyVaultSecrets[$address]) -KnownAddresses $knownAddresses
     }
-
-    Save-TerraformState -WorkingDirectory $WorkingDirectory -PersistentDirectory $PersistentDirectory
 }
 
 function Get-HttpResult {
@@ -627,7 +563,6 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $tempRoot = Join-Path $env:TEMP "entraperm-existing-rg-deploy"
 $infraRoot = Join-Path $tempRoot "infra"
 $tfWorkDir = Join-Path $infraRoot "envs/prod"
-$persistentStateDir = Join-Path $repoRoot ".azure/deploy-state/$Environment/$ResourceGroupName"
 
 if (Test-Path $tempRoot) {
     Remove-Item -Recurse -Force $tempRoot
@@ -636,11 +571,6 @@ if (Test-Path $tempRoot) {
 Write-Step "Preparing temporary Terraform workspace"
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
 Copy-Item -Recurse -Force (Join-Path $repoRoot "infra") $infraRoot
-Remove-Item (Join-Path $tfWorkDir "backend.tf") -Force
-New-Item -ItemType Directory -Path $persistentStateDir -Force | Out-Null
-if (Restore-TerraformState -WorkingDirectory $tfWorkDir -PersistentDirectory $persistentStateDir) {
-    Write-Host "Restored Terraform state from $persistentStateDir"
-}
 
 $env:TF_VAR_existing_resource_group_name = $ResourceGroupName
 $env:TF_VAR_existing_application_client_id = $ExistingApplicationClientId
@@ -654,9 +584,16 @@ $env:TF_VAR_project_name = $ProjectName
 $env:TF_VAR_environment = $Environment
 
 Write-Step "Initializing Terraform"
-Invoke-Terraform -WorkingDirectory $tfWorkDir -Arguments @("init")
+Invoke-Terraform -WorkingDirectory $tfWorkDir -Arguments @("init", "-reconfigure")
 
-Initialize-TerraformExistingResourceState -WorkingDirectory $tfWorkDir -PersistentDirectory $persistentStateDir -ResourceGroupName $ResourceGroupName -ProjectName $ProjectName -Environment $Environment
+$stateAddresses = Get-TerraformStateList -WorkingDirectory $tfWorkDir
+if ($BootstrapAdoption) {
+    Write-Step "Bootstrapping Terraform state from existing Azure resources"
+    Initialize-TerraformExistingResourceState -WorkingDirectory $tfWorkDir -ResourceGroupName $ResourceGroupName -ProjectName $ProjectName -Environment $Environment
+}
+elseif ($stateAddresses.Count -eq 0) {
+    throw "The Azure Storage Terraform backend is empty. Run the script once with -BootstrapAdoption so it imports the existing rg-dmig resources from Azure."
+}
 
 Write-Step "Provisioning shared infrastructure"
 Invoke-Terraform -WorkingDirectory $tfWorkDir -Arguments @(
@@ -670,7 +607,6 @@ Invoke-Terraform -WorkingDirectory $tfWorkDir -Arguments @(
     "-target=module.compute.azurerm_role_assignment.acr_pull",
     "-target=module.compute.azurerm_container_app_environment.main"
 )
-Save-TerraformState -WorkingDirectory $tfWorkDir -PersistentDirectory $persistentStateDir
 
 $acrName = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "acr_name"
 $tenantId = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "tenant_id"
@@ -694,7 +630,6 @@ if (-not $SkipBootstrapBuild) {
 
 Write-Step "Creating Container Apps and jobs"
 Invoke-Terraform -WorkingDirectory $tfWorkDir -Arguments @("apply", "-auto-approve")
-Save-TerraformState -WorkingDirectory $tfWorkDir -PersistentDirectory $persistentStateDir
 
 if (-not $SkipFrontendRedeploy) {
     $backendUrl = "https://$(Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name 'backend_fqdn')"
@@ -749,5 +684,5 @@ if (-not $SkipSmokeTests) {
 Write-Step "Deployment complete"
 Write-Host "Backend:  $backendUrl"
 Write-Host "Frontend: $frontendUrl"
-Write-Host "Terraform state: $persistentStateDir"
+Write-Host "Terraform state: Azure Storage backend in infra/envs/prod/backend.tf"
 Write-Host "Temp Terraform workspace: $tfWorkDir"
