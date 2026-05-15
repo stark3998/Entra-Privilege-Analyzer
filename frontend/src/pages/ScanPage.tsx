@@ -10,6 +10,23 @@ import {
 import { useProjectContext } from "@/store/projectContext";
 import type { ScanRecord, ScanPhase, ScanStreamEvent } from "@/api/types";
 
+interface ScanStreamDebugState {
+  path: string;
+  startedAt: string;
+  responseStatus: number | null;
+  responseContentType: string | null;
+  chunkCount: number;
+  rawEventCount: number;
+  parsedEventCount: number;
+  lastEventId: string | null;
+  lastEventType: string | null;
+  lastMessage: string | null;
+  lastChunkPreview: string | null;
+  lastRawEventPreview: string | null;
+  lastError: string | null;
+  completed: boolean;
+}
+
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     completed:
@@ -153,6 +170,35 @@ function ScanHistoryRow({
   );
 }
 
+function buildSnapshotStreamEvent(scan: ScanRecord): ScanStreamEvent {
+  const runningPhase =
+    scan.phases.find((phase) => phase.status === "running")?.name ?? null;
+
+  return {
+    id: `${scan.project_id}:${scan.id}:frontend-snapshot`,
+    type: "scan.snapshot",
+    message:
+      scan.status === "running" || scan.status === "queued"
+        ? `${scan.scan_type === "full" ? "Full" : "Incremental"} scan is currently ${scan.status}.`
+        : `${scan.scan_type === "full" ? "Full" : "Incremental"} scan last ended with status ${scan.status}.`,
+    project_id: scan.project_id,
+    scan_id: scan.id,
+    level: scan.status === "failed" ? "error" : "info",
+    phase: runningPhase,
+    status: scan.status,
+    items_processed: null,
+    timestamp: scan.started_at,
+    details: {
+      snapshot: true,
+      auth_mode: scan.auth_mode,
+      scan_type: scan.scan_type,
+      phases: scan.phases,
+      completed_at: scan.completed_at,
+      error_message: scan.error_message,
+    },
+  };
+}
+
 export function ScanPage() {
   const { projectId, project } = useProjectContext();
   const triggerScan = useTriggerScan(projectId);
@@ -165,6 +211,7 @@ export function ScanPage() {
   const [expandedScanId, setExpandedScanId] = useState<string | null>(null);
   const [streamEvents, setStreamEvents] = useState<ScanStreamEvent[]>([]);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [streamDebug, setStreamDebug] = useState<ScanStreamDebugState | null>(null);
   const [scanType, setScanType] = useState<"incremental" | "full">(
     "incremental",
   );
@@ -181,12 +228,21 @@ export function ScanPage() {
     latestScan?.status === "running" || latestScan?.status === "queued";
 
   useEffect(() => {
+    const interval = window.setInterval(() => {
+      setStreamDebug(window.__scanStreamDebug ? { ...window.__scanStreamDebug } : null);
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     if (!projectId || !latestScan?.id || !isRunning) {
       return;
     }
 
-    setStreamEvents([]);
+    setStreamEvents([buildSnapshotStreamEvent(latestScan)]);
     setStreamError(null);
+    setStreamDebug(null);
 
     const controller = new AbortController();
     streamScanEvents(
@@ -409,6 +465,24 @@ export function ScanPage() {
                     )}
                   </div>
                 ))
+              )}
+            </div>
+
+            <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-xs text-slate-300">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 md:grid-cols-4">
+                <span>ui events: {streamEvents.length}</span>
+                <span>http: {streamDebug?.responseStatus ?? "-"}</span>
+                <span>chunks: {streamDebug?.chunkCount ?? 0}</span>
+                <span>raw events: {streamDebug?.rawEventCount ?? 0}</span>
+                <span>parsed events: {streamDebug?.parsedEventCount ?? 0}</span>
+                <span>done: {streamDebug?.completed ? "yes" : "no"}</span>
+                <span>last event: {streamDebug?.lastEventType ?? "-"}</span>
+                <span>last error: {streamDebug?.lastError ?? "-"}</span>
+              </div>
+              {streamDebug?.lastMessage && (
+                <p className="mt-2 text-slate-400">
+                  last message: {streamDebug.lastMessage}
+                </p>
               )}
             </div>
           </div>

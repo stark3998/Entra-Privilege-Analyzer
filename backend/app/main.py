@@ -7,9 +7,9 @@ import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings, get_settings
 from app.observability import setup_observability
@@ -134,16 +134,35 @@ def create_app() -> FastAPI:
     app.state.cosmos_repo = None
     app.state.instance_id = str(uuid.uuid4())
 
-    # Security headers
-    class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-            response = await call_next(request)
-            response.headers["X-Content-Type-Options"] = "nosniff"
-            response.headers["X-Frame-Options"] = "DENY"
-            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-            if not settings.local_mode:
-                response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-            return response
+    class SecurityHeadersMiddleware:
+        """Pure ASGI middleware — no BaseHTTPMiddleware so StreamingResponse (SSE) is never buffered."""
+
+        def __init__(self, app: ASGIApp) -> None:
+            self.app = app
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+
+            async def send_with_headers(message: dict) -> None:
+                if message["type"] == "http.response.start":
+                    extra: list[tuple[bytes, bytes]] = [
+                        (b"x-content-type-options", b"nosniff"),
+                        (b"x-frame-options", b"DENY"),
+                        (b"referrer-policy", b"strict-origin-when-cross-origin"),
+                    ]
+                    if not settings.local_mode:
+                        extra.append(
+                            (b"strict-transport-security", b"max-age=31536000; includeSubDomains")
+                        )
+                    message = {
+                        **message,
+                        "headers": list(message.get("headers", [])) + extra,
+                    }
+                await send(message)
+
+            await self.app(scope, receive, send_with_headers)
 
     app.add_middleware(SecurityHeadersMiddleware)
 

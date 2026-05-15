@@ -401,10 +401,11 @@ To deploy into an existing resource group such as `rg-dmig` and reuse an existin
 
 When reusing an existing app registration, that app must already expose the `access_as_user` scope, include the required redirect URIs for the deployed frontend URL, and have the Microsoft Graph permissions the backend expects.
 
-The frontend image is build-time configured. For Azure deployments, pass `VITE_APP_CLIENT_ID`, `VITE_TENANT_ID`, and `VITE_API_BASE_URL` into the Docker build. The GitHub frontend deployment workflow now expects these repo variables for this path:
+The frontend image is build-time configured. For Azure deployments, pass `VITE_APP_CLIENT_ID`, `VITE_TENANT_ID`, and `BACKEND_URL` into the Docker build. Production traffic should use the frontend origin for `/api/*`, with nginx reverse proxying to the backend Container App so browser SSE stays same-origin. The GitHub frontend deployment workflow now expects these repo variables for this path:
 
 - `APP_CLIENT_ID`
 - `BACKEND_CONTAINER_APP_NAME`
+
 | Technology | Purpose |
 |-----------|---------|
 | Azure Container Apps | Application hosting (backend, frontend, scheduled jobs) |
@@ -617,7 +618,7 @@ See [Infrastructure](#infrastructure) for Terraform-based Azure deployment.
 |----------|----------|---------|-------------|
 | `VITE_APP_CLIENT_ID` | Prod | --- | Entra ID application client ID |
 | `VITE_TENANT_ID` | Prod | `common` | Entra ID tenant for MSAL authority |
-| `VITE_API_BASE_URL` | No | `/api` | Backend API base URL |
+| `VITE_API_BASE_URL` | No | `""` | Optional frontend API override. Leave empty to use same-origin `/api/*` requests through the frontend reverse proxy. |
 | `VITE_LOCAL_MODE` | No | `false` | Skip MSAL authentication (dev only) |
 
 Backend CORS defaults to `http://localhost:5173` for local development and also allows the app's Azure Container Apps frontend hostname pattern by default. Azure deployments can still override that with `CORS_ORIGIN_REGEX` when needed.

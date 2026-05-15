@@ -493,11 +493,25 @@ function Invoke-SmokeTests {
     if ($frontendAsset.StatusCode -ne 200) {
         throw "Frontend bundle check failed with status $($frontendAsset.StatusCode)"
     }
-    if (-not $frontendAsset.Body.Contains($BackendUrl)) {
-        throw "Frontend bundle does not contain backend URL $BackendUrl"
-    }
     if (-not $frontendAsset.Body.Contains($ClientId)) {
         throw "Frontend bundle does not contain client ID $ClientId"
+    }
+
+    $frontendApiHealth = $null
+    for ($attempt = 1; $attempt -le 12; $attempt++) {
+        $frontendApiHealth = Get-HttpResult -Uri ($FrontendUrl.TrimEnd('/') + '/api/healthz')
+        if ($frontendApiHealth.StatusCode -eq 200) {
+            break
+        }
+
+        if ($attempt -lt 12) {
+            Write-Host "Waiting for frontend reverse proxy /api/healthz to return 200 (attempt $attempt of 12)"
+            Start-Sleep -Seconds 10
+        }
+    }
+
+    if ($frontendApiHealth.StatusCode -ne 200) {
+        throw "Frontend reverse proxy /api/healthz check failed with status $($frontendApiHealth.StatusCode). Body: $($frontendApiHealth.Body)"
     }
 
     $healthResult = Get-HttpResult -Uri ($BackendUrl.TrimEnd('/') + '/healthz')
@@ -622,7 +636,7 @@ if (-not $SkipBootstrapBuild) {
     }
 
     Write-Step "Building bootstrap frontend image in ACR"
-    & az acr build --registry $acrName --image "$ProjectName-frontend:initial" --file (Join-Path $repoRoot "frontend/Dockerfile") --target prod --build-arg "VITE_APP_CLIENT_ID=$ExistingApplicationClientId" --build-arg "VITE_TENANT_ID=$tenantId" --build-arg "VITE_API_BASE_URL=https://placeholder.invalid" (Join-Path $repoRoot "frontend")
+    & az acr build --registry $acrName --image "$ProjectName-frontend:initial" --file (Join-Path $repoRoot "frontend/Dockerfile") --target prod --build-arg "VITE_APP_CLIENT_ID=$ExistingApplicationClientId" --build-arg "VITE_TENANT_ID=$tenantId" --build-arg "VITE_API_BASE_URL=" --build-arg "BACKEND_URL=http://backend:8000" (Join-Path $repoRoot "frontend")
     if ($LASTEXITCODE -ne 0) {
         throw "Frontend bootstrap image build failed"
     }
@@ -634,8 +648,8 @@ Invoke-Terraform -WorkingDirectory $tfWorkDir -Arguments @("apply", "-auto-appro
 if (-not $SkipFrontendRedeploy) {
     $backendUrl = "https://$(Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name 'backend_fqdn')"
 
-    Write-Step "Building frontend image with live backend URL"
-    & az acr build --registry $acrName --image "$ProjectName-frontend:$frontendTag" --file (Join-Path $repoRoot "frontend/Dockerfile") --target prod --build-arg "VITE_APP_CLIENT_ID=$ExistingApplicationClientId" --build-arg "VITE_TENANT_ID=$tenantId" --build-arg "VITE_API_BASE_URL=$backendUrl" (Join-Path $repoRoot "frontend")
+    Write-Step "Building frontend image with same-origin backend proxy"
+    & az acr build --registry $acrName --image "$ProjectName-frontend:$frontendTag" --file (Join-Path $repoRoot "frontend/Dockerfile") --target prod --build-arg "VITE_APP_CLIENT_ID=$ExistingApplicationClientId" --build-arg "VITE_TENANT_ID=$tenantId" --build-arg "VITE_API_BASE_URL=" --build-arg "BACKEND_URL=$backendUrl" (Join-Path $repoRoot "frontend")
     if ($LASTEXITCODE -ne 0) {
         throw "Frontend live image build failed"
     }

@@ -30,6 +30,7 @@ _SCAN_HEARTBEAT_INTERVAL_SECONDS = 30
 _SCAN_LEASE_SECONDS = 120
 _STALE_SCAN_MESSAGE = "Scan abandoned after backend restart or task loss."
 _CANCELLED_SCAN_MESSAGE = "Scan interrupted by backend shutdown or redeploy before completion."
+_STREAM_OPEN_FRAME = b": stream-open\n\n"
 
 router = APIRouter(
     prefix="/api/projects/{project_id}/scans",
@@ -109,6 +110,39 @@ async def _publish_scan_event(
     )
 
 
+def _build_scan_snapshot_event(project_id: str, scan: ScanRecord) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    running_phase = next((phase.name for phase in scan.phases if phase.status == "running"), None)
+    if scan.status in {"running", "queued"}:
+        message = f"{scan.scan_type.title()} scan is currently {scan.status}."
+    elif scan.status == "completed":
+        message = f"{scan.scan_type.title()} scan completed."
+    else:
+        message = f"{scan.scan_type.title()} scan last ended with status {scan.status}."
+
+    return {
+        "id": f"{project_id}:{scan.id}:snapshot:{now.timestamp()}",
+        "type": "scan.snapshot",
+        "message": message,
+        "project_id": project_id,
+        "scan_id": scan.id,
+        "level": "info" if scan.status != "failed" else "error",
+        "phase": running_phase,
+        "status": scan.status,
+        "items_processed": None,
+        "timestamp": now.isoformat(),
+        "details": {
+            "snapshot": True,
+            "scan_type": scan.scan_type,
+            "auth_mode": scan.auth_mode,
+            "started_at": scan.started_at.isoformat(),
+            "completed_at": scan.completed_at.isoformat() if scan.completed_at else None,
+            "error_message": scan.error_message,
+            "phases": [phase.model_dump(mode="json") for phase in scan.phases],
+        },
+    }
+
+
 def _stamp_scan_lease(scan: ScanRecord, instance_id: str, now: datetime) -> None:
     scan.owner_instance_id = instance_id
     scan.heartbeat_at = now
@@ -137,6 +171,7 @@ async def _heartbeat_scan(
     stop_event: asyncio.Event,
     lease_lost_event: asyncio.Event,
     worker_task: asyncio.Task[Any] | None,
+    progress_callback: Any | None = None,
 ) -> None:
     while not stop_event.is_set():
         try:
@@ -160,6 +195,17 @@ async def _heartbeat_scan(
                 break
             _stamp_scan_lease(scan, instance_id, now)
             await repo.upsert_scan(scan)
+            if progress_callback is not None:
+                running_phase = next((phase.name for phase in scan.phases if phase.status == "running"), None)
+                phase_label = running_phase.replace("_", " ") if running_phase else "current phase"
+                await progress_callback(
+                    {
+                        "type": "scan.heartbeat",
+                        "message": f"Scan still running in {phase_label}.",
+                        "phase": running_phase,
+                        "status": scan.status,
+                    }
+                )
 
 
 async def _run_scan_task(
@@ -178,16 +224,6 @@ async def _run_scan_task(
     heartbeat_stop = asyncio.Event()
     lease_lost = asyncio.Event()
     worker_task = asyncio.current_task()
-    heartbeat_task = asyncio.create_task(
-        _heartbeat_scan(
-            repo,
-            scan,
-            instance_id=instance_id,
-            stop_event=heartbeat_stop,
-            lease_lost_event=lease_lost,
-            worker_task=worker_task,
-        )
-    )
 
     async def emit(payload: dict[str, Any]) -> None:
         await _publish_scan_event(
@@ -202,6 +238,18 @@ async def _run_scan_task(
             items_processed=payload.get("items_processed"),
             details=payload.get("details"),
         )
+
+    heartbeat_task = asyncio.create_task(
+        _heartbeat_scan(
+            repo,
+            scan,
+            instance_id=instance_id,
+            stop_event=heartbeat_stop,
+            lease_lost_event=lease_lost,
+            worker_task=worker_task,
+            progress_callback=emit,
+        )
+    )
 
     try:
         await emit(
@@ -505,6 +553,7 @@ async def stream_scan_events(
 ) -> StreamingResponse:
     """Stream live scan and action-ingest events for a project as SSE."""
     await validate_project_access(project_id, user, repo, settings)
+    latest_scan = await repo.get_latest_scan(project_id)
     broker: ScanEventBroker = request.app.state.scan_event_broker
     if broker is None:
         raise HTTPException(
@@ -514,6 +563,9 @@ async def stream_scan_events(
 
     async def event_stream() -> AsyncIterator[bytes]:
         async with broker.subscribe(project_id, scan_id=scan_id) as queue:
+            yield _STREAM_OPEN_FRAME
+            if latest_scan is not None and (scan_id is None or latest_scan.id == scan_id):
+                yield encode_sse(_build_scan_snapshot_event(project_id, latest_scan))
             while True:
                 if await request.is_disconnected():
                     break

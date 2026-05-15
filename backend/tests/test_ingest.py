@@ -12,6 +12,7 @@ import httpx
 from httpx import ASGITransport, AsyncClient
 
 from app.auth.deps import CurrentUser, get_current_user
+from app.pipelines.ingest_pipeline import IngestPipeline
 from app.config import Settings, get_settings
 from app.models.action import ActionEvent, ActionSource
 from app.models.identity import IdentityProfile, IdentityType
@@ -553,6 +554,58 @@ class TestGraphIngestErrors:
         assert "required Graph permissions" in str(exc_info.value)
 
 
+class TestIngestPipelineProgress:
+    """Focused tests for detailed scan progress emissions."""
+
+    @pytest.mark.asyncio
+    async def test_emits_detailed_progress_during_long_running_sections(self) -> None:
+        repo = AsyncMock(spec=CosmosRepo)
+        repo.get_sync_state.return_value = None
+        repo.get_identity.return_value = None
+        repo.append_action_events.return_value = 3
+
+        graph = AsyncMock()
+        graph.fetch_audit_logs.return_value = ([SAMPLE_AUDIT_LOG], None)
+        graph.fetch_sign_in_logs.return_value = [SAMPLE_SIGN_IN_LOG, SAMPLE_SIGN_IN_LOG_FAILURE]
+        graph.fetch_users.return_value = [
+            {
+                "id": "user-oid-123",
+                "userPrincipalName": "admin@contoso.com",
+                "userType": "Member",
+                "externalUserState": None,
+                "signInActivity": None,
+            },
+            {
+                "id": "user-oid-456",
+                "userPrincipalName": "user@contoso.com",
+                "userType": "Member",
+                "externalUserState": None,
+                "signInActivity": None,
+            },
+        ]
+        graph.fetch_service_principals.return_value = []
+
+        roles_svc = AsyncMock()
+        roles_svc.get_identity_roles.return_value = ({}, {})
+
+        progress_events: list[dict[str, Any]] = []
+
+        async def _capture(payload: dict[str, Any]) -> None:
+            progress_events.append(payload)
+
+        pipeline = IngestPipeline(repo, graph, roles_svc, progress_callback=_capture)
+
+        await pipeline.run("tenant-001")
+
+        messages = [event.get("message", "") for event in progress_events]
+        assert any("Parsed 3 directory events for 2 identities" in message for message in messages)
+        assert any("Fetching directory users" in message for message in messages)
+        assert any("Fetched 2 users" in message for message in messages)
+        assert any("Fetching service principals" in message for message in messages)
+        assert any("Processed 2 identity profiles" in message for message in messages)
+        assert any("Persisting 3 action events" in message for message in messages)
+
+
 class TestTriggerScanErrorMapping:
     """Focused tests for scan endpoint error translation."""
 
@@ -775,6 +828,62 @@ class TestTriggerScanErrorMapping:
         assert all(scan.owner_instance_id is None for scan in completed_writes)
         assert all(scan.heartbeat_at is None for scan in completed_writes)
         assert all(scan.lease_expires_at is None for scan in completed_writes)
+
+    @pytest.mark.asyncio
+    async def test_stream_scan_events_emits_immediate_snapshot_for_active_scan(
+        self,
+        scan_client: AsyncClient,
+        mock_repo: AsyncMock,
+    ) -> None:
+        active_scan = ScanRecord(
+            id="scan-active",
+            project_id="project-001",
+            target_tenant_id="tenant-001",
+            scan_type="full",
+            auth_mode="app",
+            status="running",
+            phases=[
+                {
+                    "name": "audit_logs",
+                    "status": "running",
+                    "started_at": datetime.now(UTC),
+                    "completed_at": None,
+                    "items_processed": 0,
+                }
+            ],
+            started_at=datetime.now(UTC),
+        )
+        mock_repo.get_latest_scan.return_value = active_scan
+
+        async with scan_client.stream(
+            "GET",
+            f"/api/projects/project-001/scans/events?scan_id={active_scan.id}",
+        ) as response:
+            assert response.status_code == 200
+            first_chunk = await response.aiter_text().__anext__()
+
+        assert ": stream-open\n\n" in first_chunk
+        assert "event: scan.snapshot" in first_chunk
+        assert '"scan_id":"scan-active"' in first_chunk
+        assert '"status":"running"' in first_chunk
+        assert '"snapshot":true' in first_chunk
+
+    @pytest.mark.asyncio
+    async def test_stream_scan_events_emits_immediate_open_frame_without_snapshot(
+        self,
+        scan_client: AsyncClient,
+        mock_repo: AsyncMock,
+    ) -> None:
+        mock_repo.get_latest_scan.return_value = None
+
+        async with scan_client.stream(
+            "GET",
+            "/api/projects/project-001/scans/events?scan_id=scan-missing",
+        ) as response:
+            assert response.status_code == 200
+            first_chunk = await response.aiter_text().__anext__()
+
+        assert first_chunk == ": stream-open\n\n"
 
     @pytest.mark.asyncio
     async def test_run_scan_task_marks_scan_failed_after_lease_loss_cancellation(

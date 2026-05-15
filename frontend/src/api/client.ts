@@ -2,6 +2,46 @@
 
 type TokenProvider = () => Promise<string>;
 
+declare global {
+  interface Window {
+    __scanStreamDebug?: {
+      path: string;
+      startedAt: string;
+      responseStatus: number | null;
+      responseContentType: string | null;
+      chunkCount: number;
+      rawEventCount: number;
+      parsedEventCount: number;
+      lastEventId: string | null;
+      lastEventType: string | null;
+      lastMessage: string | null;
+      lastChunkPreview: string | null;
+      lastRawEventPreview: string | null;
+      lastError: string | null;
+      completed: boolean;
+    };
+  }
+}
+
+function createScanStreamDebugState(path: string) {
+  return {
+    path,
+    startedAt: new Date().toISOString(),
+    responseStatus: null as number | null,
+    responseContentType: null as string | null,
+    chunkCount: 0,
+    rawEventCount: 0,
+    parsedEventCount: 0,
+    lastEventId: null as string | null,
+    lastEventType: null as string | null,
+    lastMessage: null as string | null,
+    lastChunkPreview: null as string | null,
+    lastRawEventPreview: null as string | null,
+    lastError: null as string | null,
+    completed: false,
+  };
+}
+
 export interface ServerSentEventMessage<T = unknown> {
   event: string;
   data: T;
@@ -95,8 +135,12 @@ export class ApiClient {
     onMessage: (message: ServerSentEventMessage<T>) => void,
     signal?: AbortSignal,
   ): Promise<void> {
+    const debugState = createScanStreamDebugState(path);
+    window.__scanStreamDebug = debugState;
+    const requestUrl = `${this.baseUrl}${path}`;
+
     const headers = await this.headers();
-    const res = await fetch(`${this.baseUrl}${path}`, {
+    const res = await fetch(requestUrl, {
       method: "GET",
       headers: {
         ...headers,
@@ -104,7 +148,11 @@ export class ApiClient {
       },
       signal,
     });
+    debugState.responseStatus = res.status;
+    debugState.responseContentType = res.headers.get("content-type");
     if (!res.ok || !res.body) {
+      debugState.lastError = `HTTP ${res.status}`;
+      debugState.completed = true;
       throw new ApiError(res.status, await res.text());
     }
 
@@ -112,19 +160,39 @@ export class ApiClient {
     const decoder = new TextDecoder();
     let buffer = "";
 
+    const findEventBoundary = (value: string): number => {
+      const crlfBoundary = value.indexOf("\r\n\r\n");
+      const lfBoundary = value.indexOf("\n\n");
+
+      if (crlfBoundary === -1) {
+        return lfBoundary;
+      }
+      if (lfBoundary === -1) {
+        return crlfBoundary;
+      }
+      return Math.min(crlfBoundary, lfBoundary);
+    };
+
     while (true) {
       const { value, done } = await reader.read();
       if (done) {
+        debugState.completed = true;
         break;
       }
 
-      buffer += decoder.decode(value, { stream: true });
+      const chunkText = decoder.decode(value, { stream: true });
+      debugState.chunkCount += 1;
+      debugState.lastChunkPreview = chunkText.slice(0, 400);
+      buffer += chunkText;
 
-      let boundary = buffer.indexOf("\n\n");
+      let boundary = findEventBoundary(buffer);
       while (boundary >= 0) {
         const rawEvent = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        boundary = buffer.indexOf("\n\n");
+        const separatorLength = buffer.startsWith("\r\n\r\n", boundary) ? 4 : 2;
+        buffer = buffer.slice(boundary + separatorLength);
+        boundary = findEventBoundary(buffer);
+        debugState.rawEventCount += 1;
+        debugState.lastRawEventPreview = rawEvent.slice(0, 400);
 
         const lines = rawEvent.split(/\r?\n/);
         let event = "message";
@@ -152,10 +220,17 @@ export class ApiClient {
           continue;
         }
 
+        const jsonStr = dataLines.join("\n");
+        const parsed = JSON.parse(jsonStr) as T & { message?: string };
+        debugState.parsedEventCount += 1;
+        debugState.lastEventId = id ?? null;
+        debugState.lastEventType = event;
+        debugState.lastMessage = parsed.message ?? null;
+
         onMessage({
           event,
           id,
-          data: JSON.parse(dataLines.join("\n")) as T,
+          data: parsed,
         });
       }
     }

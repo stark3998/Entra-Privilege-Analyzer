@@ -18,6 +18,8 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+_IDENTITY_PROGRESS_INTERVAL = 25
+
 
 class IngestPipeline:
     """Orchestrates the full sync flow for a tenant."""
@@ -94,7 +96,7 @@ class IngestPipeline:
         await self._emit_progress(
             {
                 "type": "scan.info",
-                "message": f"Fetching audit logs for tenant {tenant_id}.",
+                "message": "Fetching audit logs.",
                 "phase": "audit_logs",
                 "status": "running",
             }
@@ -110,7 +112,7 @@ class IngestPipeline:
         await self._emit_progress(
             {
                 "type": "scan.info",
-                "message": f"Fetching sign-in logs for tenant {tenant_id}.",
+                "message": "Fetching sign-in logs.",
                 "phase": "sign_in_logs",
                 "status": "running",
             }
@@ -140,13 +142,24 @@ class IngestPipeline:
             if actor_id != "unknown":
                 actor_registry[event.identity_id] = (actor_name, event.identity_id)
 
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Parsed {len(all_events)} directory events for {len(actor_registry)} identities.",
+                "phase": "identity_profiles",
+                "status": "running",
+                "items_processed": len(all_events),
+                "details": {"identity_count": len(actor_registry)},
+            }
+        )
+
         # 5. Fetch role assignments (PIM-aware) and user/SP enrichment data
         await self._update_phase(scan_record, "role_assignments", "running")
         logger.info("Fetching role assignments for tenant %s", tenant_id)
         await self._emit_progress(
             {
                 "type": "scan.info",
-                "message": f"Fetching role assignments for tenant {tenant_id}.",
+                "message": "Fetching role assignments.",
                 "phase": "role_assignments",
                 "status": "running",
             }
@@ -155,8 +168,43 @@ class IngestPipeline:
         await self._update_phase(scan_record, "role_assignments", "completed", len(active_roles_map))
 
         # Fetch users and SPs for enrichment (UPN, app_id, user_type)
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": "Fetching directory users for identity enrichment.",
+                "phase": "identity_profiles",
+                "status": "running",
+            }
+        )
         users_raw = await self._graph.fetch_users(tenant_id)
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Fetched {len(users_raw)} users for identity enrichment.",
+                "phase": "identity_profiles",
+                "status": "running",
+                "items_processed": len(users_raw),
+            }
+        )
+
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": "Fetching service principals for identity enrichment.",
+                "phase": "identity_profiles",
+                "status": "running",
+            }
+        )
         sps_raw = await self._graph.fetch_service_principals(tenant_id)
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Fetched {len(sps_raw)} service principals for identity enrichment.",
+                "phase": "identity_profiles",
+                "status": "running",
+                "items_processed": len(sps_raw),
+            }
+        )
 
         user_lookup: dict[str, dict[str, Any]] = {u["id"]: u for u in users_raw if "id" in u}
         sp_lookup: dict[str, dict[str, Any]] = {sp["id"]: sp for sp in sps_raw if "id" in sp}
@@ -290,7 +338,7 @@ class IngestPipeline:
             )
             await self._repo.upsert_identity(tenant_id, profile)
             identities_processed += 1
-            if identities_processed % 100 == 0:
+            if identities_processed % _IDENTITY_PROGRESS_INTERVAL == 0:
                 await self._emit_progress(
                     {
                         "type": "scan.progress",
@@ -301,10 +349,30 @@ class IngestPipeline:
                     }
                 )
 
+        if identities_processed and identities_processed % _IDENTITY_PROGRESS_INTERVAL != 0:
+            await self._emit_progress(
+                {
+                    "type": "scan.progress",
+                    "message": f"Processed {identities_processed} identity profiles.",
+                    "phase": "identity_profiles",
+                    "status": "running",
+                    "items_processed": identities_processed,
+                }
+            )
+
         await self._update_phase(scan_record, "identity_profiles", "completed", identities_processed)
 
         # 7. Bulk insert action events
         await self._update_phase(scan_record, "action_events", "running")
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Persisting {len(all_events)} action events.",
+                "phase": "action_events",
+                "status": "running",
+                "items_processed": len(all_events),
+            }
+        )
         events_inserted = await self._repo.append_action_events(tenant_id, all_events)
         await self._emit_progress(
             {
