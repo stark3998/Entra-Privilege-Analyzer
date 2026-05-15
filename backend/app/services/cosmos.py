@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from azure.core import MatchConditions
 from azure.cosmos import PartitionKey
 from azure.cosmos.aio import ContainerProxy, CosmosClient, DatabaseProxy
 from azure.cosmos.exceptions import CosmosHttpResponseError, CosmosResourceNotFoundError
@@ -36,6 +37,15 @@ _repo: CosmosRepo | None = None
 
 _ACTION_EVENTS_TTL = 7776000  # 90 days
 _NARRATIVES_TTL = 86400  # 24 hours
+_PROJECT_LEASE_RELEASE_RETRIES = 3
+
+
+def _parse_cosmos_datetime(value: Any) -> datetime | None:
+    if value is None or isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return None
 
 
 class CosmosRepo:
@@ -878,6 +888,200 @@ class CosmosRepo:
             )
         ]
         return items[0] if items else None
+
+    async def _get_project_document(self, project_id: str) -> dict[str, Any] | None:
+        query = "SELECT * FROM c WHERE c.id = @id"
+        params: list[dict[str, str]] = [{"name": "@id", "value": project_id}]
+        items: list[dict[str, Any]] = [
+            item
+            async for item in self._projects.query_items(
+                query=query, parameters=params,
+            )
+        ]
+        return items[0] if items else None
+
+    async def try_acquire_project_scan_lease(
+        self,
+        project_id: str,
+        scan_id: str,
+        owner_instance_id: str,
+        heartbeat_at: datetime,
+        lease_expires_at: datetime,
+    ) -> Project | None:
+        project_doc = await self._get_project_document(project_id)
+        if project_doc is None:
+            return None
+
+        active_scan_id = project_doc.get("active_scan_id")
+        active_lease_expires_at = _parse_cosmos_datetime(project_doc.get("active_scan_lease_expires_at"))
+        if (
+            active_scan_id
+            and active_scan_id != scan_id
+            and active_lease_expires_at is not None
+            and active_lease_expires_at > heartbeat_at
+        ):
+            return None
+
+        project_doc["active_scan_id"] = scan_id
+        project_doc["active_scan_owner_instance_id"] = owner_instance_id
+        project_doc["active_scan_heartbeat_at"] = heartbeat_at.isoformat()
+        project_doc["active_scan_lease_expires_at"] = lease_expires_at.isoformat()
+
+        try:
+            result: dict[str, Any] = await self._projects.replace_item(
+                item=project_doc["id"],
+                body=project_doc,
+                etag=project_doc.get("_etag"),
+                match_condition=MatchConditions.IfNotModified,
+            )
+            logger.info(
+                "Acquired project scan lease for project %s scan %s owner %s until %s",
+                project_id,
+                scan_id,
+                owner_instance_id,
+                lease_expires_at.isoformat(),
+            )
+            return Project.model_validate(result)
+        except CosmosHttpResponseError as exc:
+            if getattr(exc, "status_code", None) in {409, 412}:
+                return None
+            logger.error("Cosmos try_acquire_project_scan_lease failed for %s: %s", project_id, exc.message)
+            raise
+
+    async def renew_project_scan_lease(
+        self,
+        project_id: str,
+        scan_id: str,
+        owner_instance_id: str,
+        heartbeat_at: datetime,
+        lease_expires_at: datetime,
+    ) -> bool:
+        project_doc = await self._get_project_document(project_id)
+        if project_doc is None:
+            return False
+        if project_doc.get("active_scan_id") != scan_id:
+            return False
+        if project_doc.get("active_scan_owner_instance_id") != owner_instance_id:
+            return False
+
+        project_doc["active_scan_heartbeat_at"] = heartbeat_at.isoformat()
+        project_doc["active_scan_lease_expires_at"] = lease_expires_at.isoformat()
+        try:
+            await self._projects.replace_item(
+                item=project_doc["id"],
+                body=project_doc,
+                etag=project_doc.get("_etag"),
+                match_condition=MatchConditions.IfNotModified,
+            )
+            return True
+        except CosmosHttpResponseError as exc:
+            if getattr(exc, "status_code", None) in {409, 412}:
+                return False
+            logger.error("Cosmos renew_project_scan_lease failed for %s/%s: %s", project_id, scan_id, exc.message)
+            raise
+
+    async def has_project_scan_lease(
+        self,
+        project_id: str,
+        scan_id: str,
+        owner_instance_id: str,
+        as_of: datetime,
+    ) -> bool:
+        project_doc = await self._get_project_document(project_id)
+        if project_doc is None:
+            return False
+        if project_doc.get("active_scan_id") != scan_id:
+            return False
+        if project_doc.get("active_scan_owner_instance_id") != owner_instance_id:
+            return False
+        active_lease_expires_at = _parse_cosmos_datetime(project_doc.get("active_scan_lease_expires_at"))
+        return active_lease_expires_at is not None and active_lease_expires_at > as_of
+
+    async def release_project_scan_lease(
+        self,
+        project_id: str,
+        scan_id: str,
+        owner_instance_id: str,
+        completed_at: datetime,
+        last_scan_status: str,
+        *,
+        identity_count: int | None = None,
+    ) -> Project | None:
+        for attempt in range(_PROJECT_LEASE_RELEASE_RETRIES):
+            project_doc = await self._get_project_document(project_id)
+            if project_doc is None:
+                return None
+            if project_doc.get("active_scan_id") != scan_id:
+                return None
+            if project_doc.get("active_scan_owner_instance_id") != owner_instance_id:
+                return None
+
+            project_doc["last_scan_at"] = completed_at.isoformat()
+            project_doc["last_scan_status"] = last_scan_status
+            project_doc["updated_at"] = completed_at.isoformat()
+            if identity_count is not None:
+                project_doc["identity_count"] = identity_count
+            project_doc.pop("active_scan_id", None)
+            project_doc.pop("active_scan_owner_instance_id", None)
+            project_doc.pop("active_scan_heartbeat_at", None)
+            project_doc.pop("active_scan_lease_expires_at", None)
+
+            try:
+                result: dict[str, Any] = await self._projects.replace_item(
+                    item=project_doc["id"],
+                    body=project_doc,
+                    etag=project_doc.get("_etag"),
+                    match_condition=MatchConditions.IfNotModified,
+                )
+                logger.info(
+                    "Released project scan lease for project %s scan %s owner %s with status %s",
+                    project_id,
+                    scan_id,
+                    owner_instance_id,
+                    last_scan_status,
+                )
+                return Project.model_validate(result)
+            except CosmosHttpResponseError as exc:
+                if getattr(exc, "status_code", None) in {409, 412}:
+                    if attempt == _PROJECT_LEASE_RELEASE_RETRIES - 1:
+                        return None
+                    continue
+                logger.error("Cosmos release_project_scan_lease failed for %s/%s: %s", project_id, scan_id, exc.message)
+                raise
+        return None
+
+    async def clear_project_scan_lease(
+        self,
+        project_id: str,
+        scan_id: str,
+        owner_instance_id: str,
+    ) -> bool:
+        project_doc = await self._get_project_document(project_id)
+        if project_doc is None:
+            return False
+        if project_doc.get("active_scan_id") != scan_id:
+            return False
+        if project_doc.get("active_scan_owner_instance_id") != owner_instance_id:
+            return False
+
+        project_doc.pop("active_scan_id", None)
+        project_doc.pop("active_scan_owner_instance_id", None)
+        project_doc.pop("active_scan_heartbeat_at", None)
+        project_doc.pop("active_scan_lease_expires_at", None)
+
+        try:
+            await self._projects.replace_item(
+                item=project_doc["id"],
+                body=project_doc,
+                etag=project_doc.get("_etag"),
+                match_condition=MatchConditions.IfNotModified,
+            )
+            return True
+        except CosmosHttpResponseError as exc:
+            if getattr(exc, "status_code", None) in {409, 412}:
+                return False
+            logger.error("Cosmos clear_project_scan_lease failed for %s/%s: %s", project_id, scan_id, exc.message)
+            raise
 
     async def upsert_project(self, project: Project) -> Project:
         """Insert or replace a project document."""

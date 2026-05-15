@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -14,10 +15,10 @@ from app.auth.deps import CurrentUser, get_current_user
 from app.config import Settings, get_settings
 from app.models.action import ActionEvent, ActionSource
 from app.models.identity import IdentityProfile, IdentityType
-from app.services.cosmos import CosmosRepo, get_cosmos_repo
-from app.models.project import Project
-from app.services.scan_events import ScanEventBroker
 from app.services.graph_ingest import GraphIngestService, GraphPermissionError, GraphThrottledError
+from app.models.project import Project, ScanRecord
+from app.services.cosmos import CosmosRepo, get_cosmos_repo
+from app.services.scan_events import ScanEventBroker
 
 # ---------------------------------------------------------------------------
 # Sample raw Graph API payloads
@@ -126,6 +127,10 @@ def _mock_user(tid: str = "local-dev-tenant") -> CurrentUser:
 def _make_mock_repo() -> AsyncMock:
     """Create an AsyncMock that mimics CosmosRepo method signatures."""
     repo = AsyncMock(spec=CosmosRepo)
+    repo.try_acquire_project_scan_lease.return_value = None
+    repo.renew_project_scan_lease.return_value = True
+    repo.has_project_scan_lease.return_value = True
+    repo.release_project_scan_lease.return_value = None
     return repo
 
 
@@ -577,6 +582,8 @@ class TestTriggerScanErrorMapping:
             updated_at=datetime.now(UTC),
         )
         mock_repo.list_projects_for_user.return_value = [project]
+        mock_repo.try_acquire_project_scan_lease.return_value = project
+        mock_repo.release_project_scan_lease.return_value = project
 
         monkeypatch.setattr("app.routers.scans.CryptoService.decrypt", lambda self, value: "secret")
 
@@ -695,3 +702,166 @@ class TestTriggerScanErrorMapping:
         await self._wait_for_background_scan_write(mock_repo)
         persisted_scan = mock_repo.upsert_scan.await_args_list[-1].args[0]
         assert persisted_scan.error_message == "Scan failed due to an internal server error. Check backend logs for details."
+
+    @pytest.mark.asyncio
+    async def test_trigger_scan_reclaims_expired_running_scan(
+        self,
+        scan_client: AsyncClient,
+        mock_repo: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        persisted_scans: list[ScanRecord] = []
+
+        stale_started_at = datetime.now(UTC) - timedelta(minutes=10)
+        stale_scan = ScanRecord(
+            id="scan-stale",
+            project_id="project-001",
+            target_tenant_id="tenant-001",
+            scan_type="incremental",
+            status="running",
+            auth_mode="app",
+            phases=[],
+            started_at=stale_started_at,
+            owner_instance_id="other-instance",
+            heartbeat_at=stale_started_at,
+            lease_expires_at=stale_started_at + timedelta(seconds=30),
+        )
+
+        async def _run(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"identities_processed": 1}
+
+        async def _upsert_scan(scan: ScanRecord) -> ScanRecord:
+            persisted_scans.append(scan.model_copy(deep=True))
+            return scan
+
+        mock_repo.get_latest_scan.return_value = stale_scan
+        mock_repo.try_acquire_project_scan_lease.return_value = Project(
+            id="project-001",
+            owner_id="local-dev-user",
+            owner_email="dev@localhost",
+            name="Test Project",
+            target_tenant_id="tenant-001",
+            target_tenant_name="Tenant 001",
+            client_id="client-id",
+            encrypted_client_secret="encrypted",
+            status="active",
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        mock_repo.upsert_scan.side_effect = _upsert_scan
+        monkeypatch.setattr("app.routers.scans.IngestPipeline.run", _run)
+
+        resp = await scan_client.post("/api/projects/project-001/scans/trigger")
+
+        assert resp.status_code == 202
+        assert len(persisted_scans) >= 2
+        reclaimed_scan = persisted_scans[0]
+        assert reclaimed_scan.id == "scan-stale"
+        assert reclaimed_scan.status == "failed"
+        assert reclaimed_scan.error_message == "Scan abandoned after backend restart or task loss."
+        new_scan_writes = [
+            scan
+            for scan in persisted_scans[1:]
+            if scan.id != "scan-stale"
+        ]
+        assert new_scan_writes
+        assert any(scan.status in {"running", "completed"} for scan in new_scan_writes)
+        running_writes = [scan for scan in new_scan_writes if scan.status == "running"]
+        completed_writes = [scan for scan in new_scan_writes if scan.status == "completed"]
+        assert running_writes
+        assert all(scan.owner_instance_id is not None for scan in running_writes)
+        assert all(scan.heartbeat_at is not None for scan in running_writes)
+        assert all(scan.lease_expires_at is not None for scan in running_writes)
+        assert all(scan.owner_instance_id is None for scan in completed_writes)
+        assert all(scan.heartbeat_at is None for scan in completed_writes)
+        assert all(scan.lease_expires_at is None for scan in completed_writes)
+
+    @pytest.mark.asyncio
+    async def test_run_scan_task_marks_scan_failed_after_lease_loss_cancellation(
+        self,
+        mock_repo: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from app.routers.scans import _run_scan_task
+
+        persisted_scans: list[ScanRecord] = []
+        project = Project(
+            id="project-001",
+            owner_id="local-dev-user",
+            owner_email="dev@localhost",
+            name="Test Project",
+            target_tenant_id="tenant-001",
+            target_tenant_name="Tenant 001",
+            client_id="client-id",
+            encrypted_client_secret="encrypted",
+            status="active",
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        scan = ScanRecord(
+            id="scan-lease-loss",
+            project_id=project.id,
+            target_tenant_id=project.target_tenant_id,
+            scan_type="incremental",
+            auth_mode="app",
+            status="running",
+            phases=[],
+            started_at=datetime.now(UTC),
+            owner_instance_id="instance-1",
+            heartbeat_at=datetime.now(UTC),
+            lease_expires_at=datetime.now(UTC) + timedelta(seconds=1),
+        )
+
+        async def _upsert_scan(saved_scan: ScanRecord) -> ScanRecord:
+            persisted_scans.append(saved_scan.model_copy(deep=True))
+            return saved_scan
+
+        async def _run_pipeline(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            await asyncio.sleep(3600)
+            return {"identities_processed": 1}
+
+        class _FakeGraphIngestService:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                pass
+
+        class _FakeGraphRolesService:
+            def __init__(self, graph: Any) -> None:
+                self.graph = graph
+
+        mock_repo.upsert_scan.side_effect = _upsert_scan
+        mock_repo.renew_project_scan_lease.return_value = False
+        mock_repo.release_project_scan_lease.return_value = None
+        monkeypatch.setattr("app.routers.scans._SCAN_HEARTBEAT_INTERVAL_SECONDS", 0.01)
+        monkeypatch.setattr("app.routers.scans.CryptoService.decrypt", lambda self, value: "secret")
+        monkeypatch.setattr("app.routers.scans.GraphIngestService", _FakeGraphIngestService)
+        monkeypatch.setattr("app.routers.scans.GraphRolesService", _FakeGraphRolesService)
+        monkeypatch.setattr("app.routers.scans.IngestPipeline.run", _run_pipeline)
+
+        app = SimpleNamespace(
+            state=SimpleNamespace(
+                scan_event_broker=ScanEventBroker(),
+                instance_id="instance-1",
+            )
+        )
+
+        await _run_scan_task(
+            app,
+            mock_repo,
+            project,
+            scan,
+            full=False,
+            auth_mode="app",
+            bearer_token=None,
+            settings=_test_settings(),
+        )
+
+        assert persisted_scans
+        final_scan = persisted_scans[-1]
+        assert final_scan.id == scan.id
+        assert final_scan.status == "failed"
+        assert final_scan.error_message == "Scan abandoned after backend restart or task loss."
+        assert final_scan.completed_at is not None
+        assert final_scan.owner_instance_id is None
+        assert final_scan.heartbeat_at is None
+        assert final_scan.lease_expires_at is None
+

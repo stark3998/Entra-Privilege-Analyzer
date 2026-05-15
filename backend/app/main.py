@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import asyncio
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if settings.local_mode:
         logger.warning("LOCAL MODE ACTIVE — authentication disabled")
     app.state.scan_tasks = set()
+    app.state.instance_id = str(uuid.uuid4())
 
     # Observability
     setup_observability(settings)
@@ -130,6 +132,7 @@ def create_app() -> FastAPI:
     app.state.scan_tasks = set()
     app.state.scan_event_broker = None
     app.state.cosmos_repo = None
+    app.state.instance_id = str(uuid.uuid4())
 
     # Security headers
     class SecurityHeadersMiddleware(BaseHTTPMiddleware):

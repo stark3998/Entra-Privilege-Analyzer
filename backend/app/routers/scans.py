@@ -5,6 +5,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from datetime import timedelta
 from typing import Any
 
 import jwt as pyjwt
@@ -24,6 +25,11 @@ from app.services.permission_validator import REQUIRED_PERMISSIONS
 from app.services.scan_events import ScanEventBroker, drain_queue, encode_sse
 
 logger = logging.getLogger(__name__)
+
+_SCAN_HEARTBEAT_INTERVAL_SECONDS = 30
+_SCAN_LEASE_SECONDS = 120
+_STALE_SCAN_MESSAGE = "Scan abandoned after backend restart or task loss."
+_CANCELLED_SCAN_MESSAGE = "Scan interrupted by backend shutdown or redeploy before completion."
 
 router = APIRouter(
     prefix="/api/projects/{project_id}/scans",
@@ -46,20 +52,35 @@ async def _finalize_failed_scan(
     project: Any,
     repo: CosmosRepo,
     error_message: str,
+    *,
+    owner_instance_id: str | None = None,
 ) -> None:
     scan.status = "failed"
     scan.error_message = error_message
     scan.completed_at = datetime.now(UTC)
+    _clear_scan_lease(scan)
     for phase in scan.phases:
-        if phase.status == "running":
+        if phase.status in {"pending", "running"}:
             phase.status = "failed"
             phase.completed_at = scan.completed_at
     await repo.upsert_scan(scan)
-
-    project.last_scan_at = scan.completed_at
-    project.last_scan_status = "failed"
-    project.updated_at = datetime.now(UTC)
-    await repo.upsert_project(project)
+    if owner_instance_id is None:
+        project.last_scan_at = scan.completed_at
+        project.last_scan_status = "failed"
+        project.updated_at = datetime.now(UTC)
+        await repo.upsert_project(project)
+        return
+    released_project = await repo.release_project_scan_lease(
+        project.id,
+        scan.id,
+        owner_instance_id,
+        scan.completed_at,
+        "failed",
+    )
+    if released_project is not None:
+        project.last_scan_at = released_project.last_scan_at
+        project.last_scan_status = released_project.last_scan_status
+        project.updated_at = released_project.updated_at
 
 
 async def _publish_scan_event(
@@ -88,6 +109,59 @@ async def _publish_scan_event(
     )
 
 
+def _stamp_scan_lease(scan: ScanRecord, instance_id: str, now: datetime) -> None:
+    scan.owner_instance_id = instance_id
+    scan.heartbeat_at = now
+    scan.lease_expires_at = now + timedelta(seconds=_SCAN_LEASE_SECONDS)
+
+
+def _clear_scan_lease(scan: ScanRecord) -> None:
+    scan.owner_instance_id = None
+    scan.heartbeat_at = None
+    scan.lease_expires_at = None
+
+
+def _scan_lease_is_active(scan: ScanRecord, now: datetime) -> bool:
+    if scan.status not in {"queued", "running"}:
+        return False
+    if scan.lease_expires_at is None:
+        return True
+    return scan.lease_expires_at > now
+
+
+async def _heartbeat_scan(
+    repo: CosmosRepo,
+    scan: ScanRecord,
+    *,
+    instance_id: str,
+    stop_event: asyncio.Event,
+    lease_lost_event: asyncio.Event,
+    worker_task: asyncio.Task[Any] | None,
+) -> None:
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=_SCAN_HEARTBEAT_INTERVAL_SECONDS)
+            break
+        except asyncio.TimeoutError:
+            if scan.status != "running":
+                break
+            now = datetime.now(UTC)
+            if not await repo.renew_project_scan_lease(
+                scan.project_id,
+                scan.id,
+                instance_id,
+                now,
+                now + timedelta(seconds=_SCAN_LEASE_SECONDS),
+            ):
+                logger.warning("Scan %s for project %s lost its lease; stopping worker heartbeat", scan.id, scan.project_id)
+                lease_lost_event.set()
+                if worker_task is not None:
+                    worker_task.cancel()
+                break
+            _stamp_scan_lease(scan, instance_id, now)
+            await repo.upsert_scan(scan)
+
+
 async def _run_scan_task(
     app: Any,
     repo: CosmosRepo,
@@ -100,6 +174,20 @@ async def _run_scan_task(
     settings: Settings,
 ) -> None:
     broker: ScanEventBroker = app.state.scan_event_broker
+    instance_id = app.state.instance_id
+    heartbeat_stop = asyncio.Event()
+    lease_lost = asyncio.Event()
+    worker_task = asyncio.current_task()
+    heartbeat_task = asyncio.create_task(
+        _heartbeat_scan(
+            repo,
+            scan,
+            instance_id=instance_id,
+            stop_event=heartbeat_stop,
+            lease_lost_event=lease_lost,
+            worker_task=worker_task,
+        )
+    )
 
     async def emit(payload: dict[str, Any]) -> None:
         await _publish_scan_event(
@@ -162,16 +250,32 @@ async def _run_scan_task(
             scan_record=scan,
         )
 
+        if not await repo.has_project_scan_lease(
+            project.id,
+            scan.id,
+            instance_id,
+            datetime.now(UTC),
+        ):
+            logger.warning("Scan %s for project %s lost its lease before completion; skipping final write", scan.id, project.id)
+            return
+
+        _clear_scan_lease(scan)
         scan.status = "completed"
         scan.completed_at = datetime.now(UTC)
         await repo.upsert_scan(scan)
-
-        project.last_scan_at = scan.completed_at
-        project.last_scan_status = "completed"
-        if "identities_processed" in summary:
-            project.identity_count = summary["identities_processed"]
-        project.updated_at = datetime.now(UTC)
-        await repo.upsert_project(project)
+        released_project = await repo.release_project_scan_lease(
+            project.id,
+            scan.id,
+            instance_id,
+            scan.completed_at,
+            "completed",
+            identity_count=summary.get("identities_processed"),
+        )
+        if released_project is not None:
+            project.last_scan_at = released_project.last_scan_at
+            project.last_scan_status = released_project.last_scan_status
+            project.identity_count = released_project.identity_count
+            project.updated_at = released_project.updated_at
 
         await emit(
             {
@@ -182,7 +286,7 @@ async def _run_scan_task(
             }
         )
     except HTTPException as exc:
-        await _finalize_failed_scan(scan, project, repo, str(exc.detail))
+        await _finalize_failed_scan(scan, project, repo, str(exc.detail), owner_instance_id=instance_id)
         await emit(
             {
                 "type": "scan.failed",
@@ -193,7 +297,7 @@ async def _run_scan_task(
         )
     except GraphPermissionError as exc:
         message = "Microsoft Graph denied access for this scan. Verify the configured identity has the required delegated or application permissions."
-        await _finalize_failed_scan(scan, project, repo, message)
+        await _finalize_failed_scan(scan, project, repo, message, owner_instance_id=instance_id)
         logger.warning("Scan forbidden for project %s: %s", project.id, exc)
         await emit(
             {
@@ -205,7 +309,7 @@ async def _run_scan_task(
         )
     except GraphThrottledError as exc:
         message = "Microsoft Graph throttled this scan after retrying. Please wait and try again."
-        await _finalize_failed_scan(scan, project, repo, message)
+        await _finalize_failed_scan(scan, project, repo, message, owner_instance_id=instance_id)
         logger.warning("Scan throttled for project %s: %s", project.id, exc)
         await emit(
             {
@@ -217,7 +321,7 @@ async def _run_scan_task(
         )
     except GraphApiError as exc:
         message = "Scan failed due to a Microsoft Graph error. Check backend logs for the upstream failure details."
-        await _finalize_failed_scan(scan, project, repo, message)
+        await _finalize_failed_scan(scan, project, repo, message, owner_instance_id=instance_id)
         logger.error("Graph API error for project %s: %s", project.id, exc)
         await emit(
             {
@@ -227,9 +331,30 @@ async def _run_scan_task(
                 "status": "failed",
             }
         )
+    except asyncio.CancelledError:
+        if lease_lost.is_set():
+            scan.status = "failed"
+            scan.error_message = _STALE_SCAN_MESSAGE
+            scan.completed_at = datetime.now(UTC)
+            _clear_scan_lease(scan)
+            for phase in scan.phases:
+                if phase.status in {"pending", "running"}:
+                    phase.status = "failed"
+                    phase.completed_at = scan.completed_at
+            await repo.upsert_scan(scan)
+            logger.warning("Scan %s for project %s stopped after lease loss", scan.id, project.id)
+            return
+        await _finalize_failed_scan(
+            scan,
+            project,
+            repo,
+            _CANCELLED_SCAN_MESSAGE,
+            owner_instance_id=instance_id,
+        )
+        raise
     except Exception as exc:
         message = "Scan failed due to an internal server error. Check backend logs for details."
-        await _finalize_failed_scan(scan, project, repo, message)
+        await _finalize_failed_scan(scan, project, repo, message, owner_instance_id=instance_id)
         logger.error("Scan failed for project %s: %s", project.id, exc)
         await emit(
             {
@@ -239,6 +364,10 @@ async def _run_scan_task(
                 "status": "failed",
             }
         )
+    finally:
+        heartbeat_stop.set()
+        heartbeat_task.cancel()
+        await asyncio.gather(heartbeat_task, return_exceptions=True)
 
 
 def _extract_bearer(request: Request) -> str:
@@ -266,14 +395,14 @@ async def trigger_scan(
         project_id, user, repo, settings, required_role="operator",
     )
     latest_scan = await repo.get_latest_scan(project_id)
-    if latest_scan is not None and latest_scan.status in {"queued", "running"}:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A scan is already running for this project.",
-        )
-    bearer_token = _extract_bearer(request) if auth_mode == "delegated" else None
-
     now = datetime.now(UTC)
+    if latest_scan is not None and latest_scan.status in {"queued", "running"}:
+        if _scan_lease_is_active(latest_scan, now):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A scan is already running for this project.",
+            )
+    bearer_token = _extract_bearer(request) if auth_mode == "delegated" else None
     scan = ScanRecord(
         id=str(uuid.uuid4()),
         project_id=project_id,
@@ -284,9 +413,38 @@ async def trigger_scan(
         phases=[ScanPhase(name=p) for p in _DEFAULT_PHASES],
         started_at=now,
     )
-    await repo.upsert_scan(scan)
+    _stamp_scan_lease(scan, request.app.state.instance_id, now)
+    leased_project = await repo.try_acquire_project_scan_lease(
+        project_id,
+        scan.id,
+        request.app.state.instance_id,
+        now,
+        scan.lease_expires_at,
+    )
+    if leased_project is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A scan is already running for this project.",
+        )
+    project = leased_project
+    try:
+        if latest_scan is not None and latest_scan.status in {"queued", "running"} and not _scan_lease_is_active(latest_scan, now):
+            latest_scan.status = "failed"
+            latest_scan.error_message = _STALE_SCAN_MESSAGE
+            latest_scan.completed_at = now
+            _clear_scan_lease(latest_scan)
+            for phase in latest_scan.phases:
+                if phase.status in {"pending", "running"}:
+                    phase.status = "failed"
+                    phase.completed_at = now
+            await repo.upsert_scan(latest_scan)
+        await repo.upsert_scan(scan)
+    except Exception:
+        await repo.clear_project_scan_lease(project_id, scan.id, request.app.state.instance_id)
+        raise
     broker: ScanEventBroker = request.app.state.scan_event_broker
     if broker is None:
+        await repo.clear_project_scan_lease(project_id, scan.id, request.app.state.instance_id)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Scan event streaming is not configured on this backend instance.",
@@ -307,6 +465,7 @@ async def trigger_scan(
             project,
             repo,
             "Scan event streaming is temporarily unavailable. Retry the scan.",
+            owner_instance_id=request.app.state.instance_id,
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

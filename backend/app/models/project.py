@@ -29,6 +29,9 @@ class ScanRecord(BaseModel):
     auth_mode: Literal["app", "delegated"] = "app"
     phases: list[ScanPhase] = []
     started_at: datetime
+    owner_instance_id: str | None = None
+    heartbeat_at: datetime | None = None
+    lease_expires_at: datetime | None = None
     completed_at: datetime | None = None
     error_message: str | None = None
 
