@@ -75,7 +75,8 @@ function StepIndicator({ current }: { current: Step }) {
 export function ProjectCreatePage() {
   const navigate = useNavigate();
   const createProject = useCreateProject();
-  const validatePermissions = useValidatePermissions("");
+  const [createdProject, setCreatedProject] = useState<Project | null>(null);
+  const validatePermissions = useValidatePermissions(createdProject?.id ?? "");
 
   const [step, setStep] = useState<Step>(1);
   const [name, setName] = useState("");
@@ -83,7 +84,6 @@ export function ProjectCreatePage() {
   const [tenantName, setTenantName] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
-  const [createdProject, setCreatedProject] = useState<Project | null>(null);
   const [validationResult, setValidationResult] =
     useState<PermissionValidationResult | null>(null);
   const [error, setError] = useState<string | null>(null);

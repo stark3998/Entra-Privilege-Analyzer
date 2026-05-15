@@ -1,7 +1,9 @@
 # backend/app/services/graph_ingest.py
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
@@ -17,12 +19,68 @@ from app.models.action import ActionEvent, ActionSource
 logger = logging.getLogger(__name__)
 
 _GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
+_GRAPH_MAX_RETRIES = 3
+_GRAPH_BASE_BACKOFF_SECONDS = 1.0
+_GRAPH_MAX_BACKOFF_SECONDS = 30.0
 
 
 def _deterministic_id(*parts: str) -> str:
     """Generate a deterministic UUID from the given string parts."""
     raw = "|".join(parts)
     return str(uuid.UUID(hashlib.md5(raw.encode()).hexdigest()))
+
+
+class GraphApiError(RuntimeError):
+    """Typed error for Microsoft Graph failures in the ingest path."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int,
+        endpoint: str,
+        code: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.endpoint = endpoint
+        self.code = code
+
+
+class GraphPermissionError(GraphApiError):
+    """Raised when Microsoft Graph rejects the request as forbidden."""
+
+
+class GraphThrottledError(GraphApiError):
+    """Raised when Microsoft Graph throttles the request after retries."""
+
+
+def _parse_graph_error_payload(response: httpx.Response) -> tuple[str | None, str | None]:
+    """Extract Graph error code and message from an error response."""
+    try:
+        payload = response.json()
+    except (ValueError, json.JSONDecodeError):
+        return None, None
+
+    error = payload.get("error")
+    if not isinstance(error, dict):
+        return None, None
+
+    code = error.get("code")
+    message = error.get("message")
+    return code if isinstance(code, str) else None, message if isinstance(message, str) else None
+
+
+def _retry_delay_seconds(response: httpx.Response, attempt: int) -> float:
+    """Return a bounded retry delay, honoring Retry-After when present."""
+    retry_after = response.headers.get("Retry-After")
+    if retry_after:
+        try:
+            return min(_GRAPH_MAX_BACKOFF_SECONDS, max(0.0, float(retry_after)))
+        except ValueError:
+            logger.warning("Invalid Retry-After header from Graph: %s", retry_after)
+
+    return min(_GRAPH_MAX_BACKOFF_SECONDS, _GRAPH_BASE_BACKOFF_SECONDS * float(2 ** attempt))
 
 
 class GraphIngestService:
@@ -34,13 +92,106 @@ class GraphIngestService:
         client_id: str | None = None,
         client_secret: str | None = None,
         token_provider: Callable[[], Awaitable[str]] | None = None,
+        progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> None:
         self._settings = settings
         self._client_id = client_id or settings.azure_client_id
         self._client_secret = client_secret or settings.azure_client_secret
         self._token_provider = token_provider
+        self._progress_callback = progress_callback
         api_version = getattr(settings, "graph_api_version", "beta")
         self._graph_base = f"https://graph.microsoft.com/{api_version}"
+
+    async def _emit_progress(self, payload: dict[str, Any]) -> None:
+        if self._progress_callback is None:
+            return
+        await self._progress_callback(payload)
+
+    def _raise_graph_error(self, response: httpx.Response, *, endpoint: str) -> None:
+        """Raise a typed Graph exception from a failed response."""
+        code, graph_message = _parse_graph_error_payload(response)
+        message = graph_message or response.text or f"Microsoft Graph request failed with {response.status_code}"
+
+        if response.status_code == 403:
+            detail = (
+                f"Microsoft Graph denied access to {endpoint}. "
+                f"Check that the configured identity has the required Graph permissions."
+            )
+            if graph_message:
+                detail = f"{detail} Graph said: {graph_message}"
+            raise GraphPermissionError(
+                detail,
+                status_code=response.status_code,
+                endpoint=endpoint,
+                code=code,
+            )
+
+        if response.status_code == 429:
+            detail = f"Microsoft Graph throttled requests to {endpoint} after retrying."
+            if graph_message:
+                detail = f"{detail} Graph said: {graph_message}"
+            raise GraphThrottledError(
+                detail,
+                status_code=response.status_code,
+                endpoint=endpoint,
+                code=code,
+            )
+
+        raise GraphApiError(
+            message,
+            status_code=response.status_code,
+            endpoint=endpoint,
+            code=code,
+        )
+
+    async def _request_json(
+        self,
+        client: httpx.AsyncClient,
+        token: str,
+        url: str,
+        params: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Issue a Graph GET with bounded retry handling for throttling."""
+        for attempt in range(_GRAPH_MAX_RETRIES + 1):
+            resp = await client.get(
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+                params=params,
+            )
+            if resp.status_code == 429 and attempt < _GRAPH_MAX_RETRIES:
+                delay = _retry_delay_seconds(resp, attempt)
+                logger.warning(
+                    "Graph throttled request to %s; retrying in %.2fs (attempt %s/%s)",
+                    url,
+                    delay,
+                    attempt + 1,
+                    _GRAPH_MAX_RETRIES,
+                )
+                await self._emit_progress(
+                    {
+                        "type": "graph.retry",
+                        "level": "warning",
+                        "message": f"Microsoft Graph throttled {url}. Retrying in {delay:.2f}s.",
+                        "details": {
+                            "attempt": attempt + 1,
+                            "max_retries": _GRAPH_MAX_RETRIES,
+                            "delay_seconds": delay,
+                        },
+                    }
+                )
+                await asyncio.sleep(delay)
+                continue
+
+            if resp.is_success:
+                return resp.json()
+
+            self._raise_graph_error(resp, endpoint=url)
+
+        raise GraphThrottledError(
+            f"Microsoft Graph throttled requests to {url} after retrying.",
+            status_code=429,
+            endpoint=url,
+        )
 
     async def _get_client_credential_token(self, tenant_id: str) -> str:
         """Get a token for a specific tenant using client credentials flow."""
@@ -67,32 +218,40 @@ class GraphIngestService:
     ) -> dict[str, Any]:
         """Make an authenticated GET to Graph API."""
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(
-                url,
-                headers={"Authorization": f"Bearer {token}"},
-                params=params,
-            )
-            resp.raise_for_status()
-            return resp.json()
+            return await self._request_json(client, token, url, params)
 
     async def _graph_get_all_pages(
-        self, token: str, url: str, params: dict[str, str] | None = None
+        self,
+        token: str,
+        url: str,
+        params: dict[str, str] | None = None,
+        *,
+        phase_name: str | None = None,
     ) -> list[dict[str, Any]]:
         """Follow @odata.nextLink to get all pages, collecting all 'value' arrays."""
         all_items: list[dict[str, Any]] = []
         current_url: str | None = url
         current_params = params
+        page_count = 0
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             while current_url is not None:
-                resp = await client.get(
-                    current_url,
-                    headers={"Authorization": f"Bearer {token}"},
-                    params=current_params,
+                data = await self._request_json(client, token, current_url, current_params)
+                page_items = data.get("value", [])
+                all_items.extend(page_items)
+                page_count += 1
+                await self._emit_progress(
+                    {
+                        "type": "graph.page",
+                        "message": f"Fetched Graph page {page_count} for {phase_name or 'graph sync'}.",
+                        "phase": phase_name,
+                        "items_processed": len(all_items),
+                        "details": {
+                            "page": page_count,
+                            "page_items": len(page_items),
+                        },
+                    }
                 )
-                resp.raise_for_status()
-                data = resp.json()
-                all_items.extend(data.get("value", []))
                 current_url = data.get("@odata.nextLink")
                 current_params = None  # nextLink includes query params already
 
@@ -119,7 +278,7 @@ class GraphIngestService:
         )
         url = f"{self._graph_base}/auditLogs/directoryAudits"
         params = {"$filter": f"activityDateTime ge {since}", "$top": "999"}
-        events = await self._graph_get_all_pages(token, url, params)
+        events = await self._graph_get_all_pages(token, url, params, phase_name="audit_logs")
         return events, None
 
     async def fetch_sign_in_logs(
@@ -135,20 +294,20 @@ class GraphIngestService:
         cutoff = since or (datetime.now(UTC) - timedelta(days=30))
         cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
         params = {"$filter": f"createdDateTime ge {cutoff_str}", "$top": "999"}
-        return await self._graph_get_all_pages(token, url, params)
+        return await self._graph_get_all_pages(token, url, params, phase_name="sign_in_logs")
 
     async def fetch_role_assignments(self, tenant_id: str) -> list[dict[str, Any]]:
         """Fetch all directory role assignments with expanded principal and roleDefinition."""
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/roleManagement/directory/roleAssignments"
         params = {"$expand": "principal,roleDefinition"}
-        return await self._graph_get_all_pages(token, url, params)
+        return await self._graph_get_all_pages(token, url, params, phase_name="role_assignments")
 
     async def fetch_role_definitions(self, tenant_id: str) -> list[dict[str, Any]]:
         """Fetch all directory role definitions."""
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/roleManagement/directory/roleDefinitions"
-        return await self._graph_get_all_pages(token, url)
+        return await self._graph_get_all_pages(token, url, phase_name="role_assignments")
 
     async def fetch_service_principals(self, tenant_id: str) -> list[dict[str, Any]]:
         """Fetch service principals in the tenant."""
@@ -160,7 +319,7 @@ class GraphIngestService:
                 "passwordCredentials,keyCredentials,createdDateTime"
             ),
         }
-        return await self._graph_get_all_pages(token, url, params)
+        return await self._graph_get_all_pages(token, url, params, phase_name="identity_profiles")
 
     async def fetch_users(self, tenant_id: str) -> list[dict[str, Any]]:
         """Fetch users with selected fields including guest properties."""
@@ -173,7 +332,7 @@ class GraphIngestService:
                 "createdDateTime,signInActivity"
             ),
         }
-        return await self._graph_get_all_pages(token, url, params)
+        return await self._graph_get_all_pages(token, url, params, phase_name="identity_profiles")
 
     # ------------------------------------------------------------------
     # PIM schedule instance APIs (GA v1.0)

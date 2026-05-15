@@ -223,8 +223,8 @@ export function Sidebar() {
   const manageItems = navItems.filter((i) => i.section === "manage");
 
   return (
-    <aside className="flex w-60 flex-col border-r border-slate-200/80 bg-white dark:border-slate-700/80 dark:bg-slate-900">
-      <nav className="flex-1 px-3 py-2">
+    <aside className="flex min-h-0 w-60 flex-col border-r border-slate-200/80 bg-white dark:border-slate-700/80 dark:bg-slate-900">
+      <nav className="flex-1 overflow-y-auto px-3 py-2">
         {/* Back to projects */}
         <Link
           to="/projects"

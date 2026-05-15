@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -11,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 
 from app.config import Settings, get_settings
 from app.observability import setup_observability
+from app.services.scan_events import ScanEventBroker
 from app.routers import (
     actions,
     best_practices,
@@ -50,6 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     if settings.local_mode:
         logger.warning("LOCAL MODE ACTIVE — authentication disabled")
+    app.state.scan_tasks = set()
 
     # Observability
     setup_observability(settings)
@@ -61,6 +64,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if settings.cosmos_endpoint and settings.cosmos_key:
         try:
             repo = await init_cosmos_repo(settings)
+            app.state.cosmos_repo = repo
             logger.info("Cosmos DB connection established")
         except Exception as exc:
             logger.error("Failed to initialise Cosmos DB: %s", exc)
@@ -77,6 +81,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.warning("Redis initialisation failed: %s", exc)
 
+    if redis_cache is None and not settings.local_mode:
+        raise RuntimeError("Redis is required for distributed scan event streaming")
+    if redis_cache is None:
+        logger.warning("Redis unavailable — scan events limited to local in-memory streaming")
+
+    app.state.scan_event_broker = ScanEventBroker(redis_cache=redis_cache)
+
     # Foundry AI (optional)
     from app.services.foundry import init_foundry_client
 
@@ -89,6 +100,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     # Shutdown
+    scan_tasks = list(app.state.scan_tasks)
+    for task in scan_tasks:
+        task.cancel()
+    if scan_tasks:
+        await asyncio.gather(*scan_tasks, return_exceptions=True)
+
+    broker: ScanEventBroker | None = app.state.scan_event_broker
+    if broker is not None:
+        await broker.close()
+
     if redis_cache is not None:
         await redis_cache.close()
         logger.info("Redis connection closed")
@@ -106,6 +127,9 @@ def create_app() -> FastAPI:
         version="0.7.0",
         lifespan=lifespan,
     )
+    app.state.scan_tasks = set()
+    app.state.scan_event_broker = None
+    app.state.cosmos_repo = None
 
     # Security headers
     class SecurityHeadersMiddleware(BaseHTTPMiddleware):

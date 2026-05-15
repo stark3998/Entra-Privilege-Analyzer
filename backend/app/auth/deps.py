@@ -135,6 +135,10 @@ async def validate_project_access(
     """
     resolved = settings if settings is not None else get_settings()
     if resolved.local_mode:
+        projects = await repo.list_projects_for_user(user.oid, user.email)
+        for project in projects:
+            if project.id == project_id:
+                return project
         return _MOCK_PROJECT
 
     project = await repo.get_project(project_id)

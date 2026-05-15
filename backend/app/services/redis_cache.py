@@ -52,6 +52,14 @@ class RedisCache:
         """Delete a cached key."""
         await self._client.delete(key)
 
+    async def publish(self, channel: str, message: str) -> None:
+        """Publish a message to a Redis pub/sub channel."""
+        await self._client.publish(channel, message)
+
+    def pubsub(self) -> aioredis.client.PubSub:
+        """Create a dedicated pub/sub connection for long-lived listeners."""
+        return self._client.pubsub()
+
     async def close(self) -> None:
         """Close the Redis connection."""
         await self._client.aclose()

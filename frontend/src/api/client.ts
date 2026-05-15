@@ -2,6 +2,12 @@
 
 type TokenProvider = () => Promise<string>;
 
+export interface ServerSentEventMessage<T = unknown> {
+  event: string;
+  data: T;
+  id?: string;
+}
+
 /**
  * Typed fetch wrapper that attaches Bearer tokens to every request.
  * In local mode, the token provider returns a static dev token.
@@ -82,6 +88,77 @@ export class ApiClient {
     });
     if (!res.ok) throw new ApiError(res.status, await res.text());
     return res.json() as Promise<T>;
+  }
+
+  async stream<T>(
+    path: string,
+    onMessage: (message: ServerSentEventMessage<T>) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const headers = await this.headers();
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      method: "GET",
+      headers: {
+        ...headers,
+        Accept: "text/event-stream",
+      },
+      signal,
+    });
+    if (!res.ok || !res.body) {
+      throw new ApiError(res.status, await res.text());
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary >= 0) {
+        const rawEvent = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
+
+        const lines = rawEvent.split(/\r?\n/);
+        let event = "message";
+        let id: string | undefined;
+        const dataLines: string[] = [];
+
+        for (const line of lines) {
+          if (!line || line.startsWith(":")) {
+            continue;
+          }
+          if (line.startsWith("event:")) {
+            event = line.slice(6).trim();
+            continue;
+          }
+          if (line.startsWith("id:")) {
+            id = line.slice(3).trim();
+            continue;
+          }
+          if (line.startsWith("data:")) {
+            dataLines.push(line.slice(5).trim());
+          }
+        }
+
+        if (dataLines.length === 0) {
+          continue;
+        }
+
+        onMessage({
+          event,
+          id,
+          data: JSON.parse(dataLines.join("\n")) as T,
+        });
+      }
+    }
   }
 }
 

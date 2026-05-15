@@ -349,6 +349,20 @@ export interface ScanRecord {
   error_message: string | null;
 }
 
+export interface ScanStreamEvent {
+  id: string;
+  type: string;
+  message: string;
+  project_id: string;
+  scan_id: string | null;
+  level: "info" | "warning" | "error";
+  phase: string | null;
+  status: string | null;
+  items_processed: number | null;
+  timestamp: string;
+  details: Record<string, unknown>;
+}
+
 export interface DelegatedPermissionsCheck {
   sufficient: boolean;
   granted_scopes: string[];

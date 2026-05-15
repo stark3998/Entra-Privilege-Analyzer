@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -26,10 +27,17 @@ class IngestPipeline:
         repo: CosmosRepo,
         graph: GraphIngestService,
         roles_svc: GraphRolesService,
+        progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> None:
         self._repo = repo
         self._graph = graph
         self._roles = roles_svc
+        self._progress_callback = progress_callback
+
+    async def _emit_progress(self, payload: dict[str, Any]) -> None:
+        if self._progress_callback is None:
+            return
+        await self._progress_callback(payload)
 
     async def _update_phase(
         self, scan: ScanRecord | None, phase_name: str, status: str, items: int = 0,
@@ -46,6 +54,15 @@ class IngestPipeline:
                     phase.items_processed = items
                 break
         await self._repo.upsert_scan(scan)
+        await self._emit_progress(
+            {
+                "type": "scan.phase",
+                "message": f"{phase_name.replace('_', ' ')} {status}.",
+                "phase": phase_name,
+                "status": status,
+                "items_processed": items,
+            }
+        )
 
     async def run(
         self,
@@ -74,6 +91,14 @@ class IngestPipeline:
         # 2. Fetch audit logs
         await self._update_phase(scan_record, "audit_logs", "running")
         logger.info("Fetching audit logs for tenant %s (full=%s)", tenant_id, full_sync)
+        await self._emit_progress(
+            {
+                "type": "scan.info",
+                "message": f"Fetching audit logs for tenant {tenant_id}.",
+                "phase": "audit_logs",
+                "status": "running",
+            }
+        )
         raw_audit_events, new_delta_link = await self._graph.fetch_audit_logs(
             tenant_id, delta_link=delta_link if not full_sync else None
         )
@@ -82,6 +107,14 @@ class IngestPipeline:
         # 3. Fetch sign-in logs
         await self._update_phase(scan_record, "sign_in_logs", "running")
         logger.info("Fetching sign-in logs for tenant %s", tenant_id)
+        await self._emit_progress(
+            {
+                "type": "scan.info",
+                "message": f"Fetching sign-in logs for tenant {tenant_id}.",
+                "phase": "sign_in_logs",
+                "status": "running",
+            }
+        )
         raw_signin_events = await self._graph.fetch_sign_in_logs(
             tenant_id, since=signin_since if not full_sync else None
         )
@@ -110,6 +143,14 @@ class IngestPipeline:
         # 5. Fetch role assignments (PIM-aware) and user/SP enrichment data
         await self._update_phase(scan_record, "role_assignments", "running")
         logger.info("Fetching role assignments for tenant %s", tenant_id)
+        await self._emit_progress(
+            {
+                "type": "scan.info",
+                "message": f"Fetching role assignments for tenant {tenant_id}.",
+                "phase": "role_assignments",
+                "status": "running",
+            }
+        )
         active_roles_map, eligible_roles_map = await self._roles.get_identity_roles(tenant_id)
         await self._update_phase(scan_record, "role_assignments", "completed", len(active_roles_map))
 
@@ -249,12 +290,31 @@ class IngestPipeline:
             )
             await self._repo.upsert_identity(tenant_id, profile)
             identities_processed += 1
+            if identities_processed % 100 == 0:
+                await self._emit_progress(
+                    {
+                        "type": "scan.progress",
+                        "message": f"Processed {identities_processed} identity profiles.",
+                        "phase": "identity_profiles",
+                        "status": "running",
+                        "items_processed": identities_processed,
+                    }
+                )
 
         await self._update_phase(scan_record, "identity_profiles", "completed", identities_processed)
 
         # 7. Bulk insert action events
         await self._update_phase(scan_record, "action_events", "running")
         events_inserted = await self._repo.append_action_events(tenant_id, all_events)
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Inserted {events_inserted} action events.",
+                "phase": "action_events",
+                "status": "running",
+                "items_processed": events_inserted,
+            }
+        )
         await self._update_phase(scan_record, "action_events", "completed", events_inserted)
 
         # 8. Update sync state
@@ -327,4 +387,12 @@ class IngestPipeline:
             "duration_ms": duration_ms,
         }
         logger.info("Ingest pipeline complete: %s", summary)
+        await self._emit_progress(
+            {
+                "type": "scan.completed",
+                "message": f"Scan completed in {duration_ms} ms.",
+                "status": "completed",
+                "details": summary,
+            }
+        )
         return summary

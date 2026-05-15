@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 import {
   useScanHistory,
   useLatestScan,
   useTriggerScan,
   useDelegatedPermissionsCheck,
+  streamScanEvents,
 } from "@/api/projectHooks";
 import { useProjectContext } from "@/store/projectContext";
-import type { ScanRecord, ScanPhase } from "@/api/types";
+import type { ScanRecord, ScanPhase, ScanStreamEvent } from "@/api/types";
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -162,6 +163,8 @@ export function ScanPage() {
     { page, size: 20 },
   );
   const [expandedScanId, setExpandedScanId] = useState<string | null>(null);
+  const [streamEvents, setStreamEvents] = useState<ScanStreamEvent[]>([]);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [scanType, setScanType] = useState<"incremental" | "full">(
     "incremental",
   );
@@ -176,6 +179,32 @@ export function ScanPage() {
 
   const isRunning =
     latestScan?.status === "running" || latestScan?.status === "queued";
+
+  useEffect(() => {
+    if (!projectId || !latestScan?.id || !isRunning) {
+      return;
+    }
+
+    setStreamEvents([]);
+    setStreamError(null);
+
+    const controller = new AbortController();
+    streamScanEvents(
+      projectId,
+      latestScan.id,
+      ({ data }) => {
+        setStreamEvents((current) => [...current, data].slice(-80));
+      },
+      controller.signal,
+    ).catch((error: unknown) => {
+      if (controller.signal.aborted) {
+        return;
+      }
+      setStreamError(error instanceof Error ? error.message : "Live activity stream failed.");
+    });
+
+    return () => controller.abort();
+  }, [projectId, latestScan?.id, isRunning]);
 
   function handleTrigger() {
     triggerScan.mutate({ full: scanType === "full", authMode });
@@ -323,6 +352,65 @@ export function ScanPage() {
             {latestScan.phases.map((phase) => (
               <PhaseRow key={phase.name} phase={phase} />
             ))}
+          </div>
+        )}
+
+        {(isRunning || streamEvents.length > 0 || streamError) && (
+          <div className="mt-5 rounded-xl border border-slate-200 bg-slate-950 px-4 py-3 text-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-white">Live Activity</p>
+                <p className="text-xs text-slate-400">
+                  Streaming scan phases, Graph retries, and action ingest progress.
+                </p>
+              </div>
+              {isRunning && (
+                <span className="badge bg-emerald-500/10 text-emerald-300">Connected</span>
+              )}
+            </div>
+
+            {streamError && (
+              <div className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                {streamError}
+              </div>
+            )}
+
+            <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
+              {streamEvents.length === 0 ? (
+                <div className="rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-400">
+                  Waiting for live events...
+                </div>
+              ) : (
+                streamEvents.map((event) => (
+                  <div
+                    key={event.id}
+                    className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2"
+                  >
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <span
+                        className={clsx(
+                          "font-medium uppercase tracking-wide",
+                          event.level === "error" && "text-red-300",
+                          event.level === "warning" && "text-amber-300",
+                          event.level === "info" && "text-sky-300",
+                        )}
+                      >
+                        {event.phase ? event.phase.replace(/_/g, " ") : event.type}
+                      </span>
+                      <span className="text-slate-500">
+                        {new Date(event.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-100">{event.message}</p>
+                    {typeof event.items_processed === "number" && event.items_processed > 0 && (
+                      <p className="mt-1 text-xs text-slate-400">
+                        {event.items_processed.toLocaleString()} items processed
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -23,6 +23,7 @@ param(
     [string]$Environment = "prod",
     [string]$FoundryModel = "gpt-4.1-mini",
     [string]$FrontendImageTag,
+    [string]$EncryptionKey,
     [switch]$EnableLocalMode,
     [switch]$SkipBootstrapBuild,
     [switch]$SkipFrontendRedeploy,
@@ -52,6 +53,440 @@ function Invoke-Terraform {
     finally {
         Pop-Location
     }
+}
+
+function Get-TerraformOutputValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorkingDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    Push-Location $WorkingDirectory
+    try {
+        $output = & terraform output -raw $Name
+        if ($LASTEXITCODE -ne 0) {
+            throw "terraform output -raw $Name failed with exit code $LASTEXITCODE"
+        }
+
+        return ($output | Out-String).Trim()
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Get-TerraformStatePaths {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorkingDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PersistentDirectory
+    )
+
+    return [pscustomobject]@{
+        WorkingState       = Join-Path $WorkingDirectory "terraform.tfstate"
+        WorkingStateBackup = Join-Path $WorkingDirectory "terraform.tfstate.backup"
+        PersistentState    = Join-Path $PersistentDirectory "terraform.tfstate"
+        PersistentBackup   = Join-Path $PersistentDirectory "terraform.tfstate.backup"
+    }
+}
+
+function Restore-TerraformState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorkingDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PersistentDirectory
+    )
+
+    $statePaths = Get-TerraformStatePaths -WorkingDirectory $WorkingDirectory -PersistentDirectory $PersistentDirectory
+    $restored = $false
+
+    if (Test-Path $statePaths.PersistentState) {
+        Copy-Item -Force $statePaths.PersistentState $statePaths.WorkingState
+        $restored = $true
+    }
+
+    if (Test-Path $statePaths.PersistentBackup) {
+        Copy-Item -Force $statePaths.PersistentBackup $statePaths.WorkingStateBackup
+    }
+
+    return $restored
+}
+
+function Save-TerraformState {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorkingDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PersistentDirectory
+    )
+
+    $statePaths = Get-TerraformStatePaths -WorkingDirectory $WorkingDirectory -PersistentDirectory $PersistentDirectory
+    New-Item -ItemType Directory -Path $PersistentDirectory -Force | Out-Null
+
+    if (Test-Path $statePaths.WorkingState) {
+        Copy-Item -Force $statePaths.WorkingState $statePaths.PersistentState
+    }
+
+    if (Test-Path $statePaths.WorkingStateBackup) {
+        Copy-Item -Force $statePaths.WorkingStateBackup $statePaths.PersistentBackup
+    }
+}
+
+function Get-TerraformStateList {
+    param([Parameter(Mandatory = $true)][string]$WorkingDirectory)
+
+    Push-Location $WorkingDirectory
+    try {
+        $output = & terraform state list 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            return @()
+        }
+
+        return @($output | Where-Object { $_ -and $_.Trim() })
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Test-TerraformStateAddress {
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+        [Parameter(Mandatory = $true)][string]$Address
+    )
+
+    return (Get-TerraformStateList -WorkingDirectory $WorkingDirectory) -contains $Address
+}
+
+function Invoke-AzCli {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+
+        [switch]$AllowFailure
+    )
+
+    $output = & az @Arguments 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        if ($AllowFailure) {
+            return $null
+        }
+
+        throw "az $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+    }
+
+    if ($null -eq $output) {
+        return $null
+    }
+
+    $text = ($output | Out-String).Trim()
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return $null
+    }
+
+    return $text
+}
+
+function Import-TerraformResource {
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+        [Parameter(Mandatory = $true)][string]$Address,
+        [Parameter(Mandatory = $true)][string]$ResourceId,
+        [System.Collections.Generic.HashSet[string]]$KnownAddresses
+    )
+
+    if ($KnownAddresses) {
+        if ($KnownAddresses.Contains($Address)) {
+            return
+        }
+    }
+    elseif (Test-TerraformStateAddress -WorkingDirectory $WorkingDirectory -Address $Address) {
+        return
+    }
+
+    Write-Host "Importing $Address" -ForegroundColor DarkCyan
+    Invoke-Terraform -WorkingDirectory $WorkingDirectory -Arguments @("import", "-input=false", $Address, $ResourceId)
+    if ($KnownAddresses) {
+        [void]$KnownAddresses.Add($Address)
+    }
+}
+
+function Import-TerraformResourceIfIdPresent {
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+        [Parameter(Mandatory = $true)][string]$Address,
+        [string]$ResourceId,
+        [System.Collections.Generic.HashSet[string]]$KnownAddresses
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ResourceId)) {
+        Write-Host "Skipping $Address (resource not found in Azure)" -ForegroundColor DarkYellow
+        return
+    }
+
+    Import-TerraformResource -WorkingDirectory $WorkingDirectory -Address $Address -ResourceId $ResourceId -KnownAddresses $KnownAddresses
+}
+
+function Resolve-AzureResourceId {
+    param([string]$ResourceId)
+
+    if ([string]::IsNullOrWhiteSpace($ResourceId)) {
+        return $ResourceId
+    }
+
+    $normalized = $ResourceId
+    $providerNamespaces = @(
+        'Microsoft.Insights',
+        'Microsoft.OperationalInsights',
+        'Microsoft.ManagedIdentity',
+        'Microsoft.DocumentDB',
+        'Microsoft.Cache',
+        'Microsoft.KeyVault',
+        'Microsoft.ContainerRegistry',
+        'Microsoft.App'
+    )
+
+    foreach ($namespace in $providerNamespaces) {
+        $pattern = '/providers/' + [regex]::Escape($namespace)
+        $normalized = [regex]::Replace($normalized, $pattern, "/providers/$namespace", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    }
+
+    $normalized = [regex]::Replace(
+        $normalized,
+        '/resourcegroups/',
+        '/resourceGroups/',
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )
+
+    $segmentMappings = @{
+        '/containerapps/'       = '/containerApps/'
+        '/managedenvironments/' = '/managedEnvironments/'
+        '/sqldatabases/'        = '/sqlDatabases/'
+        '/redis/'               = '/redis/'
+    }
+
+    foreach ($segment in $segmentMappings.Keys) {
+        $normalized = [regex]::Replace($normalized, [regex]::Escape($segment), $segmentMappings[$segment], [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    }
+
+    return $normalized
+}
+
+function Get-AzResourceId {
+    param(
+        [Parameter(Mandatory = $true)][string]$ResourceGroupName,
+        [Parameter(Mandatory = $true)][string]$ResourceType,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    Write-Host "Lookup resource: $ResourceType :: $Name" -ForegroundColor DarkGray
+    $resourceId = Invoke-AzCli -Arguments @("resource", "show", "--resource-group", $ResourceGroupName, "--resource-type", $ResourceType, "--name", $Name, "--query", "id", "--output", "tsv") -AllowFailure
+    return Resolve-AzureResourceId -ResourceId $resourceId
+}
+
+function Get-RoleAssignmentId {
+    param(
+        [string]$Scope,
+        [string]$PrincipalId,
+        [Parameter(Mandatory = $true)][string]$RoleDefinitionName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Scope) -or [string]::IsNullOrWhiteSpace($PrincipalId)) {
+        return $null
+    }
+
+    Write-Host "Lookup role assignment: $RoleDefinitionName" -ForegroundColor DarkGray
+    return Invoke-AzCli -Arguments @(
+        "role", "assignment", "list",
+        "--scope", $Scope,
+        "--assignee-object-id", $PrincipalId,
+        "--role", $RoleDefinitionName,
+        "--query", "[0].id",
+        "--output", "tsv"
+    ) -AllowFailure
+}
+
+function Get-KeyVaultSecretId {
+    param(
+        [Parameter(Mandatory = $true)][string]$VaultName,
+        [Parameter(Mandatory = $true)][string]$SecretName
+    )
+
+    Write-Host "Lookup key vault secret: $SecretName" -ForegroundColor DarkGray
+    $secretId = Invoke-AzCli -Arguments @("keyvault", "secret", "show", "--vault-name", $VaultName, "--name", $SecretName, "--query", "id", "--output", "tsv") -AllowFailure
+    return Resolve-AzureResourceId -ResourceId $secretId
+}
+
+function Get-CosmosSqlRoleAssignmentId {
+    param(
+        [string]$ResourceGroupName,
+        [string]$AccountName,
+        [string]$PrincipalId
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ResourceGroupName) -or [string]::IsNullOrWhiteSpace($AccountName) -or [string]::IsNullOrWhiteSpace($PrincipalId)) {
+        return $null
+    }
+
+    Write-Host "Lookup Cosmos SQL role assignment" -ForegroundColor DarkGray
+    return Invoke-AzCli -Arguments @(
+        "cosmosdb", "sql", "role", "assignment", "list",
+        "--resource-group", $ResourceGroupName,
+        "--account-name", $AccountName,
+        "--query", "[?principalId=='$PrincipalId' && contains(roleDefinitionId, '00000000-0000-0000-0000-000000000002')].id | [0]",
+        "--output", "tsv"
+    ) -AllowFailure
+}
+
+function Get-CosmosSqlDatabaseId {
+    param(
+        [string]$ResourceGroupName,
+        [string]$AccountName,
+        [string]$DatabaseName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ResourceGroupName) -or [string]::IsNullOrWhiteSpace($AccountName) -or [string]::IsNullOrWhiteSpace($DatabaseName)) {
+        return $null
+    }
+
+    Write-Host "Lookup Cosmos SQL database: $DatabaseName" -ForegroundColor DarkGray
+    $resourceId = Invoke-AzCli -Arguments @(
+        "cosmosdb", "sql", "database", "show",
+        "--resource-group", $ResourceGroupName,
+        "--account-name", $AccountName,
+        "--name", $DatabaseName,
+        "--query", "id",
+        "--output", "tsv"
+    ) -AllowFailure
+
+    return Resolve-AzureResourceId -ResourceId $resourceId
+}
+
+function Get-CosmosSqlContainerId {
+    param(
+        [string]$ResourceGroupName,
+        [string]$AccountName,
+        [string]$DatabaseName,
+        [string]$ContainerName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ResourceGroupName) -or [string]::IsNullOrWhiteSpace($AccountName) -or [string]::IsNullOrWhiteSpace($DatabaseName) -or [string]::IsNullOrWhiteSpace($ContainerName)) {
+        return $null
+    }
+
+    Write-Host "Lookup Cosmos SQL container: $ContainerName" -ForegroundColor DarkGray
+    $resourceId = Invoke-AzCli -Arguments @(
+        "cosmosdb", "sql", "container", "show",
+        "--resource-group", $ResourceGroupName,
+        "--account-name", $AccountName,
+        "--database-name", $DatabaseName,
+        "--name", $ContainerName,
+        "--query", "id",
+        "--output", "tsv"
+    ) -AllowFailure
+
+    return Resolve-AzureResourceId -ResourceId $resourceId
+}
+
+function Initialize-TerraformExistingResourceState {
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+        [Parameter(Mandatory = $true)][string]$PersistentDirectory,
+        [Parameter(Mandatory = $true)][string]$ResourceGroupName,
+        [Parameter(Mandatory = $true)][string]$ProjectName,
+        [Parameter(Mandatory = $true)][string]$Environment
+    )
+
+    Write-Step "Adopting existing Azure resources into Terraform state"
+
+    $knownAddresses = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($address in (Get-TerraformStateList -WorkingDirectory $WorkingDirectory)) {
+        [void]$knownAddresses.Add($address)
+    }
+
+    $logAnalyticsName = "log-$ProjectName-$Environment"
+    $appInsightsName = "appi-$ProjectName-$Environment"
+    $managedIdentityName = "id-$ProjectName-$Environment"
+    $cosmosName = "cosmos-$ProjectName-$Environment"
+    $cosmosDatabaseName = "entra-analyzer"
+    $redisName = "redis-$ProjectName-$Environment"
+    $keyVaultName = "kv-$ProjectName-$Environment"
+    $acrName = "${ProjectName}${Environment}acr"
+    $containerEnvName = "cae-$ProjectName-$Environment"
+    $backendAppName = "ca-$ProjectName-backend-$Environment"
+    $frontendAppName = "ca-$ProjectName-frontend-$Environment"
+
+    $resourceIds = @{
+        "module.observability.azurerm_log_analytics_workspace.main" = Get-AzResourceId -ResourceGroupName $ResourceGroupName -ResourceType "Microsoft.OperationalInsights/workspaces" -Name $logAnalyticsName
+        "module.observability.azurerm_application_insights.main"     = Get-AzResourceId -ResourceGroupName $ResourceGroupName -ResourceType "Microsoft.Insights/components" -Name $appInsightsName
+        "module.identity.azurerm_user_assigned_identity.app"         = Get-AzResourceId -ResourceGroupName $ResourceGroupName -ResourceType "Microsoft.ManagedIdentity/userAssignedIdentities" -Name $managedIdentityName
+        "module.data.azurerm_cosmosdb_account.main"                  = Get-AzResourceId -ResourceGroupName $ResourceGroupName -ResourceType "Microsoft.DocumentDB/databaseAccounts" -Name $cosmosName
+        "module.data.azurerm_cosmosdb_sql_database.main"             = Get-CosmosSqlDatabaseId -ResourceGroupName $ResourceGroupName -AccountName $cosmosName -DatabaseName $cosmosDatabaseName
+        "module.data.azurerm_redis_cache.main"                       = Get-AzResourceId -ResourceGroupName $ResourceGroupName -ResourceType "Microsoft.Cache/Redis" -Name $redisName
+        "module.security.azurerm_key_vault.main"                     = Get-AzResourceId -ResourceGroupName $ResourceGroupName -ResourceType "Microsoft.KeyVault/vaults" -Name $keyVaultName
+        "module.compute.azurerm_container_registry.main"             = Get-AzResourceId -ResourceGroupName $ResourceGroupName -ResourceType "Microsoft.ContainerRegistry/registries" -Name $acrName
+        "module.compute.azurerm_container_app_environment.main"      = Get-AzResourceId -ResourceGroupName $ResourceGroupName -ResourceType "Microsoft.App/managedEnvironments" -Name $containerEnvName
+        "module.compute.azurerm_container_app.backend"               = Get-AzResourceId -ResourceGroupName $ResourceGroupName -ResourceType "Microsoft.App/containerApps" -Name $backendAppName
+        "module.compute.azurerm_container_app.frontend"              = Get-AzResourceId -ResourceGroupName $ResourceGroupName -ResourceType "Microsoft.App/containerApps" -Name $frontendAppName
+    }
+
+    foreach ($containerName in @("tenant_configs", "identity_profiles", "action_events", "sync_state", "role_recommendations", "drift_alerts", "baselines", "best_practice_violations", "narratives")) {
+        $address = "module.data.azurerm_cosmosdb_sql_container.$containerName"
+        $resourceIds[$address] = Get-CosmosSqlContainerId -ResourceGroupName $ResourceGroupName -AccountName $cosmosName -DatabaseName $cosmosDatabaseName -ContainerName $containerName
+    }
+
+    $scheduledJobs = @{
+        "sync-tenant"              = "sync-ten"
+        "compute-baselines"        = "comp-base"
+        "detect-drift"             = "det-drift"
+        "generate-recommendations" = "gen-reco"
+        "generate-narratives"      = "gen-narr"
+    }
+    foreach ($jobKey in $scheduledJobs.Keys) {
+        $jobName = "job-$ProjectName-$($scheduledJobs[$jobKey])-$Environment"
+        $address = "module.compute.azurerm_container_app_job.scheduled[`"$jobKey`"]"
+        $resourceIds[$address] = Get-AzResourceId -ResourceGroupName $ResourceGroupName -ResourceType "Microsoft.App/jobs" -Name $jobName
+    }
+
+    foreach ($address in $resourceIds.Keys) {
+        Write-Host "Adoption check: $address" -ForegroundColor DarkGray
+        Import-TerraformResourceIfIdPresent -WorkingDirectory $WorkingDirectory -Address $Address -ResourceId $resourceIds[$address] -KnownAddresses $knownAddresses
+    }
+
+    $managedIdentityPrincipalId = Invoke-AzCli -Arguments @("identity", "show", "--resource-group", $ResourceGroupName, "--name", $managedIdentityName, "--query", "principalId", "--output", "tsv") -AllowFailure
+    $signedInObjectId = Invoke-AzCli -Arguments @("ad", "signed-in-user", "show", "--query", "id", "--output", "tsv") -AllowFailure
+
+    Write-Host "Adoption check: module.compute.azurerm_role_assignment.acr_pull" -ForegroundColor DarkGray
+    Import-TerraformResourceIfIdPresent -WorkingDirectory $WorkingDirectory -Address "module.compute.azurerm_role_assignment.acr_pull" -ResourceId (Get-RoleAssignmentId -Scope $resourceIds["module.compute.azurerm_container_registry.main"] -PrincipalId $managedIdentityPrincipalId -RoleDefinitionName "AcrPull") -KnownAddresses $knownAddresses
+    Write-Host "Adoption check: module.security.azurerm_role_assignment.deployer_kv_admin" -ForegroundColor DarkGray
+    Import-TerraformResourceIfIdPresent -WorkingDirectory $WorkingDirectory -Address "module.security.azurerm_role_assignment.deployer_kv_admin" -ResourceId (Get-RoleAssignmentId -Scope $resourceIds["module.security.azurerm_key_vault.main"] -PrincipalId $signedInObjectId -RoleDefinitionName "Key Vault Administrator") -KnownAddresses $knownAddresses
+    Write-Host "Adoption check: module.security.azurerm_role_assignment.app_kv_secrets_user" -ForegroundColor DarkGray
+    Import-TerraformResourceIfIdPresent -WorkingDirectory $WorkingDirectory -Address "module.security.azurerm_role_assignment.app_kv_secrets_user" -ResourceId (Get-RoleAssignmentId -Scope $resourceIds["module.security.azurerm_key_vault.main"] -PrincipalId $managedIdentityPrincipalId -RoleDefinitionName "Key Vault Secrets User") -KnownAddresses $knownAddresses
+    Write-Host "Adoption check: module.data.azurerm_cosmosdb_sql_role_assignment.app_data_contributor" -ForegroundColor DarkGray
+    Import-TerraformResourceIfIdPresent -WorkingDirectory $WorkingDirectory -Address "module.data.azurerm_cosmosdb_sql_role_assignment.app_data_contributor" -ResourceId (Get-CosmosSqlRoleAssignmentId -ResourceGroupName $ResourceGroupName -AccountName $cosmosName -PrincipalId $managedIdentityPrincipalId) -KnownAddresses $knownAddresses
+
+    $keyVaultSecrets = @{
+        "module.security.azurerm_key_vault_secret.app_client_secret"             = "app-client-secret"
+        "module.security.azurerm_key_vault_secret.cosmos_key"                    = "cosmos-key"
+        "module.security.azurerm_key_vault_secret.cosmos_endpoint"               = "cosmos-endpoint"
+        "module.security.azurerm_key_vault_secret.redis_password"                = "redis-password"
+        "module.security.azurerm_key_vault_secret.foundry_key"                   = "foundry-key"
+        "module.security.azurerm_key_vault_secret.appinsights_connection_string" = "appinsights-connection-string"
+    }
+    foreach ($address in $keyVaultSecrets.Keys) {
+        Write-Host "Adoption check: $address" -ForegroundColor DarkGray
+        Import-TerraformResourceIfIdPresent -WorkingDirectory $WorkingDirectory -Address $address -ResourceId (Get-KeyVaultSecretId -VaultName $keyVaultName -SecretName $keyVaultSecrets[$address]) -KnownAddresses $knownAddresses
+    }
+
+    Save-TerraformState -WorkingDirectory $WorkingDirectory -PersistentDirectory $PersistentDirectory
 }
 
 function Get-HttpResult {
@@ -134,18 +569,28 @@ function Invoke-SmokeTests {
         throw "Backend /healthz check failed with status $($healthResult.StatusCode). Body: $($healthResult.Body)"
     }
 
-    $projectsResult = Get-HttpResult -Uri ($BackendUrl.TrimEnd('/') + '/api/projects')
-    if ($LocalModeEnabled) {
-        if ($projectsResult.StatusCode -ne 200) {
-            throw "Backend /api/projects local-mode check expected 200 but got $($projectsResult.StatusCode). Body: $($projectsResult.Body)"
+    $expectedProjectsStatus = if ($LocalModeEnabled) { 200 } else { 401 }
+    $projectsExpectationLabel = if ($LocalModeEnabled) { "local-mode" } else { "unauthenticated" }
+    $projectsResult = $null
+    for ($attempt = 1; $attempt -le 12; $attempt++) {
+        $projectsResult = Get-HttpResult -Uri ($BackendUrl.TrimEnd('/') + '/api/projects')
+        if ($projectsResult.StatusCode -eq $expectedProjectsStatus) {
+            break
+        }
+
+        if ($attempt -lt 12) {
+            Write-Host "Waiting for backend /api/projects to return $expectedProjectsStatus for $projectsExpectationLabel mode (attempt $attempt of 12)"
+            Start-Sleep -Seconds 10
         }
     }
-    elseif ($projectsResult.StatusCode -ne 401) {
-        throw "Backend /api/projects unauthenticated check expected 401 but got $($projectsResult.StatusCode). Body: $($projectsResult.Body)"
+
+    if ($projectsResult.StatusCode -ne $expectedProjectsStatus) {
+        throw "Backend /api/projects $projectsExpectationLabel check expected $expectedProjectsStatus but got $($projectsResult.StatusCode). Body: $($projectsResult.Body)"
     }
 
     $preflightHeaders = curl.exe -k -sS -D - -o NUL -X OPTIONS ($BackendUrl.TrimEnd('/') + '/api/projects') -H "Origin: $FrontendUrl" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: authorization,content-type"
-    if (-not $preflightHeaders.Contains("Access-Control-Allow-Origin: $FrontendUrl")) {
+    $preflightHeaderText = ($preflightHeaders | Out-String)
+    if (-not $preflightHeaderText.ToLowerInvariant().Contains(("Access-Control-Allow-Origin: $FrontendUrl").ToLowerInvariant())) {
         throw "Backend preflight response does not allow frontend origin $FrontendUrl"
     }
 
@@ -182,6 +627,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $tempRoot = Join-Path $env:TEMP "entraperm-existing-rg-deploy"
 $infraRoot = Join-Path $tempRoot "infra"
 $tfWorkDir = Join-Path $infraRoot "envs/prod"
+$persistentStateDir = Join-Path $repoRoot ".azure/deploy-state/$Environment/$ResourceGroupName"
 
 if (Test-Path $tempRoot) {
     Remove-Item -Recurse -Force $tempRoot
@@ -191,6 +637,10 @@ Write-Step "Preparing temporary Terraform workspace"
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
 Copy-Item -Recurse -Force (Join-Path $repoRoot "infra") $infraRoot
 Remove-Item (Join-Path $tfWorkDir "backend.tf") -Force
+New-Item -ItemType Directory -Path $persistentStateDir -Force | Out-Null
+if (Restore-TerraformState -WorkingDirectory $tfWorkDir -PersistentDirectory $persistentStateDir) {
+    Write-Host "Restored Terraform state from $persistentStateDir"
+}
 
 $env:TF_VAR_existing_resource_group_name = $ResourceGroupName
 $env:TF_VAR_existing_application_client_id = $ExistingApplicationClientId
@@ -206,6 +656,8 @@ $env:TF_VAR_environment = $Environment
 Write-Step "Initializing Terraform"
 Invoke-Terraform -WorkingDirectory $tfWorkDir -Arguments @("init")
 
+Initialize-TerraformExistingResourceState -WorkingDirectory $tfWorkDir -PersistentDirectory $persistentStateDir -ResourceGroupName $ResourceGroupName -ProjectName $ProjectName -Environment $Environment
+
 Write-Step "Provisioning shared infrastructure"
 Invoke-Terraform -WorkingDirectory $tfWorkDir -Arguments @(
     "apply",
@@ -218,9 +670,10 @@ Invoke-Terraform -WorkingDirectory $tfWorkDir -Arguments @(
     "-target=module.compute.azurerm_role_assignment.acr_pull",
     "-target=module.compute.azurerm_container_app_environment.main"
 )
+Save-TerraformState -WorkingDirectory $tfWorkDir -PersistentDirectory $persistentStateDir
 
-$acrName = (& terraform -chdir=$tfWorkDir output -raw acr_name).Trim()
-$tenantId = (& terraform -chdir=$tfWorkDir output -raw tenant_id).Trim()
+$acrName = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "acr_name"
+$tenantId = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "tenant_id"
 $backendAppName = "ca-$ProjectName-backend-$Environment"
 $frontendAppName = "ca-$ProjectName-frontend-$Environment"
 $frontendTag = if ($FrontendImageTag) { $FrontendImageTag } else { "prod-" + (Get-Date -Format "yyyyMMddHHmmss") }
@@ -241,9 +694,10 @@ if (-not $SkipBootstrapBuild) {
 
 Write-Step "Creating Container Apps and jobs"
 Invoke-Terraform -WorkingDirectory $tfWorkDir -Arguments @("apply", "-auto-approve")
+Save-TerraformState -WorkingDirectory $tfWorkDir -PersistentDirectory $persistentStateDir
 
 if (-not $SkipFrontendRedeploy) {
-    $backendUrl = "https://$((& terraform -chdir=$tfWorkDir output -raw backend_fqdn).Trim())"
+    $backendUrl = "https://$(Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name 'backend_fqdn')"
 
     Write-Step "Building frontend image with live backend URL"
     & az acr build --registry $acrName --image "$ProjectName-frontend:$frontendTag" --file (Join-Path $repoRoot "frontend/Dockerfile") --target prod --build-arg "VITE_APP_CLIENT_ID=$ExistingApplicationClientId" --build-arg "VITE_TENANT_ID=$tenantId" --build-arg "VITE_API_BASE_URL=$backendUrl" (Join-Path $repoRoot "frontend")
@@ -258,14 +712,32 @@ if (-not $SkipFrontendRedeploy) {
     }
 }
 
-$backendFqdn = (& terraform -chdir=$tfWorkDir output -raw backend_fqdn).Trim()
-$frontendFqdn = (& terraform -chdir=$tfWorkDir output -raw frontend_fqdn).Trim()
+$backendFqdn = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "backend_fqdn"
+$frontendFqdn = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "frontend_fqdn"
 $backendUrl = "https://$backendFqdn"
 $frontendUrl = "https://$frontendFqdn"
 
 Write-Step "Updating backend runtime settings"
 $localModeValue = if ($EnableLocalMode) { "true" } else { "false" }
-& az containerapp update --name $backendAppName --resource-group $ResourceGroupName --set-env-vars "LOCAL_MODE=$localModeValue" "CORS_ORIGINS=$frontendUrl" "CORS_ORIGIN_REGEX=" | Out-Null
+$resolvedEncryptionKey = $EncryptionKey
+if (-not $resolvedEncryptionKey -and $EnableLocalMode) {
+    $bytes = New-Object byte[] 32
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $resolvedEncryptionKey = [Convert]::ToBase64String($bytes)
+    Write-Warning "Generated a temporary ENCRYPTION_KEY for local-mode deployment. Persist it with -EncryptionKey if you need encrypted project secrets to survive future redeploys."
+}
+
+$envVars = @(
+    "LOCAL_MODE=$localModeValue",
+    "CORS_ORIGINS=$frontendUrl",
+    "CORS_ORIGIN_REGEX="
+)
+
+if ($resolvedEncryptionKey) {
+    $envVars += "ENCRYPTION_KEY=$resolvedEncryptionKey"
+}
+
+& az containerapp update --name $backendAppName --resource-group $ResourceGroupName --set-env-vars @envVars | Out-Null
 if ($LASTEXITCODE -ne 0) {
     throw "Backend container app runtime setting update failed"
 }
@@ -277,4 +749,5 @@ if (-not $SkipSmokeTests) {
 Write-Step "Deployment complete"
 Write-Host "Backend:  $backendUrl"
 Write-Host "Frontend: $frontendUrl"
-Write-Host "Temp Terraform state: $tfWorkDir"
+Write-Host "Terraform state: $persistentStateDir"
+Write-Host "Temp Terraform workspace: $tfWorkDir"

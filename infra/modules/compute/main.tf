@@ -44,6 +44,12 @@ resource "azurerm_container_app_environment" "main" {
   log_analytics_workspace_id = var.log_analytics_workspace_id
 
   tags = var.tags
+
+  lifecycle {
+    ignore_changes = [
+      log_analytics_workspace_id,
+    ]
+  }
 }
 
 # ---------------------

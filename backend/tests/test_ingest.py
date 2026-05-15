@@ -1,11 +1,13 @@
 # backend/tests/test_ingest.py
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+import httpx
 from httpx import ASGITransport, AsyncClient
 
 from app.auth.deps import CurrentUser, get_current_user
@@ -13,7 +15,9 @@ from app.config import Settings, get_settings
 from app.models.action import ActionEvent, ActionSource
 from app.models.identity import IdentityProfile, IdentityType
 from app.services.cosmos import CosmosRepo, get_cosmos_repo
-from app.services.graph_ingest import GraphIngestService
+from app.models.project import Project
+from app.services.scan_events import ScanEventBroker
+from app.services.graph_ingest import GraphIngestService, GraphPermissionError, GraphThrottledError
 
 # ---------------------------------------------------------------------------
 # Sample raw Graph API payloads
@@ -104,6 +108,7 @@ def _test_settings() -> Settings:
         cosmos_key="",
         redis_host="localhost",
         redis_password="",
+        encryption_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
         applicationinsights_connection_string="",
     )
 
@@ -437,3 +442,256 @@ class TestGetIdentityEndpoint:
             "/api/tenants/local-dev-tenant/identities/User_nonexistent"
         )
         assert resp.status_code == 404
+
+
+class TestGraphIngestErrors:
+    """Focused tests for Graph ingest retry and error translation."""
+
+    @pytest.mark.asyncio
+    async def test_retries_throttled_graph_requests_before_success(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A transient 429 should be retried with backoff before succeeding."""
+        service = GraphIngestService(_test_settings(), token_provider=AsyncMock(return_value="token"))
+        responses = [
+            httpx.Response(429, headers={"Retry-After": "0"}, json={"error": {"code": "TooManyRequests", "message": "Slow down"}}),
+            httpx.Response(200, json={"value": [{"id": "event-1"}]})
+        ]
+        sleep_calls: list[float] = []
+
+        async def _sleep(delay: float) -> None:
+            sleep_calls.append(delay)
+
+        async def _get(*args: Any, **kwargs: Any) -> httpx.Response:
+            return responses.pop(0)
+
+        class _FakeClient:
+            async def __aenter__(self) -> _FakeClient:
+                return self
+
+            async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+                return None
+
+            get = _get
+
+        monkeypatch.setattr("app.services.graph_ingest.asyncio.sleep", _sleep)
+        monkeypatch.setattr("app.services.graph_ingest.httpx.AsyncClient", lambda *args, **kwargs: _FakeClient())
+
+        events, delta_link = await service.fetch_audit_logs("tenant-001")
+
+        assert delta_link is None
+        assert events == [{"id": "event-1"}]
+        assert sleep_calls == [0.0]
+
+    @pytest.mark.asyncio
+    async def test_caps_retry_after_delay(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A large Retry-After value should be capped to the configured max backoff."""
+        service = GraphIngestService(_test_settings(), token_provider=AsyncMock(return_value="token"))
+        responses = [
+            httpx.Response(429, headers={"Retry-After": "120"}, json={"error": {"code": "TooManyRequests", "message": "Slow down"}}),
+            httpx.Response(200, json={"value": [{"id": "event-1"}]})
+        ]
+        sleep_calls: list[float] = []
+
+        async def _sleep(delay: float) -> None:
+            sleep_calls.append(delay)
+
+        async def _get(*args: Any, **kwargs: Any) -> httpx.Response:
+            return responses.pop(0)
+
+        class _FakeClient:
+            async def __aenter__(self) -> _FakeClient:
+                return self
+
+            async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+                return None
+
+            get = _get
+
+        monkeypatch.setattr("app.services.graph_ingest.asyncio.sleep", _sleep)
+        monkeypatch.setattr("app.services.graph_ingest.httpx.AsyncClient", lambda *args, **kwargs: _FakeClient())
+
+        await service.fetch_audit_logs("tenant-001")
+
+        assert sleep_calls == [30.0]
+
+    @pytest.mark.asyncio
+    async def test_forbidden_graph_request_raises_permission_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Graph 403s should become a typed permission error with context."""
+        service = GraphIngestService(_test_settings(), token_provider=AsyncMock(return_value="token"))
+
+        async def _get(*args: Any, **kwargs: Any) -> httpx.Response:
+            return httpx.Response(
+                403,
+                json={"error": {"code": "Authorization_RequestDenied", "message": "Insufficient privileges to complete the operation."}},
+            )
+
+        class _FakeClient:
+            async def __aenter__(self) -> _FakeClient:
+                return self
+
+            async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+                return None
+
+            get = _get
+
+        monkeypatch.setattr("app.services.graph_ingest.httpx.AsyncClient", lambda *args, **kwargs: _FakeClient())
+
+        with pytest.raises(GraphPermissionError) as exc_info:
+            await service.fetch_audit_logs("tenant-001")
+
+        assert "directoryAudits" in str(exc_info.value)
+        assert "required Graph permissions" in str(exc_info.value)
+
+
+class TestTriggerScanErrorMapping:
+    """Focused tests for scan endpoint error translation."""
+
+    @staticmethod
+    async def _wait_for_background_scan_write(mock_repo: AsyncMock) -> None:
+        for _ in range(20):
+            if mock_repo.upsert_scan.await_count >= 2:
+                return
+            await asyncio.sleep(0)
+        raise AssertionError("background scan task did not persist final state")
+
+    @pytest.fixture()
+    async def scan_client(self, mock_repo: AsyncMock, monkeypatch: pytest.MonkeyPatch) -> AsyncClient:
+        from app.main import create_app
+
+        project = Project(
+            id="project-001",
+            owner_id="local-dev-user",
+            owner_email="dev@localhost",
+            name="Test Project",
+            target_tenant_id="tenant-001",
+            target_tenant_name="Tenant 001",
+            client_id="client-id",
+            encrypted_client_secret="encrypted",
+            status="active",
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        mock_repo.list_projects_for_user.return_value = [project]
+
+        monkeypatch.setattr("app.routers.scans.CryptoService.decrypt", lambda self, value: "secret")
+
+        test_app = create_app()
+        test_app.dependency_overrides[get_settings] = _test_settings
+        test_app.dependency_overrides[get_cosmos_repo] = lambda: mock_repo
+        test_app.dependency_overrides[get_current_user] = lambda: _mock_user()
+        test_app.state.scan_event_broker = ScanEventBroker()
+
+        transport = ASGITransport(app=test_app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            yield ac
+
+    @pytest.mark.asyncio
+    async def test_trigger_scan_returns_controlled_forbidden_error(
+        self,
+        scan_client: AsyncClient,
+        mock_repo: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A delegated/app Graph permission failure should be persisted after the async 202 response."""
+        async def _run(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            raise GraphPermissionError(
+                "Microsoft Graph denied access to https://graph.microsoft.com/beta/auditLogs/directoryAudits. Check that the configured identity has the required Graph permissions.",
+                status_code=403,
+                endpoint="https://graph.microsoft.com/beta/auditLogs/directoryAudits",
+                code="Authorization_RequestDenied",
+            )
+
+        monkeypatch.setattr("app.routers.scans.IngestPipeline.run", _run)
+
+        resp = await scan_client.post("/api/projects/project-001/scans/trigger")
+
+        assert resp.status_code == 202
+        await self._wait_for_background_scan_write(mock_repo)
+        persisted_scan = mock_repo.upsert_scan.await_args_list[-1].args[0]
+        assert "required delegated or application permissions" in persisted_scan.error_message
+
+    @pytest.mark.asyncio
+    async def test_trigger_scan_rejects_missing_bearer_before_persisting_scan(
+        self,
+        scan_client: AsyncClient,
+        mock_repo: AsyncMock,
+    ) -> None:
+        resp = await scan_client.post(
+            "/api/projects/project-001/scans/trigger?auth_mode=delegated"
+        )
+
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "Missing Bearer token"
+        mock_repo.upsert_scan.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_trigger_scan_returns_controlled_throttled_error(
+        self,
+        scan_client: AsyncClient,
+        mock_repo: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Graph throttling should be persisted after the async 202 response."""
+        async def _run(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            raise GraphThrottledError(
+                "Microsoft Graph throttled requests to https://graph.microsoft.com/beta/auditLogs/directoryAudits after retrying.",
+                status_code=429,
+                endpoint="https://graph.microsoft.com/beta/auditLogs/directoryAudits",
+                code="TooManyRequests",
+            )
+
+        monkeypatch.setattr("app.routers.scans.IngestPipeline.run", _run)
+
+        resp = await scan_client.post("/api/projects/project-001/scans/trigger")
+
+        assert resp.status_code == 202
+        await self._wait_for_background_scan_write(mock_repo)
+        persisted_scan = mock_repo.upsert_scan.await_args_list[-1].args[0]
+        assert "Please wait and try again" in persisted_scan.error_message
+
+    @pytest.mark.asyncio
+    async def test_trigger_scan_fails_cleanly_when_queue_event_cannot_publish(
+        self,
+        scan_client: AsyncClient,
+        mock_repo: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        async def _publish(*args: Any, **kwargs: Any) -> None:
+            raise RuntimeError("redis unavailable")
+
+        monkeypatch.setattr("app.routers.scans._publish_scan_event", _publish)
+
+        resp = await scan_client.post("/api/projects/project-001/scans/trigger")
+
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == "Scan event streaming is temporarily unavailable. Retry the scan."
+        assert mock_repo.upsert_scan.await_count >= 2
+        persisted_scan = mock_repo.upsert_scan.await_args_list[-1].args[0]
+        assert persisted_scan.status == "failed"
+        assert persisted_scan.error_message == resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_trigger_scan_returns_sanitized_internal_error(
+        self,
+        scan_client: AsyncClient,
+        mock_repo: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Unexpected failures should be sanitized in persisted state after the async 202 response."""
+
+        async def _run(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("app.routers.scans.IngestPipeline.run", _run)
+
+        resp = await scan_client.post("/api/projects/project-001/scans/trigger")
+
+        assert resp.status_code == 202
+        await self._wait_for_background_scan_write(mock_repo)
+        persisted_scan = mock_repo.upsert_scan.await_args_list[-1].args[0]
+        assert persisted_scan.error_message == "Scan failed due to an internal server error. Check backend logs for details."

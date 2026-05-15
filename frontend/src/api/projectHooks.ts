@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getApiClient } from "./client";
+import { ApiError, getApiClient, type ServerSentEventMessage } from "./client";
 import type {
   Project,
   CreateProjectPayload,
@@ -11,6 +11,7 @@ import type {
   ScanRecord,
   PaginatedResponse,
   DelegatedPermissionsCheck,
+  ScanStreamEvent,
 } from "./types";
 
 export function useProjects() {
@@ -162,8 +163,16 @@ export function useLatestScan(projectId: string) {
   const client = getApiClient();
   return useQuery({
     queryKey: ["latestScan", projectId],
-    queryFn: () =>
-      client.get<ScanRecord>(`/api/projects/${projectId}/scans/latest`),
+    queryFn: async () => {
+      try {
+        return await client.get<ScanRecord>(`/api/projects/${projectId}/scans/latest`);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
     enabled: !!projectId,
     retry: false,
   });
@@ -207,4 +216,19 @@ export function useDelegatedPermissionsCheck(projectId: string, enabled = false)
     retry: false,
     staleTime: 5 * 60 * 1000,
   });
+}
+
+export function streamScanEvents(
+  projectId: string,
+  scanId: string | null,
+  onMessage: (message: ServerSentEventMessage<ScanStreamEvent>) => void,
+  signal?: AbortSignal,
+) {
+  const client = getApiClient();
+  const query = scanId ? `?scan_id=${encodeURIComponent(scanId)}` : "";
+  return client.stream<ScanStreamEvent>(
+    `/api/projects/${projectId}/scans/events${query}`,
+    onMessage,
+    signal,
+  );
 }
