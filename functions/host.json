@@ -1,0 +1,32 @@
+{
+  "version": "2.0",
+  "extensions": {
+    "durableTask": {
+      "hubName": "EntraPermScanHub",
+      "maxConcurrentActivityFunctions": 10,
+      "maxConcurrentOrchestratorFunctions": 5
+    }
+  },
+  "logging": {
+    "logLevel": {
+      "default": "Information",
+      "Host.Triggers.DurableTask": "Information",
+      "Function": "Information"
+    },
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": true,
+        "excludedTypes": "Request;Exception"
+      },
+      "enableLiveMetrics": true,
+      "httpAutoCollectionOptions": {
+        "enableHttpTriggerExtendedInfoCollection": true,
+        "enableW3CDistributedTracing": true
+      }
+    }
+  },
+  "extensionBundle": {
+    "id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "version": "[4.*, 5.0.0)"
+  }
+}

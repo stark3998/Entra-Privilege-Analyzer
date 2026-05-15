@@ -55,6 +55,8 @@ class ScanRecord(BaseModel):
     completed_at: datetime | None = None
     resumed_from_scan_id: str | None = None
     error_message: str | None = None
+    orchestration_instance_id: str | None = None
+    orchestration_status_uri: str | None = None
 
 
 class ProjectMember(BaseModel):

@@ -199,6 +199,23 @@ resource "azurerm_cosmosdb_sql_container" "narratives" {
   }
 }
 
+resource "azurerm_cosmosdb_sql_container" "scan_staging" {
+  name                = "scan_staging"
+  resource_group_name = var.resource_group_name
+  account_name        = azurerm_cosmosdb_account.main.name
+  database_name       = azurerm_cosmosdb_sql_database.main.name
+  partition_key_paths = ["/scanId"]
+  default_ttl         = 86400 # 24 hours — auto-cleanup of temporary staging data
+
+  indexing_policy {
+    indexing_mode = "consistent"
+
+    included_path {
+      path = "/*"
+    }
+  }
+}
+
 resource "azurerm_cosmosdb_sql_container" "scan_events" {
   name                = "scan_events"
   resource_group_name = var.resource_group_name

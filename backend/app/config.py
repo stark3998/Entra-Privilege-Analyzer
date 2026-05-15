@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # Encryption (base64-encoded 32-byte key for AES-256-GCM)
     encryption_key: str = ""
 
+    # Scan Function App
+    scan_function_app_url: str = ""
+    scan_function_key: str = ""
+
     # PIM Privileged Session Tracking
     pim_session_enabled: bool = True
     pim_session_poll_interval_minutes: int = 15

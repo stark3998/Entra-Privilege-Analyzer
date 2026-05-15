@@ -143,3 +143,31 @@ module "compute" {
 
   tags = local.common_tags
 }
+
+# ---------------------
+# Functions (Durable Functions scan orchestration)
+# ---------------------
+
+module "functions" {
+  source = "../../modules/functions"
+
+  project_name        = var.project_name
+  environment         = var.environment
+  location            = var.location
+  resource_group_name = local.resource_group_name
+
+  managed_identity_id           = module.identity.managed_identity_id
+  managed_identity_principal_id = module.identity.managed_identity_principal_id
+
+  key_vault_uri        = module.security.key_vault_uri
+  cosmos_database_name = module.data.cosmos_database_name
+
+  secret_uris = {
+    cosmos_endpoint = module.security.secret_uris.cosmos_endpoint
+    cosmos_key      = module.security.secret_uris.cosmos_key
+  }
+
+  application_insights_connection_string = module.observability.app_insights_connection_string
+
+  tags = local.common_tags
+}
