@@ -626,7 +626,10 @@ $acrName = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "acr_name
 $tenantId = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "tenant_id"
 $backendAppName = "ca-$ProjectName-backend-$Environment"
 $frontendAppName = "ca-$ProjectName-frontend-$Environment"
+$backendTag = if ($FrontendImageTag) { $FrontendImageTag } else { "prod-" + (Get-Date -Format "yyyyMMddHHmmss") }
+$backendImage = "$acrName.azurecr.io/$ProjectName-backend:$backendTag"
 $frontendTag = if ($FrontendImageTag) { $FrontendImageTag } else { "prod-" + (Get-Date -Format "yyyyMMddHHmmss") }
+$frontendImage = "$acrName.azurecr.io/$ProjectName-frontend:$frontendTag"
 
 if (-not $SkipBootstrapBuild) {
     Write-Step "Building bootstrap backend image in ACR"
@@ -645,6 +648,53 @@ if (-not $SkipBootstrapBuild) {
 Write-Step "Creating Container Apps and jobs"
 Invoke-Terraform -WorkingDirectory $tfWorkDir -Arguments @("apply", "-auto-approve")
 
+Write-Step "Building live backend image in ACR"
+& az acr build --registry $acrName --image "$ProjectName-backend:$backendTag" --file (Join-Path $repoRoot "backend/Dockerfile") --target prod (Join-Path $repoRoot "backend")
+if ($LASTEXITCODE -ne 0) {
+    throw "Backend live image build failed"
+}
+
+Write-Step "Updating backend Container App"
+& az containerapp update --name $backendAppName --resource-group $ResourceGroupName --image $backendImage | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "Backend container app image update failed"
+}
+
+Write-Step "Updating Container App jobs"
+$jobDefinitions = @(
+    "job-$ProjectName-sync-ten-$Environment",
+    "job-$ProjectName-comp-base-$Environment",
+    "job-$ProjectName-det-drift-$Environment",
+    "job-$ProjectName-gen-reco-$Environment",
+    "job-$ProjectName-gen-narr-$Environment"
+)
+foreach ($jobName in $jobDefinitions) {
+    & az containerapp job update --name $jobName --resource-group $ResourceGroupName --image $backendImage | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Container App job image update failed for $jobName"
+    }
+}
+
+Write-Step "Verifying Container App job images"
+$staleJobs = @()
+foreach ($jobName in $jobDefinitions) {
+    $jobImage = Invoke-AzCli -Arguments @(
+        "containerapp", "job", "show",
+        "--name", $jobName,
+        "--resource-group", $ResourceGroupName,
+        "--query", "properties.template.containers[0].image",
+        "--output", "tsv"
+    )
+
+    if ($jobImage -ne $backendImage) {
+        $staleJobs += "${jobName}: $jobImage"
+    }
+}
+
+if ($staleJobs.Count -gt 0) {
+    throw "Container App job image verification failed. Expected $backendImage. Actual: $($staleJobs -join '; ')"
+}
+
 if (-not $SkipFrontendRedeploy) {
     $backendUrl = "https://$(Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name 'backend_fqdn')"
 
@@ -655,7 +705,7 @@ if (-not $SkipFrontendRedeploy) {
     }
 
     Write-Step "Updating frontend Container App"
-    & az containerapp update --name $frontendAppName --resource-group $ResourceGroupName --image "$acrName.azurecr.io/$ProjectName-frontend:$frontendTag" | Out-Null
+    & az containerapp update --name $frontendAppName --resource-group $ResourceGroupName --image $frontendImage | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Frontend container app update failed"
     }

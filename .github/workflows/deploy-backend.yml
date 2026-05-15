@@ -89,7 +89,7 @@ jobs:
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image "${{ env.FULL_IMAGE }}"
+            --image "$FULL_IMAGE"
 
       # Also update all scheduled jobs (they share the backend image)
       - name: Update scheduled jobs
@@ -107,8 +107,51 @@ jobs:
             az containerapp job update \
               --name "${JOB_NAME}" \
               --resource-group ${{ env.RESOURCE_GROUP }} \
-              --image "${{ env.FULL_IMAGE }}" || echo "Warning: failed to update ${JOB_NAME}"
+              --image "$FULL_IMAGE" || echo "Warning: failed to update ${JOB_NAME}"
           done
+
+      - name: Verify scheduled jobs use deployed image
+        shell: bash
+        run: |
+          declare -A JOBS=(
+            [sync-tenant]="sync-ten"
+            [compute-baselines]="comp-base"
+            [detect-drift]="det-drift"
+            [generate-recommendations]="gen-reco"
+            [generate-narratives]="gen-narr"
+          )
+
+          EXPECTED_IMAGE="$FULL_IMAGE"
+          FAILED=0
+
+          for JOB_SUFFIX in "${!JOBS[@]}"; do
+            JOB_NAME="job-entraperm-${JOBS[$JOB_SUFFIX]}-prod"
+            echo "Verifying job: ${JOB_NAME}"
+
+            ACTUAL_IMAGE=""
+            for attempt in $(seq 1 6); do
+              ACTUAL_IMAGE=$(az containerapp job show \
+                --name "${JOB_NAME}" \
+                --resource-group ${{ env.RESOURCE_GROUP }} \
+                --query "properties.template.containers[0].image" \
+                -o tsv 2>/dev/null || true)
+
+              if [ "${ACTUAL_IMAGE}" = "${EXPECTED_IMAGE}" ]; then
+                echo "Verified ${JOB_NAME} -> ${ACTUAL_IMAGE}"
+                break
+              fi
+
+              echo "Attempt ${attempt}/6: ${JOB_NAME} reports '${ACTUAL_IMAGE:-<unavailable>}'"
+              sleep 10
+            done
+
+            if [ "${ACTUAL_IMAGE}" != "${EXPECTED_IMAGE}" ]; then
+              echo "::error::${JOB_NAME} image mismatch. expected='${EXPECTED_IMAGE}' actual='${ACTUAL_IMAGE:-<unavailable>}'"
+              FAILED=1
+            fi
+          done
+
+          exit "${FAILED}"
 
       # Smoke test: hit the health endpoint
       - name: Smoke test

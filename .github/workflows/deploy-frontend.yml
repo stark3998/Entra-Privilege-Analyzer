@@ -81,7 +81,7 @@ jobs:
             --build-arg VITE_APP_CLIENT_ID="${{ env.APP_CLIENT_ID }}" \
             --build-arg VITE_TENANT_ID="${{ env.AZURE_TENANT_ID }}" \
             --build-arg VITE_API_BASE_URL="" \
-            --build-arg BACKEND_URL="${{ env.BACKEND_URL }}" \
+            --build-arg BACKEND_URL="$BACKEND_URL" \
             --tag "${FULL_IMAGE}" \
             ./frontend
 
@@ -95,7 +95,7 @@ jobs:
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image "${{ env.FULL_IMAGE }}"
+            --image "$FULL_IMAGE"
 
       # Smoke test: check frontend and same-origin proxy respond
       - name: Smoke test
