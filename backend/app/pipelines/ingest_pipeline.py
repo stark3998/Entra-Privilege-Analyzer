@@ -51,7 +51,7 @@ class IngestPipeline:
                 phase.status = status
                 if status == "running":
                     phase.started_at = datetime.now(UTC)
-                elif status in ("completed", "failed"):
+                elif status in ("completed", "failed", "skipped"):
                     phase.completed_at = datetime.now(UTC)
                     phase.items_processed = items
                 break
@@ -66,81 +66,292 @@ class IngestPipeline:
             }
         )
 
+    async def _save_checkpoint(
+        self,
+        scan: ScanRecord | None,
+        phase_name: str,
+        next_link: str | None,
+        items: int,
+    ) -> None:
+        if scan is None:
+            return
+        for phase in scan.phases:
+            if phase.name == phase_name:
+                phase.checkpoint_next_link = next_link
+                phase.items_processed = items
+                break
+        await self._repo.upsert_scan(scan)
+
+    def _get_phase_status(self, scan: ScanRecord | None, phase_name: str) -> str | None:
+        """Get the status of a phase from a scan record."""
+        if scan is None:
+            return None
+        for phase in scan.phases:
+            if phase.name == phase_name:
+                return phase.status
+        return None
+
+    def _get_phase_checkpoint(self, scan: ScanRecord | None, phase_name: str) -> str | None:
+        """Get the checkpoint_next_link for a phase from a scan record."""
+        if scan is None:
+            return None
+        for phase in scan.phases:
+            if phase.name == phase_name:
+                return phase.checkpoint_next_link
+        return None
+
+    def _get_phase_items(self, scan: ScanRecord | None, phase_name: str) -> int:
+        """Get items_processed for a phase from a scan record."""
+        if scan is None:
+            return 0
+        for phase in scan.phases:
+            if phase.name == phase_name:
+                return phase.items_processed
+        return 0
+
+    async def _stream_and_store_audit_logs(
+        self,
+        tenant_id: str,
+        scan_record: ScanRecord | None,
+        all_events: list[ActionEvent],
+        actor_registry: dict[str, tuple[str, str]],
+        *,
+        resume_next_link: str | None = None,
+        previous_items: int = 0,
+    ) -> int:
+        """Stream audit logs page-by-page, parsing and storing incrementally."""
+        total = previous_items
+        async for page_items, next_link in self._graph.stream_audit_logs(
+            tenant_id,
+            resume_next_link=resume_next_link,
+            page_offset=previous_items,
+        ):
+            page_events: list[ActionEvent] = []
+            for raw in page_items:
+                event, actor_id, actor_name = GraphIngestService.parse_audit_event(
+                    tenant_id, raw
+                )
+                all_events.append(event)
+                page_events.append(event)
+                if actor_id != "unknown":
+                    actor_registry[event.identity_id] = (actor_name, event.identity_id)
+
+            await self._repo.append_action_events(tenant_id, page_events)
+            total += len(page_items)
+            await self._save_checkpoint(scan_record, "audit_logs", next_link, total)
+
+        return total
+
+    async def _stream_and_store_sign_in_logs(
+        self,
+        tenant_id: str,
+        scan_record: ScanRecord | None,
+        all_events: list[ActionEvent],
+        actor_registry: dict[str, tuple[str, str]],
+        *,
+        resume_next_link: str | None = None,
+        previous_items: int = 0,
+    ) -> int:
+        """Stream sign-in logs page-by-page, parsing and storing incrementally."""
+        total = previous_items
+        async for page_items, next_link in self._graph.stream_sign_in_logs(
+            tenant_id,
+            resume_next_link=resume_next_link,
+            page_offset=previous_items,
+        ):
+            page_events: list[ActionEvent] = []
+            for raw in page_items:
+                event, actor_id, actor_name = GraphIngestService.parse_sign_in_event(
+                    tenant_id, raw
+                )
+                all_events.append(event)
+                page_events.append(event)
+                if actor_id != "unknown":
+                    actor_registry[event.identity_id] = (actor_name, event.identity_id)
+
+            await self._repo.append_action_events(tenant_id, page_events)
+            total += len(page_items)
+            await self._save_checkpoint(scan_record, "sign_in_logs", next_link, total)
+
+        return total
+
+    async def _rebuild_from_stored_events(
+        self,
+        tenant_id: str,
+        all_events: list[ActionEvent],
+        actor_registry: dict[str, tuple[str, str]],
+        since: datetime | None = None,
+    ) -> None:
+        """Reload previously stored events into memory for resume processing."""
+        stored = await self._repo.load_all_action_events(tenant_id, since=since)
+        for event in stored:
+            all_events.append(event)
+            if event.identity_id and event.identity_id != "unknown":
+                actor_registry[event.identity_id] = (
+                    event.identity_display_name or "unknown",
+                    event.identity_id,
+                )
+        await self._emit_progress(
+            {
+                "type": "scan.info",
+                "message": f"Loaded {len(stored)} previously stored events for resume.",
+                "phase": "audit_logs",
+                "status": "running",
+                "items_processed": len(stored),
+            }
+        )
+
     async def run(
         self,
         tenant_id: str,
         full_sync: bool = False,
         scan_record: ScanRecord | None = None,
+        resume_from: ScanRecord | None = None,
     ) -> dict[str, Any]:
         start_time = time.monotonic()
         now = datetime.now(UTC)
 
-        # 1. Load sync state
-        audit_state = await self._repo.get_sync_state(tenant_id, "audit_logs")
-        signin_state = await self._repo.get_sync_state(tenant_id, "sign_in_logs")
-
-        delta_link: str | None = None
-        signin_since: datetime | None = None
-
-        if not full_sync:
-            if audit_state:
-                delta_link = audit_state.get("delta_link")
-            if signin_state:
-                last_ts = signin_state.get("last_sync")
-                if last_ts:
-                    signin_since = datetime.fromisoformat(last_ts)
-
-        # 2. Fetch audit logs
-        await self._update_phase(scan_record, "audit_logs", "running")
-        logger.info("Fetching audit logs for tenant %s (full=%s)", tenant_id, full_sync)
-        await self._emit_progress(
-            {
-                "type": "scan.info",
-                "message": "Fetching audit logs.",
-                "phase": "audit_logs",
-                "status": "running",
-            }
-        )
-        raw_audit_events, new_delta_link = await self._graph.fetch_audit_logs(
-            tenant_id, delta_link=delta_link if not full_sync else None
-        )
-        await self._update_phase(scan_record, "audit_logs", "completed", len(raw_audit_events))
-
-        # 3. Fetch sign-in logs
-        await self._update_phase(scan_record, "sign_in_logs", "running")
-        logger.info("Fetching sign-in logs for tenant %s", tenant_id)
-        await self._emit_progress(
-            {
-                "type": "scan.info",
-                "message": "Fetching sign-in logs.",
-                "phase": "sign_in_logs",
-                "status": "running",
-            }
-        )
-        raw_signin_events = await self._graph.fetch_sign_in_logs(
-            tenant_id, since=signin_since if not full_sync else None
-        )
-        await self._update_phase(scan_record, "sign_in_logs", "completed", len(raw_signin_events))
-
-        # 4. Parse events, extract actor identities
         all_events: list[ActionEvent] = []
         actor_registry: dict[str, tuple[str, str]] = {}
+        new_delta_link: str | None = None
 
-        for raw in raw_audit_events:
-            event, actor_id, actor_name = GraphIngestService.parse_audit_event(
-                tenant_id, raw
-            )
-            all_events.append(event)
-            if actor_id != "unknown":
-                actor_registry[event.identity_id] = (actor_name, event.identity_id)
+        # Determine resume checkpoints from the failed scan
+        audit_checkpoint = self._get_phase_checkpoint(resume_from, "audit_logs")
+        signin_checkpoint = self._get_phase_checkpoint(resume_from, "sign_in_logs")
+        audit_phase_done = self._get_phase_status(resume_from, "audit_logs") == "completed"
+        signin_phase_done = self._get_phase_status(resume_from, "sign_in_logs") == "completed"
 
-        for raw in raw_signin_events:
-            event, actor_id, actor_name = GraphIngestService.parse_sign_in_event(
-                tenant_id, raw
+        # If resuming and both log phases completed, rebuild from stored events
+        if resume_from is not None and audit_phase_done and signin_phase_done:
+            await self._emit_progress(
+                {
+                    "type": "scan.info",
+                    "message": "Resuming scan — reloading previously stored events.",
+                    "status": "running",
+                }
             )
-            all_events.append(event)
-            if actor_id != "unknown":
-                actor_registry[event.identity_id] = (actor_name, event.identity_id)
+            await self._rebuild_from_stored_events(
+                tenant_id, all_events, actor_registry,
+                since=resume_from.started_at,
+            )
+            await self._update_phase(scan_record, "audit_logs", "skipped")
+            await self._update_phase(scan_record, "sign_in_logs", "skipped")
+        else:
+            # 1. Load sync state (only for non-resume fresh scans)
+            audit_state = await self._repo.get_sync_state(tenant_id, "audit_logs")
+            signin_state = await self._repo.get_sync_state(tenant_id, "sign_in_logs")
+
+            delta_link: str | None = None
+            signin_since: datetime | None = None
+
+            if not full_sync and resume_from is None:
+                if audit_state:
+                    delta_link = audit_state.get("delta_link")
+                if signin_state:
+                    last_ts = signin_state.get("last_sync")
+                    if last_ts:
+                        signin_since = datetime.fromisoformat(last_ts)
+
+            # 2. Fetch audit logs (streaming + incremental storage)
+            if audit_phase_done:
+                # Audit phase completed in failed scan — reload stored events, skip fetch
+                await self._rebuild_from_stored_events(
+                    tenant_id, all_events, actor_registry,
+                    since=resume_from.started_at if resume_from else None,
+                )
+                await self._update_phase(scan_record, "audit_logs", "skipped")
+            elif delta_link and not full_sync and resume_from is None:
+                # Incremental sync via delta link — not paginated, use old path
+                await self._update_phase(scan_record, "audit_logs", "running")
+                await self._emit_progress(
+                    {
+                        "type": "scan.info",
+                        "message": "Fetching audit logs (delta sync).",
+                        "phase": "audit_logs",
+                        "status": "running",
+                    }
+                )
+                raw_audit_events, delta_result = await self._graph.fetch_audit_logs(
+                    tenant_id, delta_link=delta_link
+                )
+                new_delta_link = delta_result
+                delta_events: list[ActionEvent] = []
+                for raw in raw_audit_events:
+                    event, actor_id, actor_name = GraphIngestService.parse_audit_event(
+                        tenant_id, raw
+                    )
+                    all_events.append(event)
+                    delta_events.append(event)
+                    if actor_id != "unknown":
+                        actor_registry[event.identity_id] = (actor_name, event.identity_id)
+                await self._repo.append_action_events(tenant_id, delta_events)
+                await self._update_phase(scan_record, "audit_logs", "completed", len(raw_audit_events))
+            else:
+                # Full sync — stream pages with checkpointing
+                await self._update_phase(scan_record, "audit_logs", "running")
+                prev_audit_items = self._get_phase_items(resume_from, "audit_logs")
+                if audit_checkpoint:
+                    await self._emit_progress(
+                        {
+                            "type": "scan.info",
+                            "message": f"Resuming audit logs from checkpoint (page {prev_audit_items + 1}).",
+                            "phase": "audit_logs",
+                            "status": "running",
+                            "items_processed": prev_audit_items,
+                        }
+                    )
+                else:
+                    label = "Resuming audit logs from start (no checkpoint found)." if resume_from else "Fetching audit logs (streaming)."
+                    await self._emit_progress(
+                        {
+                            "type": "scan.info",
+                            "message": label,
+                            "phase": "audit_logs",
+                            "status": "running",
+                        }
+                    )
+                audit_count = await self._stream_and_store_audit_logs(
+                    tenant_id, scan_record, all_events, actor_registry,
+                    resume_next_link=audit_checkpoint,
+                    previous_items=prev_audit_items,
+                )
+                await self._update_phase(scan_record, "audit_logs", "completed", audit_count)
+                new_delta_link = None
+
+            # 3. Fetch sign-in logs (streaming + incremental storage)
+            if signin_phase_done:
+                # Already loaded stored events above if audit was also done,
+                # but sign-in events from Cosmos are already in all_events
+                await self._update_phase(scan_record, "sign_in_logs", "skipped")
+            else:
+                await self._update_phase(scan_record, "sign_in_logs", "running")
+                prev_signin_items = self._get_phase_items(resume_from, "sign_in_logs")
+                if signin_checkpoint:
+                    await self._emit_progress(
+                        {
+                            "type": "scan.info",
+                            "message": f"Resuming sign-in logs from checkpoint (page {prev_signin_items + 1}).",
+                            "phase": "sign_in_logs",
+                            "status": "running",
+                            "items_processed": prev_signin_items,
+                        }
+                    )
+                else:
+                    label = "Resuming sign-in logs from start (no checkpoint found)." if resume_from else "Fetching sign-in logs (streaming)."
+                    await self._emit_progress(
+                        {
+                            "type": "scan.info",
+                            "message": label,
+                            "phase": "sign_in_logs",
+                            "status": "running",
+                        }
+                    )
+                signin_count = await self._stream_and_store_sign_in_logs(
+                    tenant_id, scan_record, all_events, actor_registry,
+                    resume_next_link=signin_checkpoint,
+                    previous_items=prev_signin_items,
+                )
+                await self._update_phase(scan_record, "sign_in_logs", "completed", signin_count)
 
         await self._emit_progress(
             {
@@ -362,39 +573,28 @@ class IngestPipeline:
 
         await self._update_phase(scan_record, "identity_profiles", "completed", identities_processed)
 
-        # 7. Bulk insert action events
-        await self._update_phase(scan_record, "action_events", "running")
+        # 7. Action events — already stored incrementally, skip bulk insert
+        await self._update_phase(scan_record, "action_events", "skipped", len(all_events))
         await self._emit_progress(
             {
                 "type": "scan.progress",
-                "message": f"Persisting {len(all_events)} action events.",
+                "message": f"{len(all_events)} action events already stored incrementally.",
                 "phase": "action_events",
-                "status": "running",
+                "status": "skipped",
                 "items_processed": len(all_events),
             }
         )
-        events_inserted = await self._repo.append_action_events(tenant_id, all_events)
-        await self._emit_progress(
-            {
-                "type": "scan.progress",
-                "message": f"Inserted {events_inserted} action events.",
-                "phase": "action_events",
-                "status": "running",
-                "items_processed": events_inserted,
-            }
-        )
-        await self._update_phase(scan_record, "action_events", "completed", events_inserted)
 
         # 8. Update sync state
-        await self._repo.upsert_sync_state(tenant_id, "audit_logs", {
-            "delta_link": new_delta_link,
-            "last_sync": now.isoformat(),
-            "events_count": len(raw_audit_events),
-        })
-        await self._repo.upsert_sync_state(tenant_id, "sign_in_logs", {
-            "last_sync": now.isoformat(),
-            "events_count": len(raw_signin_events),
-        })
+        if not audit_phase_done:
+            await self._repo.upsert_sync_state(tenant_id, "audit_logs", {
+                "delta_link": new_delta_link,
+                "last_sync": now.isoformat(),
+            })
+        if not signin_phase_done:
+            await self._repo.upsert_sync_state(tenant_id, "sign_in_logs", {
+                "last_sync": now.isoformat(),
+            })
 
         # 9. PIM Session discovery and backfill
         pim_sessions_processed = 0
@@ -447,10 +647,9 @@ class IngestPipeline:
         summary: dict[str, Any] = {
             "tenant_id": tenant_id,
             "full_sync": full_sync,
+            "resumed": resume_from is not None,
             "identities_processed": identities_processed,
-            "events_ingested": events_inserted,
-            "audit_events_fetched": len(raw_audit_events),
-            "signin_events_fetched": len(raw_signin_events),
+            "events_ingested": len(all_events),
             "pim_sessions_processed": pim_sessions_processed,
             "access_paths_processed": access_paths_processed,
             "duration_ms": duration_ms,

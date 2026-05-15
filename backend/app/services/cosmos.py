@@ -17,7 +17,7 @@ from app.models.best_practice import BestPracticeViolation
 from app.models.drift import BaselineStats, DriftAlert
 from app.models.identity import IdentityProfile
 from app.models.narrative import Narrative
-from app.models.project import Project, ProjectMember, ScanRecord
+from app.models.project import Project, ProjectMember, ScanLogEntry, ScanRecord
 from app.models.role import RoleRecommendation
 from app.models.access_review import AccessReviewDefinition
 from app.models.app_registration import AppRegistrationProfile
@@ -80,6 +80,7 @@ class CosmosRepo:
         remediation_actions: ContainerProxy,
         pim_sessions: ContainerProxy,
         access_path_analyses: ContainerProxy,
+        scan_events: ContainerProxy,
     ) -> None:
         self._client = client
         self._db = db
@@ -108,6 +109,7 @@ class CosmosRepo:
         self._remediation_actions = remediation_actions
         self._pim_sessions = pim_sessions
         self._access_path_analyses = access_path_analyses
+        self._scan_events = scan_events
 
     @classmethod
     async def create(cls, settings: Settings) -> CosmosRepo:
@@ -221,6 +223,11 @@ class CosmosRepo:
             id="access_path_analyses",
             partition_key=PartitionKey(path="/tenantId"),
         )
+        scan_events = await db.create_container_if_not_exists(
+            id="scan_events",
+            partition_key=PartitionKey(path="/scanId"),
+            default_ttl=7776000,
+        )
 
         logger.info(
             "Cosmos DB initialised — database=%s, containers="
@@ -230,7 +237,7 @@ class CosmosRepo:
             "project_members,scan_history,scan_schedules,alert_rules,"
             "app_registrations,mfa_records,ca_policies,risk_detections,"
             "groups,access_reviews,sod_rules,custom_roles,remediation_actions,"
-            "pim_sessions,access_path_analyses",
+            "pim_sessions,access_path_analyses,scan_events",
             settings.cosmos_database,
         )
         return cls(
@@ -261,6 +268,7 @@ class CosmosRepo:
             remediation_actions=remediation_actions,
             pim_sessions=pim_sessions,
             access_path_analyses=access_path_analyses,
+            scan_events=scan_events,
         )
 
     # ------------------------------------------------------------------
@@ -406,6 +414,32 @@ class CosmosRepo:
                     "Failed to insert action event %s: %s", event.id, exc.message
                 )
         return inserted
+
+    async def load_all_action_events(
+        self,
+        tenant_id: str,
+        since: datetime | None = None,
+    ) -> list[ActionEvent]:
+        """Load all action events for a tenant, optionally filtered by timestamp.
+
+        Used during scan resume to rebuild the in-memory event list from
+        previously stored pages.
+        """
+        conditions = ["c.tenantId = @tenantId"]
+        parameters: list[dict[str, Any]] = [
+            {"name": "@tenantId", "value": tenant_id},
+        ]
+        if since is not None:
+            conditions.append("c.timestamp >= @since")
+            parameters.append({"name": "@since", "value": since.isoformat()})
+        where = " AND ".join(conditions)
+        query = f"SELECT * FROM c WHERE {where} ORDER BY c.timestamp ASC"
+        return [
+            ActionEvent.model_validate(item)
+            async for item in self._action_events.query_items(
+                query=query, parameters=parameters, partition_key=tenant_id,
+            )
+        ]
 
     async def list_actions(
         self,
@@ -1303,6 +1337,59 @@ class CosmosRepo:
             )
         ]
         return items[0] if items else None
+
+    # ------------------------------------------------------------------
+    # Scan event log operations
+    # ------------------------------------------------------------------
+
+    async def append_scan_log(self, entry: ScanLogEntry) -> None:
+        """Persist a single scan log event."""
+        body = entry.model_dump(mode="json")
+        body["scanId"] = entry.scan_id
+        try:
+            await self._scan_events.upsert_item(body=body)
+        except CosmosHttpResponseError as exc:
+            logger.warning("Cosmos append_scan_log failed for %s: %s", entry.id, exc.message)
+
+    async def get_scan_logs(
+        self,
+        scan_id: str,
+        offset: int = 0,
+        limit: int = 200,
+        level: str | None = None,
+        phase: str | None = None,
+    ) -> tuple[list[ScanLogEntry], int]:
+        """Query persisted scan log events, ordered by timestamp."""
+        filters = ["c.scanId = @scanId"]
+        params: list[dict[str, str]] = [{"name": "@scanId", "value": scan_id}]
+        if level:
+            filters.append("c.level = @level")
+            params.append({"name": "@level", "value": level})
+        if phase:
+            filters.append("c.phase = @phase")
+            params.append({"name": "@phase", "value": phase})
+        where = " AND ".join(filters)
+
+        count_query = f"SELECT VALUE COUNT(1) FROM c WHERE {where}"
+        count_results: list[int] = [
+            item
+            async for item in self._scan_events.query_items(
+                query=count_query, parameters=params, partition_key=scan_id,
+            )
+        ]
+        total = count_results[0] if count_results else 0
+
+        query = (
+            f"SELECT * FROM c WHERE {where} "
+            f"ORDER BY c.timestamp ASC OFFSET {offset} LIMIT {limit}"
+        )
+        items: list[ScanLogEntry] = [
+            ScanLogEntry.model_validate(item)
+            async for item in self._scan_events.query_items(
+                query=query, parameters=params, partition_key=scan_id,
+            )
+        ]
+        return items, total
 
     # ------------------------------------------------------------------
     # Scan schedule operations

@@ -107,6 +107,14 @@ def _project_response(p: Project) -> dict[str, Any]:
 # ------------------------------------------------------------------
 
 
+@router.get("/me")
+async def whoami(
+    user: CurrentUser = Depends(get_current_user),
+) -> dict[str, str]:
+    """Return the authenticated user's claims (debug helper)."""
+    return {"oid": user.oid, "tid": user.tid, "name": user.name, "email": user.email}
+
+
 @router.get("")
 async def list_projects(
     user: CurrentUser = Depends(get_current_user),

@@ -199,6 +199,23 @@ resource "azurerm_cosmosdb_sql_container" "narratives" {
   }
 }
 
+resource "azurerm_cosmosdb_sql_container" "scan_events" {
+  name                = "scan_events"
+  resource_group_name = var.resource_group_name
+  account_name        = azurerm_cosmosdb_account.main.name
+  database_name       = azurerm_cosmosdb_sql_database.main.name
+  partition_key_paths = ["/scanId"]
+  default_ttl         = 7776000 # 90 days
+
+  indexing_policy {
+    indexing_mode = "consistent"
+
+    included_path {
+      path = "/*"
+    }
+  }
+}
+
 # ---------------------
 # RBAC: Managed identity gets Cosmos DB Built-in Data Contributor
 # ---------------------

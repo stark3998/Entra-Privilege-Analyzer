@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from app.models.project import ScanLogEntry
 from app.services.redis_cache import RedisCache
 
 logger = logging.getLogger(__name__)
@@ -33,8 +34,9 @@ class _ProjectListener:
 class ScanEventBroker:
     """Project-scoped live event broker with Redis pub/sub fan-out when available."""
 
-    def __init__(self, redis_cache: RedisCache | None = None) -> None:
+    def __init__(self, redis_cache: RedisCache | None = None, cosmos_repo: Any | None = None) -> None:
         self._redis_cache = redis_cache
+        self._cosmos_repo = cosmos_repo
         self._subscribers: dict[str, set[_Subscriber]] = defaultdict(set)
         self._project_listeners: dict[str, _ProjectListener] = {}
         self._lock = asyncio.Lock()
@@ -258,6 +260,9 @@ class ScanEventBroker:
             details=details,
         )
 
+        if self._cosmos_repo is not None and scan_id is not None:
+            asyncio.create_task(self._persist_log(event))
+
         if self._redis_cache is not None:
             self._append_recent(project_id, event)
             await self._redis_cache.publish(
@@ -267,6 +272,25 @@ class ScanEventBroker:
             return
 
         await self._fan_out(project_id, event)
+
+    async def _persist_log(self, event: dict[str, Any]) -> None:
+        try:
+            entry = ScanLogEntry(
+                id=event["id"],
+                scan_id=event["scan_id"],
+                project_id=event["project_id"],
+                type=event["type"],
+                message=event["message"],
+                level=event.get("level", "info"),
+                phase=event.get("phase"),
+                status=event.get("status"),
+                items_processed=event.get("items_processed"),
+                timestamp=datetime.fromisoformat(event["timestamp"]),
+                details=event.get("details") or {},
+            )
+            await self._cosmos_repo.append_scan_log(entry)
+        except Exception as exc:
+            logger.warning("Failed to persist scan log %s: %s", event.get("id"), exc)
 
     async def close(self) -> None:
         """Close broker-owned resources."""

@@ -334,6 +334,7 @@ export interface ScanPhase {
   started_at: string | null;
   completed_at: string | null;
   items_processed: number;
+  checkpoint_next_link: string | null;
 }
 
 export interface ScanRecord {
@@ -346,6 +347,7 @@ export interface ScanRecord {
   phases: ScanPhase[];
   started_at: string;
   completed_at: string | null;
+  resumed_from_scan_id: string | null;
   error_message: string | null;
 }
 

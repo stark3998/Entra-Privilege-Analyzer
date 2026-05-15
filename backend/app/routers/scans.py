@@ -218,6 +218,7 @@ async def _run_scan_task(
     auth_mode: str,
     bearer_token: str | None,
     settings: Settings,
+    resume_from: ScanRecord | None = None,
 ) -> None:
     broker: ScanEventBroker = app.state.scan_event_broker
     instance_id = app.state.instance_id
@@ -296,6 +297,7 @@ async def _run_scan_task(
             project.target_tenant_id,
             full_sync=full,
             scan_record=scan,
+            resume_from=resume_from,
         )
 
         if not await repo.has_project_scan_lease(
@@ -586,6 +588,18 @@ async def poll_scan_events(
     # Include the scan status so the frontend knows when to stop polling.
     scan_status: str | None = None
     if latest_scan is not None and (scan_id is None or latest_scan.id == scan_id):
+        if latest_scan.status in {"queued", "running"} and not _scan_lease_is_active(latest_scan, datetime.now(UTC)):
+            latest_scan.status = "failed"
+            latest_scan.error_message = _STALE_SCAN_MESSAGE
+            latest_scan.completed_at = datetime.now(UTC)
+            _clear_scan_lease(latest_scan)
+            for phase in latest_scan.phases:
+                if phase.status in {"pending", "running"}:
+                    phase.status = "failed"
+                    phase.completed_at = latest_scan.completed_at
+            await repo.upsert_scan(latest_scan)
+            await repo.clear_project_scan_lease(project_id, latest_scan.id, latest_scan.owner_instance_id or "")
+            logger.warning("Poll detected stale scan %s — auto-failed", latest_scan.id)
         scan_status = latest_scan.status
 
     return {
@@ -646,6 +660,161 @@ async def cancel_scan(
         )
 
     return {"scan_id": scan_id, "status": "failed", "message": "Scan cancelled."}
+
+
+@router.post("/{scan_id}/resume", status_code=status.HTTP_202_ACCEPTED)
+async def resume_scan(
+    project_id: str,
+    scan_id: str,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Resume a failed scan from its last checkpoint."""
+    project = await validate_project_access(
+        project_id, user, repo, settings, required_role="operator",
+    )
+
+    failed_scan = await repo.get_scan(project_id, scan_id)
+    if failed_scan is None:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if failed_scan.status != "failed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Only failed scans can be resumed (current status: {failed_scan.status})",
+        )
+
+    now = datetime.now(UTC)
+    latest_scan = await repo.get_latest_scan(project_id)
+    if latest_scan is not None and latest_scan.status in {"queued", "running"}:
+        if _scan_lease_is_active(latest_scan, now):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A scan is already running for this project.",
+            )
+
+    # Build phase list: mark completed phases from failed scan as "skipped"
+    resumed_phases = []
+    for phase in failed_scan.phases:
+        if phase.status == "completed":
+            resumed_phases.append(ScanPhase(name=phase.name, status="pending"))
+        else:
+            resumed_phases.append(ScanPhase(name=phase.name))
+
+    auth_mode = failed_scan.auth_mode
+    bearer_token = _extract_bearer(request) if auth_mode == "delegated" else None
+
+    scan = ScanRecord(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        target_tenant_id=project.target_tenant_id,
+        scan_type=failed_scan.scan_type,
+        auth_mode=auth_mode,
+        status="running",
+        resumed_from_scan_id=failed_scan.id,
+        phases=resumed_phases,
+        started_at=now,
+    )
+    _stamp_scan_lease(scan, request.app.state.instance_id, now)
+    leased_project = await repo.try_acquire_project_scan_lease(
+        project_id,
+        scan.id,
+        request.app.state.instance_id,
+        now,
+        scan.lease_expires_at,
+    )
+    if leased_project is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A scan is already running for this project.",
+        )
+    project = leased_project
+
+    try:
+        await repo.upsert_scan(scan)
+    except Exception:
+        await repo.clear_project_scan_lease(project_id, scan.id, request.app.state.instance_id)
+        raise
+
+    broker: ScanEventBroker = request.app.state.scan_event_broker
+    if broker is None:
+        await repo.clear_project_scan_lease(project_id, scan.id, request.app.state.instance_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Scan event streaming is not configured on this backend instance.",
+        )
+
+    try:
+        await _publish_scan_event(
+            broker,
+            project_id,
+            scan_id=scan.id,
+            type="scan.resumed",
+            message=f"Resuming {scan.scan_type} scan from checkpoint (original: {failed_scan.id[:8]}).",
+            status="running",
+        )
+    except Exception as exc:
+        logger.warning("Failed to publish resume event for project %s: %s", project_id, exc)
+        await _finalize_failed_scan(
+            scan, project, repo,
+            "Scan event streaming is temporarily unavailable. Retry the scan.",
+            owner_instance_id=request.app.state.instance_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Scan event streaming is temporarily unavailable. Retry the scan.",
+        ) from exc
+
+    task = asyncio.create_task(
+        _run_scan_task(
+            request.app,
+            repo,
+            project,
+            scan,
+            full=failed_scan.scan_type == "full",
+            auth_mode=auth_mode,
+            bearer_token=bearer_token,
+            settings=settings,
+            resume_from=failed_scan,
+        )
+    )
+    request.app.state.scan_tasks[scan.id] = task
+    task.add_done_callback(lambda t, sid=scan.id: request.app.state.scan_tasks.pop(sid, None))
+
+    return {
+        "scan_id": scan.id,
+        "status": "running",
+        "auth_mode": auth_mode,
+        "resumed_from": failed_scan.id,
+    }
+
+
+@router.get("/{scan_id}/logs")
+async def get_scan_logs(
+    project_id: str,
+    scan_id: str,
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=100, ge=1, le=500),
+    level: str | None = Query(default=None, pattern="^(info|warning|error)$"),
+    phase: str | None = Query(default=None),
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Get persisted scan log entries for a scan."""
+    await validate_project_access(project_id, user, repo, settings)
+    scan = await repo.get_scan(project_id, scan_id)
+    if scan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+    offset = (page - 1) * size
+    items, total = await repo.get_scan_logs(scan_id, offset=offset, limit=size, level=level, phase=phase)
+    return {
+        "items": [i.model_dump(mode="json") for i in items],
+        "total": total,
+        "page": page,
+        "size": size,
+    }
 
 
 @router.get("/events")

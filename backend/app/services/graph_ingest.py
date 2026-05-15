@@ -6,7 +6,7 @@ import hashlib
 import json
 import logging
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -257,6 +257,51 @@ class GraphIngestService:
 
         return all_items
 
+    async def _graph_get_pages_stream(
+        self,
+        token: str,
+        url: str,
+        params: dict[str, str] | None = None,
+        *,
+        phase_name: str | None = None,
+        start_from_next_link: str | None = None,
+        page_offset: int = 0,
+    ) -> AsyncGenerator[tuple[list[dict[str, Any]], str | None], None]:
+        """Yield ``(page_items, next_link)`` tuples one page at a time.
+
+        When *start_from_next_link* is provided the initial *url* is skipped and
+        pagination begins from the continuation point (used for scan resume).
+        *page_offset* shifts the displayed page number so resumed scans show
+        accurate page counts (e.g. page 51 instead of page 1).
+        """
+        current_url: str | None = start_from_next_link or url
+        current_params = None if start_from_next_link else params
+        page_count = page_offset
+        total_items = 0
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            while current_url is not None:
+                data = await self._request_json(client, token, current_url, current_params)
+                page_items = data.get("value", [])
+                page_count += 1
+                total_items += len(page_items)
+                next_link = data.get("@odata.nextLink")
+                await self._emit_progress(
+                    {
+                        "type": "graph.page",
+                        "message": f"Fetched Graph page {page_count} for {phase_name or 'graph sync'} ({len(page_items)} items).",
+                        "phase": phase_name,
+                        "items_processed": total_items,
+                        "details": {
+                            "page": page_count,
+                            "page_items": len(page_items),
+                        },
+                    }
+                )
+                yield page_items, next_link
+                current_url = next_link
+                current_params = None
+
     async def fetch_audit_logs(
         self, tenant_id: str, delta_link: str | None = None
     ) -> tuple[list[dict[str, Any]], str | None]:
@@ -295,6 +340,46 @@ class GraphIngestService:
         cutoff_str = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
         params = {"$filter": f"createdDateTime ge {cutoff_str}", "$top": "999"}
         return await self._graph_get_all_pages(token, url, params, phase_name="sign_in_logs")
+
+    async def stream_audit_logs(
+        self,
+        tenant_id: str,
+        *,
+        resume_next_link: str | None = None,
+        page_offset: int = 0,
+    ) -> AsyncGenerator[tuple[list[dict[str, Any]], str | None], None]:
+        """Stream audit log pages one at a time for incremental storage."""
+        token = await self._get_token(tenant_id)
+        since = (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        url = f"{self._graph_base}/auditLogs/directoryAudits"
+        params = {"$filter": f"activityDateTime ge {since}", "$top": "999"}
+        async for page in self._graph_get_pages_stream(
+            token, url, params,
+            phase_name="audit_logs",
+            start_from_next_link=resume_next_link,
+            page_offset=page_offset,
+        ):
+            yield page
+
+    async def stream_sign_in_logs(
+        self,
+        tenant_id: str,
+        *,
+        resume_next_link: str | None = None,
+        page_offset: int = 0,
+    ) -> AsyncGenerator[tuple[list[dict[str, Any]], str | None], None]:
+        """Stream sign-in log pages one at a time for incremental storage."""
+        token = await self._get_token(tenant_id)
+        cutoff = (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        url = f"{self._graph_base}/auditLogs/signIns"
+        params = {"$filter": f"createdDateTime ge {cutoff}", "$top": "999"}
+        async for page in self._graph_get_pages_stream(
+            token, url, params,
+            phase_name="sign_in_logs",
+            start_from_next_link=resume_next_link,
+            page_offset=page_offset,
+        ):
+            yield page
 
     async def fetch_role_assignments(self, tenant_id: str) -> list[dict[str, Any]]:
         """Fetch all directory role assignments with expanded principal and roleDefinition."""

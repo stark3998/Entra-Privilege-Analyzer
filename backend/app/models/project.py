@@ -10,10 +10,30 @@ class ScanPhase(BaseModel):
     """Progress tracking for a single phase within a scan."""
 
     name: str
-    status: Literal["pending", "running", "completed", "failed"] = "pending"
+    status: Literal["pending", "running", "completed", "failed", "skipped"] = "pending"
     started_at: datetime | None = None
     completed_at: datetime | None = None
     items_processed: int = 0
+    checkpoint_next_link: str | None = None
+
+
+class ScanLogEntry(BaseModel):
+    """A single persisted log event from a scan run."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    scan_id: str
+    project_id: str
+    type: str
+    message: str
+    level: str = "info"
+    phase: str | None = None
+    status: str | None = None
+    items_processed: int | None = None
+    timestamp: datetime
+    details: dict[str, Any] = {}
+    ttl: int = 7776000
 
 
 class ScanRecord(BaseModel):
@@ -33,6 +53,7 @@ class ScanRecord(BaseModel):
     heartbeat_at: datetime | None = None
     lease_expires_at: datetime | None = None
     completed_at: datetime | None = None
+    resumed_from_scan_id: str | None = None
     error_message: str | None = None
 
 

@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   useScanHistory,
   useLatestScan,
   useTriggerScan,
   useCancelScan,
+  useResumeScan,
   useDelegatedPermissionsCheck,
+  useScanLogs,
   pollScanEvents,
 } from "@/api/projectHooks";
 import { useProjectContext } from "@/store/projectContext";
@@ -81,6 +83,12 @@ function PhaseRow({ phase }: { phase: ScanPhase }) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </div>
+        ) : phase.status === "skipped" ? (
+          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700/30">
+            <svg className="h-3 w-3 text-slate-400 dark:text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+            </svg>
+          </div>
         ) : (
           <div className="h-5 w-5 rounded-full border-2 border-slate-200 dark:border-slate-700" />
         )}
@@ -97,15 +105,147 @@ function PhaseRow({ phase }: { phase: ScanPhase }) {
   );
 }
 
+const PHASE_COLORS: Record<string, string> = {
+  audit_logs: "bg-blue-500/20 text-blue-300",
+  sign_in_logs: "bg-indigo-500/20 text-indigo-300",
+  role_assignments: "bg-purple-500/20 text-purple-300",
+  identity_profiles: "bg-teal-500/20 text-teal-300",
+  action_events: "bg-amber-500/20 text-amber-300",
+  pim_sessions: "bg-pink-500/20 text-pink-300",
+  access_paths: "bg-orange-500/20 text-orange-300",
+};
+
+function ScanLogViewer({
+  projectId,
+  scanId,
+  scanStartedAt,
+  liveEvents,
+}: {
+  projectId: string;
+  scanId: string;
+  scanStartedAt: string;
+  liveEvents?: ScanStreamEvent[];
+}) {
+  const { data, isLoading } = useScanLogs(projectId, scanId, { size: 500 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const startTime = new Date(scanStartedAt).getTime();
+
+  const allEvents = useMemo(() => {
+    const persisted: ScanStreamEvent[] = data?.items ?? [];
+    const live = liveEvents ?? [];
+    const seen = new Set<string>();
+    const merged: ScanStreamEvent[] = [];
+    for (const e of [...persisted, ...live]) {
+      if (!seen.has(e.id)) {
+        seen.add(e.id);
+        merged.push(e);
+      }
+    }
+    merged.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    return merged;
+  }, [data, liveEvents]);
+
+  useEffect(() => {
+    if (autoScroll && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  }, [allEvents, autoScroll]);
+
+  function handleScroll() {
+    if (!containerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    setAutoScroll(scrollHeight - scrollTop - clientHeight < 40);
+  }
+
+  if (isLoading) {
+    return (
+      <div className="mt-3 rounded-lg bg-slate-950 px-4 py-6 text-center text-xs text-slate-400">
+        Loading logs...
+      </div>
+    );
+  }
+
+  if (allEvents.length === 0) {
+    return (
+      <div className="mt-3 rounded-lg bg-slate-950 px-4 py-6 text-center text-xs text-slate-400">
+        No logs available for this scan.
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      onScroll={handleScroll}
+      className="mt-3 max-h-96 space-y-0.5 overflow-y-auto rounded-lg bg-slate-950 p-2"
+    >
+      {allEvents.map((event) => {
+        const elapsed = (
+          (new Date(event.timestamp).getTime() - startTime) /
+          1000
+        ).toFixed(1);
+        const phaseStyle = event.phase
+          ? PHASE_COLORS[event.phase] ?? "bg-slate-700/50 text-slate-300"
+          : null;
+        return (
+          <div
+            key={event.id}
+            className="flex items-start gap-2 rounded px-2 py-1 text-xs hover:bg-slate-900"
+          >
+            <span className="w-16 shrink-0 tabular-nums text-slate-500">
+              +{elapsed}s
+            </span>
+            {phaseStyle && (
+              <span
+                className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${phaseStyle}`}
+              >
+                {event.phase!.replace(/_/g, " ")}
+              </span>
+            )}
+            {event.level === "error" ? (
+              <span className="shrink-0 text-red-400">&#9679;</span>
+            ) : event.level === "warning" ? (
+              <span className="shrink-0 text-amber-400">&#9650;</span>
+            ) : (
+              <span className="shrink-0 text-blue-400">&#9679;</span>
+            )}
+            <span
+              className={clsx(
+                "flex-1",
+                event.level === "error" && "text-red-300",
+                event.level === "warning" && "text-amber-200",
+                event.level === "info" && "text-slate-200",
+              )}
+            >
+              {event.message}
+            </span>
+            {typeof event.items_processed === "number" &&
+              event.items_processed > 0 && (
+                <span className="shrink-0 tabular-nums text-slate-500">
+                  {event.items_processed.toLocaleString()}
+                </span>
+              )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ScanHistoryRow({
   scan,
   expanded,
   onToggle,
+  projectId,
 }: {
   scan: ScanRecord;
   expanded: boolean;
   onToggle: () => void;
+  projectId: string;
 }) {
+  const [showLogs, setShowLogs] = useState(false);
+  const resumeScan = useResumeScan(projectId);
   const duration =
     scan.completed_at && scan.started_at
       ? Math.round(
@@ -160,6 +300,39 @@ function ScanHistoryRow({
             <div className="mt-2 rounded-lg bg-red-50 p-3 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-400">
               {scan.error_message}
             </div>
+          )}
+          <div className="mt-2 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowLogs(!showLogs)}
+              className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              {showLogs ? "Hide Logs" : "View Logs"}
+            </button>
+            {scan.status === "failed" && (
+              <button
+                type="button"
+                onClick={() => resumeScan.mutate(scan.id)}
+                disabled={resumeScan.isPending}
+                title="Resume from where it left off — completed phases will be skipped"
+                className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 hover:text-emerald-700 disabled:opacity-50 dark:text-emerald-400 dark:hover:text-emerald-300"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {resumeScan.isPending ? "Resuming..." : "Resume Scan"}
+              </button>
+            )}
+          </div>
+          {showLogs && (
+            <ScanLogViewer
+              projectId={projectId}
+              scanId={scan.id}
+              scanStartedAt={scan.started_at}
+            />
           )}
         </div>
       )}
@@ -552,6 +725,7 @@ export function ScanPage() {
               <ScanHistoryRow
                 key={scan.id}
                 scan={scan}
+                projectId={projectId}
                 expanded={expandedScanId === scan.id}
                 onToggle={() =>
                   setExpandedScanId(

@@ -160,6 +160,22 @@ export function useScanHistory(projectId: string, params: ScanHistoryParams) {
   });
 }
 
+export function useScanLogs(
+  projectId: string,
+  scanId: string,
+  params: { page?: number; size?: number } = {},
+) {
+  const client = getApiClient();
+  return useQuery({
+    queryKey: ["scanLogs", projectId, scanId, params],
+    queryFn: () =>
+      client.get<PaginatedResponse<ScanStreamEvent>>(
+        `/api/projects/${projectId}/scans/${scanId}/logs?page=${params.page ?? 1}&size=${params.size ?? 500}`,
+      ),
+    enabled: !!projectId && !!scanId,
+  });
+}
+
 export function useLatestScan(projectId: string) {
   const client = getApiClient();
   return useQuery({
@@ -220,6 +236,26 @@ export function useCancelScan(projectId: string) {
       });
       queryClient.invalidateQueries({ queryKey: ["latestScan", projectId] });
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+    },
+  });
+}
+
+export function useResumeScan(projectId: string) {
+  const client = getApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (scanId: string) =>
+      client.post<{ scan_id: string; status: string; auth_mode: string; resumed_from: string }>(
+        `/api/projects/${projectId}/scans/${scanId}/resume`,
+        {},
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["scanHistory", projectId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["latestScan", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
   });
 }

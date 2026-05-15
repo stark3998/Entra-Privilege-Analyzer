@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if redis_cache is None:
         logger.warning("Redis unavailable — scan events limited to local in-memory streaming")
 
-    app.state.scan_event_broker = ScanEventBroker(redis_cache=redis_cache)
+    app.state.scan_event_broker = ScanEventBroker(redis_cache=redis_cache, cosmos_repo=repo)
 
     # Foundry AI (optional)
     from app.services.foundry import init_foundry_client

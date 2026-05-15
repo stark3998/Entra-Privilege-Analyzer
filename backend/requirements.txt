@@ -12,4 +12,6 @@ redis==5.2.1
 httpx==0.28.1
 opentelemetry-api==1.33.0
 opentelemetry-sdk==1.33.0
-opencensus-ext-azure==1.1.13
+azure-monitor-opentelemetry-exporter==1.0.0b34
+opentelemetry-instrumentation-fastapi==0.54b0
+opentelemetry-instrumentation-httpx==0.54b0

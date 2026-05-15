@@ -80,7 +80,7 @@ async def get_current_user(
         oid=payload.get("oid", ""),
         tid=payload.get("tid", ""),
         name=payload.get("name", ""),
-        email=payload.get("preferred_username", ""),
+        email=payload.get("preferred_username", "") or payload.get("upn", "") or payload.get("email", ""),
         roles=payload.get("roles", []),
     )
 
