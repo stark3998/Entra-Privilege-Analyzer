@@ -1,5 +1,6 @@
 # backend/app/pipelines/recommendation_pipeline.py
 """Orchestrates batch and single-identity recommendation computation."""
+
 from __future__ import annotations
 
 import logging
@@ -33,7 +34,9 @@ class RecommendationPipeline:
         offset = 0
         while True:
             items, total = await self._repo.list_identities(
-                tenant_id=tenant_id, offset=offset, limit=page_size,
+                tenant_id=tenant_id,
+                offset=offset,
+                limit=page_size,
             )
             all_identities.extend(items)
             if offset + page_size >= total:
@@ -68,7 +71,9 @@ class RecommendationPipeline:
         return summary
 
     async def compute_single(
-        self, tenant_id: str, identity_id: str,
+        self,
+        tenant_id: str,
+        identity_id: str,
     ) -> RoleRecommendation:
         """Compute a recommendation for a single identity and upsert it.
 

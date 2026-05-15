@@ -19,10 +19,7 @@ class CryptoService:
     def __init__(self, settings: Settings) -> None:
         raw_key = settings.encryption_key
         if not raw_key:
-            raise RuntimeError(
-                "ENCRYPTION_KEY is not configured — "
-                "set it in env vars or Key Vault"
-            )
+            raise RuntimeError("ENCRYPTION_KEY is not configured — set it in env vars or Key Vault")
         key_bytes = base64.b64decode(raw_key)
         if len(key_bytes) != 32:
             raise RuntimeError(
@@ -41,7 +38,7 @@ class CryptoService:
         """Decrypt a versioned ciphertext string back to plaintext."""
         if not ciphertext.startswith(_VERSION_PREFIX):
             raise ValueError("Unsupported ciphertext version")
-        raw = base64.b64decode(ciphertext[len(_VERSION_PREFIX):])
+        raw = base64.b64decode(ciphertext[len(_VERSION_PREFIX) :])
         nonce = raw[:12]
         ct = raw[12:]
         return self._aesgcm.decrypt(nonce, ct, None).decode()

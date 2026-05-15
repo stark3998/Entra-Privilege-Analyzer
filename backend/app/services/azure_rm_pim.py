@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -70,10 +70,7 @@ class AzureRmPimService:
         """Fetch Azure RBAC PIM activation requests for a subscription."""
         token = await self._get_arm_token(tenant_id)
         scope = f"/subscriptions/{subscription_id}"
-        url = (
-            f"{_ARM_BASE}{scope}/providers/"
-            f"Microsoft.Authorization/roleAssignmentScheduleRequests"
-        )
+        url = f"{_ARM_BASE}{scope}/providers/Microsoft.Authorization/roleAssignmentScheduleRequests"
         params: dict[str, str] = {"api-version": _API_VERSION}
 
         filter_parts = ["requestType eq 'SelfActivate'"]
@@ -87,7 +84,8 @@ class AzureRmPimService:
             if exc.response.status_code in (403, 404):
                 logger.warning(
                     "Azure RBAC PIM unavailable for subscription %s: %s",
-                    subscription_id, exc.response.status_code,
+                    subscription_id,
+                    exc.response.status_code,
                 )
                 return []
             raise

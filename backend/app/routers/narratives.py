@@ -1,5 +1,6 @@
 # backend/app/routers/narratives.py
 """API endpoints for AI-generated narratives."""
+
 from __future__ import annotations
 
 import logging
@@ -50,7 +51,9 @@ async def get_executive_narrative(
 
     engine = _get_engine(repo, foundry)
     narrative = await engine.get_or_generate(
-        tenant_id, NarrativeScope.EXECUTIVE, "tenant",
+        tenant_id,
+        NarrativeScope.EXECUTIVE,
+        "tenant",
     )
     return narrative.model_dump(mode="json")
 
@@ -71,7 +74,9 @@ async def get_identity_narrative(
 
     engine = _get_engine(repo, foundry)
     narrative = await engine.get_or_generate(
-        tenant_id, NarrativeScope.IDENTITY, identity_id,
+        tenant_id,
+        NarrativeScope.IDENTITY,
+        identity_id,
     )
     return narrative.model_dump(mode="json")
 

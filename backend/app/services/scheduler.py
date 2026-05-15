@@ -5,11 +5,12 @@ Runs as a background task inside the FastAPI process. On each tick (60 s)
 it queries all enabled ScanSchedule documents, evaluates their cron
 expressions, and marks due scans as triggered.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from croniter import croniter
@@ -114,7 +115,8 @@ class ScanScheduler:
         """
         schedule.last_run_at = now
         schedule.next_run_at = self.next_run_time(
-            schedule.cron_expression or "", after=now,
+            schedule.cron_expression or "",
+            after=now,
         )
         await self._repo.upsert_scan_schedule(schedule)
         logger.info(

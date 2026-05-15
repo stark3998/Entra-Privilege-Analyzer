@@ -1,5 +1,6 @@
 # backend/app/services/narrative_engine.py
 """AI narrative generation engine using FoundryClient."""
+
 from __future__ import annotations
 
 import logging
@@ -70,7 +71,9 @@ class NarrativeEngine:
         return narrative
 
     async def generate_identity_summary(
-        self, tenant_id: str, identity_id: str,
+        self,
+        tenant_id: str,
+        identity_id: str,
     ) -> Narrative:
         """Generate a narrative summary for a specific identity."""
         identity = await self._repo.get_identity(tenant_id, identity_id)
@@ -88,7 +91,10 @@ class NarrativeEngine:
 
         # Gather related data
         drift_alerts, _ = await self._repo.list_drift_alerts(
-            tenant_id=tenant_id, identity_id=identity_id, offset=0, limit=10,
+            tenant_id=tenant_id,
+            identity_id=identity_id,
+            offset=0,
+            limit=10,
         )
         recommendation = await self._repo.get_recommendation(tenant_id, identity_id)
 

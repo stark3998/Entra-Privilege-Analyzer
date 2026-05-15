@@ -7,14 +7,13 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from app.config import get_settings
 from app.models.action import ActionEvent
 from app.models.identity import IdentityProfile, IdentityType, ObservedAction
 from app.models.project import ScanRecord
 from app.services.cosmos import CosmosRepo
 from app.services.graph_ingest import GraphIngestService
 from app.services.graph_roles import GraphRolesService
-
-from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,11 @@ class IngestPipeline:
         await self._progress_callback(payload)
 
     async def _update_phase(
-        self, scan: ScanRecord | None, phase_name: str, status: str, items: int = 0,
+        self,
+        scan: ScanRecord | None,
+        phase_name: str,
+        status: str,
+        items: int = 0,
     ) -> None:
         if scan is None:
             return
@@ -128,9 +131,7 @@ class IngestPipeline:
         ):
             page_events: list[ActionEvent] = []
             for raw in page_items:
-                event, actor_id, actor_name = GraphIngestService.parse_audit_event(
-                    tenant_id, raw
-                )
+                event, actor_id, actor_name = GraphIngestService.parse_audit_event(tenant_id, raw)
                 all_events.append(event)
                 page_events.append(event)
                 if actor_id != "unknown":
@@ -161,9 +162,7 @@ class IngestPipeline:
         ):
             page_events: list[ActionEvent] = []
             for raw in page_items:
-                event, actor_id, actor_name = GraphIngestService.parse_sign_in_event(
-                    tenant_id, raw
-                )
+                event, actor_id, actor_name = GraphIngestService.parse_sign_in_event(tenant_id, raw)
                 all_events.append(event)
                 page_events.append(event)
                 if actor_id != "unknown":
@@ -231,7 +230,9 @@ class IngestPipeline:
                 }
             )
             await self._rebuild_from_stored_events(
-                tenant_id, all_events, actor_registry,
+                tenant_id,
+                all_events,
+                actor_registry,
                 since=resume_from.started_at,
             )
             await self._update_phase(scan_record, "audit_logs", "skipped")
@@ -256,7 +257,9 @@ class IngestPipeline:
             if audit_phase_done:
                 # Audit phase completed in failed scan — reload stored events, skip fetch
                 await self._rebuild_from_stored_events(
-                    tenant_id, all_events, actor_registry,
+                    tenant_id,
+                    all_events,
+                    actor_registry,
                     since=resume_from.started_at if resume_from else None,
                 )
                 await self._update_phase(scan_record, "audit_logs", "skipped")
@@ -285,7 +288,9 @@ class IngestPipeline:
                     if actor_id != "unknown":
                         actor_registry[event.identity_id] = (actor_name, event.identity_id)
                 await self._repo.append_action_events(tenant_id, delta_events)
-                await self._update_phase(scan_record, "audit_logs", "completed", len(raw_audit_events))
+                await self._update_phase(
+                    scan_record, "audit_logs", "completed", len(raw_audit_events)
+                )
             else:
                 # Full sync — stream pages with checkpointing
                 await self._update_phase(scan_record, "audit_logs", "running")
@@ -301,7 +306,11 @@ class IngestPipeline:
                         }
                     )
                 else:
-                    label = "Resuming audit logs from start (no checkpoint found)." if resume_from else "Fetching audit logs (streaming)."
+                    label = (
+                        "Resuming audit logs from start (no checkpoint found)."
+                        if resume_from
+                        else "Fetching audit logs (streaming)."
+                    )
                     await self._emit_progress(
                         {
                             "type": "scan.info",
@@ -311,7 +320,10 @@ class IngestPipeline:
                         }
                     )
                 audit_count = await self._stream_and_store_audit_logs(
-                    tenant_id, scan_record, all_events, actor_registry,
+                    tenant_id,
+                    scan_record,
+                    all_events,
+                    actor_registry,
                     resume_next_link=audit_checkpoint,
                     previous_items=prev_audit_items,
                 )
@@ -337,7 +349,11 @@ class IngestPipeline:
                         }
                     )
                 else:
-                    label = "Resuming sign-in logs from start (no checkpoint found)." if resume_from else "Fetching sign-in logs (streaming)."
+                    label = (
+                        "Resuming sign-in logs from start (no checkpoint found)."
+                        if resume_from
+                        else "Fetching sign-in logs (streaming)."
+                    )
                     await self._emit_progress(
                         {
                             "type": "scan.info",
@@ -347,7 +363,10 @@ class IngestPipeline:
                         }
                     )
                 signin_count = await self._stream_and_store_sign_in_logs(
-                    tenant_id, scan_record, all_events, actor_registry,
+                    tenant_id,
+                    scan_record,
+                    all_events,
+                    actor_registry,
                     resume_next_link=signin_checkpoint,
                     previous_items=prev_signin_items,
                 )
@@ -376,7 +395,9 @@ class IngestPipeline:
             }
         )
         active_roles_map, eligible_roles_map = await self._roles.get_identity_roles(tenant_id)
-        await self._update_phase(scan_record, "role_assignments", "completed", len(active_roles_map))
+        await self._update_phase(
+            scan_record, "role_assignments", "completed", len(active_roles_map)
+        )
 
         # Fetch users and SPs for enrichment (UPN, app_id, user_type)
         await self._emit_progress(
@@ -480,9 +501,7 @@ class IngestPipeline:
                     else earliest_event
                 )
                 last_seen = (
-                    max(existing.last_seen, latest_event)
-                    if existing.last_seen
-                    else latest_event
+                    max(existing.last_seen, latest_event) if existing.last_seen else latest_event
                 )
                 created_at = existing.created_at
                 total_action_count = existing.action_count + len(identity_events)
@@ -512,7 +531,9 @@ class IngestPipeline:
                         last_sign_in_at = datetime.fromisoformat(ts.replace("Z", "+00:00"))
                     ts = sign_in_activity.get("lastNonInteractiveSignInDateTime")
                     if ts:
-                        last_non_interactive_sign_in_at = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                        last_non_interactive_sign_in_at = datetime.fromisoformat(
+                            ts.replace("Z", "+00:00")
+                        )
             elif identity_type == IdentityType.SERVICE_PRINCIPAL and object_id in sp_lookup:
                 sp_data = sp_lookup[object_id]
                 app_id = sp_data.get("appId")
@@ -523,7 +544,9 @@ class IngestPipeline:
                 user_type = user_type or existing.user_type
                 external_user_state = external_user_state or existing.external_user_state
                 last_sign_in_at = last_sign_in_at or existing.last_sign_in_at
-                last_non_interactive_sign_in_at = last_non_interactive_sign_in_at or existing.last_non_interactive_sign_in_at
+                last_non_interactive_sign_in_at = (
+                    last_non_interactive_sign_in_at or existing.last_non_interactive_sign_in_at
+                )
 
             profile = IdentityProfile(
                 id=identity_id,
@@ -571,7 +594,9 @@ class IngestPipeline:
                 }
             )
 
-        await self._update_phase(scan_record, "identity_profiles", "completed", identities_processed)
+        await self._update_phase(
+            scan_record, "identity_profiles", "completed", identities_processed
+        )
 
         # 7. Action events — already stored incrementally, skip bulk insert
         await self._update_phase(scan_record, "action_events", "skipped", len(all_events))
@@ -587,14 +612,22 @@ class IngestPipeline:
 
         # 8. Update sync state
         if not audit_phase_done:
-            await self._repo.upsert_sync_state(tenant_id, "audit_logs", {
-                "delta_link": new_delta_link,
-                "last_sync": now.isoformat(),
-            })
+            await self._repo.upsert_sync_state(
+                tenant_id,
+                "audit_logs",
+                {
+                    "delta_link": new_delta_link,
+                    "last_sync": now.isoformat(),
+                },
+            )
         if not signin_phase_done:
-            await self._repo.upsert_sync_state(tenant_id, "sign_in_logs", {
-                "last_sync": now.isoformat(),
-            })
+            await self._repo.upsert_sync_state(
+                tenant_id,
+                "sign_in_logs",
+                {
+                    "last_sync": now.isoformat(),
+                },
+            )
 
         # 9. PIM Session discovery and backfill
         pim_sessions_processed = 0
@@ -605,7 +638,8 @@ class IngestPipeline:
                 from app.pipelines.pim_session_pipeline import PimSessionPipeline
 
                 pim_pipeline = PimSessionPipeline(
-                    self._repo, self._graph,
+                    self._repo,
+                    self._graph,
                     business_hours_start=settings.pim_session_business_hours_start,
                     business_hours_end=settings.pim_session_business_hours_end,
                     progress_callback=self._progress_callback,
@@ -617,7 +651,10 @@ class IngestPipeline:
                 )
                 pim_sessions_processed = pim_summary.get("sessions_processed", 0)
                 await self._update_phase(
-                    scan_record, "pim_sessions", "completed", pim_sessions_processed,
+                    scan_record,
+                    "pim_sessions",
+                    "completed",
+                    pim_sessions_processed,
                 )
             except Exception:
                 logger.warning("PIM session phase failed", exc_info=True)
@@ -630,13 +667,18 @@ class IngestPipeline:
             try:
                 from app.services.access_path_analyzer import AccessPathAnalyzer
 
-                analyzer = AccessPathAnalyzer(self._repo, self._graph, progress_callback=self._progress_callback)
+                analyzer = AccessPathAnalyzer(
+                    self._repo, self._graph, progress_callback=self._progress_callback
+                )
                 path_results = await analyzer.analyze_tenant(tenant_id)
                 for result in path_results:
                     await self._repo.upsert_access_path_analysis(tenant_id, result)
                 access_paths_processed = len(path_results)
                 await self._update_phase(
-                    scan_record, "access_paths", "completed", access_paths_processed,
+                    scan_record,
+                    "access_paths",
+                    "completed",
+                    access_paths_processed,
                 )
             except Exception:
                 logger.warning("Access path analysis failed", exc_info=True)

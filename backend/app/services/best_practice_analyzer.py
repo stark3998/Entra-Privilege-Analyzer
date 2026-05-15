@@ -1,20 +1,25 @@
 # backend/app/services/best_practice_analyzer.py
 """Rule engine that evaluates identities against Entra ID / Azure RBAC best practices."""
+
 from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
 
+from app.models.app_registration import HIGH_RISK_APP_PERMISSION_GUIDS, AppRegistrationProfile
 from app.models.best_practice import (
     BestPracticeSummary,
     BestPracticeViolation,
     ViolationPriority,
     ViolationType,
 )
-from app.models.app_registration import AppRegistrationProfile, HIGH_RISK_APP_PERMISSION_GUIDS
 from app.models.identity import IdentityProfile, IdentityType
-from app.models.mfa_status import MfaRegistrationRecord, PHISHING_RESISTANT_METHODS, WEAK_MFA_METHODS
-from app.models.sod_policy import SodConflictRule, DEFAULT_SOD_RULES, build_default_rules
+from app.models.mfa_status import (
+    PHISHING_RESISTANT_METHODS,
+    WEAK_MFA_METHODS,
+    MfaRegistrationRecord,
+)
+from app.models.sod_policy import DEFAULT_SOD_RULES
 from app.services.cosmos import CosmosRepo
 
 logger = logging.getLogger(__name__)
@@ -73,26 +78,26 @@ class BestPracticeAnalyzer:
         sod_rules_raw = await self._repo.get_sod_rules(tenant_id)
         if sod_rules_raw:
             sod_pairs = [
-                (r.role_a_name, r.role_b_name, r.severity)
-                for r in sod_rules_raw if r.enabled
+                (r.role_a_name, r.role_b_name, r.severity) for r in sod_rules_raw if r.enabled
             ]
         else:
-            sod_pairs = [
-                (r["role_a"], r["role_b"], r["severity"])
-                for r in DEFAULT_SOD_RULES
-            ]
+            sod_pairs = [(r["role_a"], r["role_b"], r["severity"]) for r in DEFAULT_SOD_RULES]
 
         # Paginate through all identities
         offset = 0
         page_size = 100
         while True:
             items, total = await self._repo.list_identities(
-                tenant_id=tenant_id, offset=offset, limit=page_size,
+                tenant_id=tenant_id,
+                offset=offset,
+                limit=page_size,
             )
             for identity in items:
                 try:
                     violations = await self.evaluate_identity(
-                        tenant_id, identity, sod_rules=sod_pairs,
+                        tenant_id,
+                        identity,
+                        sod_rules=sod_pairs,
                     )
                     all_violations.extend(violations)
                 except Exception:
@@ -109,6 +114,7 @@ class BestPracticeAnalyzer:
         # Run tenant-level analyzers (CA policies, groups, custom roles, access reviews)
         try:
             from app.services.ca_analyzer import ConditionalAccessAnalyzer
+
             ca_policies = await self._repo.list_ca_policies(tenant_id)
             if ca_policies:
                 ca_analyzer = ConditionalAccessAnalyzer()
@@ -118,6 +124,7 @@ class BestPracticeAnalyzer:
 
         try:
             from app.services.group_analyzer import GroupAnalyzer
+
             groups_list, _ = await self._repo.list_groups(tenant_id, offset=0, limit=5000)
             if groups_list:
                 ga = GroupAnalyzer()
@@ -127,6 +134,7 @@ class BestPracticeAnalyzer:
 
         try:
             from app.services.custom_role_analyzer import CustomRoleAnalyzer
+
             custom_roles = await self._repo.list_custom_roles(tenant_id)
             if custom_roles:
                 cra = CustomRoleAnalyzer()
@@ -136,25 +144,35 @@ class BestPracticeAnalyzer:
 
         try:
             from app.services.access_review_analyzer import AccessReviewAnalyzer
+
             reviews = await self._repo.list_access_reviews(tenant_id)
             if reviews:
-                identities_all, _ = await self._repo.list_identities(tenant_id, offset=0, limit=5000)
+                identities_all, _ = await self._repo.list_identities(
+                    tenant_id, offset=0, limit=5000
+                )
                 groups_for_review, _ = await self._repo.list_groups(tenant_id, offset=0, limit=5000)
                 privileged_role_ids = set()
                 role_assignable_group_ids = set()
                 for identity in identities_all:
                     for role in identity.current_roles:
-                        if "administrator" in role.role_name.lower() or "global" in role.role_name.lower():
+                        if (
+                            "administrator" in role.role_name.lower()
+                            or "global" in role.role_name.lower()
+                        ):
                             privileged_role_ids.add(role.role_id)
                 for g in groups_for_review:
                     if g.is_role_assignable:
                         role_assignable_group_ids.add(g.id)
-                has_guests = any(
-                    getattr(i, "user_type", None) == "Guest" for i in identities_all
-                )
+                has_guests = any(getattr(i, "user_type", None) == "Guest" for i in identities_all)
                 ara = AccessReviewAnalyzer()
                 all_violations.extend(
-                    ara.evaluate_coverage(tenant_id, reviews, privileged_role_ids, role_assignable_group_ids, has_guests)
+                    ara.evaluate_coverage(
+                        tenant_id,
+                        reviews,
+                        privileged_role_ids,
+                        role_assignable_group_ids,
+                        has_guests,
+                    )
                 )
         except Exception:
             logger.exception("Access review analysis failed for %s", tenant_id)
@@ -167,10 +185,7 @@ class BestPracticeAnalyzer:
             by_type[v.violation_type.value] = by_type.get(v.violation_type.value, 0) + 1
 
         # compliance_score = max(0, 100 - weighted penalty)
-        penalty = sum(
-            count * _PRIORITY_WEIGHTS.get(prio, 0)
-            for prio, count in by_priority.items()
-        )
+        penalty = sum(count * _PRIORITY_WEIGHTS.get(prio, 0) for prio, count in by_priority.items())
         compliance_score = max(0.0, 100.0 - penalty)
 
         summary = BestPracticeSummary(
@@ -304,7 +319,8 @@ class BestPracticeAnalyzer:
     ) -> list[BestPracticeViolation]:
         """NoPIM: identity has admin roles but none via PIM."""
         admin_roles = [
-            r for r in identity.current_roles
+            r
+            for r in identity.current_roles
             if "administrator" in r.role_name.lower() or "global" in r.role_name.lower()
         ]
 
@@ -431,7 +447,8 @@ class BestPracticeAnalyzer:
             return []
 
         admin_roles = [
-            r for r in identity.current_roles
+            r
+            for r in identity.current_roles
             if "administrator" in r.role_name.lower() or "global" in r.role_name.lower()
         ]
 
@@ -488,51 +505,66 @@ class BestPracticeAnalyzer:
         for cred in all_creds:
             cred_label = f"{cred.credential_type} credential"
             if cred.is_expired:
-                violations.append(self._build_app_violation(
-                    tenant_id=tenant_id, app=app,
-                    violation_type=ViolationType.SP_CREDENTIAL_EXPIRY,
-                    priority=ViolationPriority.CRITICAL,
-                    title=f"Expired {cred_label} on '{app.display_name}'",
-                    description=f"App '{app.display_name}' has an expired {cred_label}. Remove it to reduce attack surface.",
-                    id_suffix=f"cred_{cred.key_id}",
-                ))
+                violations.append(
+                    self._build_app_violation(
+                        tenant_id=tenant_id,
+                        app=app,
+                        violation_type=ViolationType.SP_CREDENTIAL_EXPIRY,
+                        priority=ViolationPriority.CRITICAL,
+                        title=f"Expired {cred_label} on '{app.display_name}'",
+                        description=f"App '{app.display_name}' has an expired {cred_label}. Remove it to reduce attack surface.",
+                        id_suffix=f"cred_{cred.key_id}",
+                    )
+                )
             elif cred.days_until_expiry is not None and cred.days_until_expiry <= 30:
-                violations.append(self._build_app_violation(
-                    tenant_id=tenant_id, app=app,
-                    violation_type=ViolationType.SP_CREDENTIAL_EXPIRY,
-                    priority=ViolationPriority.HIGH,
-                    title=f"{cred_label.capitalize()} expires in {cred.days_until_expiry} days on '{app.display_name}'",
-                    description=f"Rotate this credential before it expires to avoid service disruption.",
-                    id_suffix=f"cred_{cred.key_id}",
-                ))
+                violations.append(
+                    self._build_app_violation(
+                        tenant_id=tenant_id,
+                        app=app,
+                        violation_type=ViolationType.SP_CREDENTIAL_EXPIRY,
+                        priority=ViolationPriority.HIGH,
+                        title=f"{cred_label.capitalize()} expires in {cred.days_until_expiry} days on '{app.display_name}'",
+                        description="Rotate this credential before it expires to avoid service disruption.",
+                        id_suffix=f"cred_{cred.key_id}",
+                    )
+                )
             elif cred.days_until_expiry is not None and cred.days_until_expiry <= 90:
-                violations.append(self._build_app_violation(
-                    tenant_id=tenant_id, app=app,
-                    violation_type=ViolationType.SP_CREDENTIAL_EXPIRY,
-                    priority=ViolationPriority.MEDIUM,
-                    title=f"{cred_label.capitalize()} expires in {cred.days_until_expiry} days on '{app.display_name}'",
-                    description=f"Plan rotation for this credential on app '{app.display_name}'.",
-                    id_suffix=f"cred_{cred.key_id}",
-                ))
+                violations.append(
+                    self._build_app_violation(
+                        tenant_id=tenant_id,
+                        app=app,
+                        violation_type=ViolationType.SP_CREDENTIAL_EXPIRY,
+                        priority=ViolationPriority.MEDIUM,
+                        title=f"{cred_label.capitalize()} expires in {cred.days_until_expiry} days on '{app.display_name}'",
+                        description=f"Plan rotation for this credential on app '{app.display_name}'.",
+                        id_suffix=f"cred_{cred.key_id}",
+                    )
+                )
             elif cred.end_date_time is None:
-                violations.append(self._build_app_violation(
-                    tenant_id=tenant_id, app=app,
-                    violation_type=ViolationType.SP_CREDENTIAL_EXPIRY,
-                    priority=ViolationPriority.HIGH,
-                    title=f"Non-expiring {cred_label} on '{app.display_name}'",
-                    description=f"Credentials should have an expiry date. Set a maximum lifetime.",
-                    id_suffix=f"cred_{cred.key_id}",
-                ))
+                violations.append(
+                    self._build_app_violation(
+                        tenant_id=tenant_id,
+                        app=app,
+                        violation_type=ViolationType.SP_CREDENTIAL_EXPIRY,
+                        priority=ViolationPriority.HIGH,
+                        title=f"Non-expiring {cred_label} on '{app.display_name}'",
+                        description="Credentials should have an expiry date. Set a maximum lifetime.",
+                        id_suffix=f"cred_{cred.key_id}",
+                    )
+                )
 
             if cred.credential_type == "password" and cred.age_days and cred.age_days > 365:
-                violations.append(self._build_app_violation(
-                    tenant_id=tenant_id, app=app,
-                    violation_type=ViolationType.APP_STALE_CREDENTIAL,
-                    priority=ViolationPriority.HIGH,
-                    title=f"Password credential older than {cred.age_days} days on '{app.display_name}'",
-                    description=f"Secrets should be rotated at least annually.",
-                    id_suffix=f"stale_{cred.key_id}",
-                ))
+                violations.append(
+                    self._build_app_violation(
+                        tenant_id=tenant_id,
+                        app=app,
+                        violation_type=ViolationType.APP_STALE_CREDENTIAL,
+                        priority=ViolationPriority.HIGH,
+                        title=f"Password credential older than {cred.age_days} days on '{app.display_name}'",
+                        description="Secrets should be rotated at least annually.",
+                        id_suffix=f"stale_{cred.key_id}",
+                    )
+                )
 
         return violations
 
@@ -542,13 +574,16 @@ class BestPracticeAnalyzer:
         app: AppRegistrationProfile,
     ) -> list[BestPracticeViolation]:
         if app.owner_count == 0:
-            return [self._build_app_violation(
-                tenant_id=tenant_id, app=app,
-                violation_type=ViolationType.APP_NO_OWNER,
-                priority=ViolationPriority.HIGH,
-                title=f"No owner on app '{app.display_name}'",
-                description="Orphaned app registrations have no accountability for credential rotation or access reviews.",
-            )]
+            return [
+                self._build_app_violation(
+                    tenant_id=tenant_id,
+                    app=app,
+                    violation_type=ViolationType.APP_NO_OWNER,
+                    priority=ViolationPriority.HIGH,
+                    title=f"No owner on app '{app.display_name}'",
+                    description="Orphaned app registrations have no accountability for credential rotation or access reviews.",
+                )
+            ]
         return []
 
     def _check_app_multi_tenant(
@@ -559,13 +594,18 @@ class BestPracticeAnalyzer:
         if not app.is_multi_tenant:
             return []
         if app.high_risk_permissions:
-            return [self._build_app_violation(
-                tenant_id=tenant_id, app=app,
-                violation_type=ViolationType.APP_MULTI_TENANT,
-                priority=ViolationPriority.CRITICAL if app.sign_in_audience == "AzureADandPersonalMicrosoftAccount" else ViolationPriority.HIGH,
-                title=f"Multi-tenant app '{app.display_name}' with high-risk permissions",
-                description=f"Multi-tenant app requests {', '.join(app.high_risk_permissions)}. Review whether multi-tenant access is necessary.",
-            )]
+            return [
+                self._build_app_violation(
+                    tenant_id=tenant_id,
+                    app=app,
+                    violation_type=ViolationType.APP_MULTI_TENANT,
+                    priority=ViolationPriority.CRITICAL
+                    if app.sign_in_audience == "AzureADandPersonalMicrosoftAccount"
+                    else ViolationPriority.HIGH,
+                    title=f"Multi-tenant app '{app.display_name}' with high-risk permissions",
+                    description=f"Multi-tenant app requests {', '.join(app.high_risk_permissions)}. Review whether multi-tenant access is necessary.",
+                )
+            ]
         return []
 
     def _check_app_excessive_permissions(
@@ -576,28 +616,35 @@ class BestPracticeAnalyzer:
         violations: list[BestPracticeViolation] = []
 
         critical_perms = [
-            p for p in app.requested_permissions
+            p
+            for p in app.requested_permissions
             if p.permission_type == "Role" and p.permission_id in HIGH_RISK_APP_PERMISSION_GUIDS
         ]
         if critical_perms:
             perm_names = [p.permission_value or p.permission_id for p in critical_perms]
-            violations.append(self._build_app_violation(
-                tenant_id=tenant_id, app=app,
-                violation_type=ViolationType.APP_EXCESSIVE_PERMISSIONS,
-                priority=ViolationPriority.CRITICAL,
-                title=f"High-risk permissions on app '{app.display_name}'",
-                description=f"App requests critical permissions: {', '.join(perm_names)}. These enable privilege escalation.",
-            ))
+            violations.append(
+                self._build_app_violation(
+                    tenant_id=tenant_id,
+                    app=app,
+                    violation_type=ViolationType.APP_EXCESSIVE_PERMISSIONS,
+                    priority=ViolationPriority.CRITICAL,
+                    title=f"High-risk permissions on app '{app.display_name}'",
+                    description=f"App requests critical permissions: {', '.join(perm_names)}. These enable privilege escalation.",
+                )
+            )
 
         if app.total_app_permissions > 10:
-            violations.append(self._build_app_violation(
-                tenant_id=tenant_id, app=app,
-                violation_type=ViolationType.APP_EXCESSIVE_PERMISSIONS,
-                priority=ViolationPriority.HIGH,
-                title=f"App '{app.display_name}' has {app.total_app_permissions} application permissions",
-                description="Excessive application permissions increase blast radius. Apply least-privilege.",
-                id_suffix="excessive_count",
-            ))
+            violations.append(
+                self._build_app_violation(
+                    tenant_id=tenant_id,
+                    app=app,
+                    violation_type=ViolationType.APP_EXCESSIVE_PERMISSIONS,
+                    priority=ViolationPriority.HIGH,
+                    title=f"App '{app.display_name}' has {app.total_app_permissions} application permissions",
+                    description="Excessive application permissions increase blast radius. Apply least-privilege.",
+                    id_suffix="excessive_count",
+                )
+            )
 
         return violations
 
@@ -615,58 +662,70 @@ class BestPracticeAnalyzer:
             return []
 
         violations: list[BestPracticeViolation] = []
-        is_admin = bool([
-            r for r in identity.current_roles
-            if "administrator" in r.role_name.lower() or "global" in r.role_name.lower()
-        ])
+        is_admin = bool(
+            [
+                r
+                for r in identity.current_roles
+                if "administrator" in r.role_name.lower() or "global" in r.role_name.lower()
+            ]
+        )
 
         if not mfa_record.is_mfa_registered:
-            violations.append(self._build_violation(
-                tenant_id=tenant_id, identity=identity,
-                violation_type=ViolationType.MFA_GAP,
-                priority=ViolationPriority.CRITICAL if is_admin else ViolationPriority.HIGH,
-                title="No MFA registered" + (" (admin)" if is_admin else ""),
-                description=f"Identity '{identity.display_name}' has no MFA methods registered. This is a critical security gap.",
-                remediation_steps=[
-                    "Register at least one MFA method (FIDO2 or Authenticator app recommended).",
-                    "Enforce MFA registration via Conditional Access policy.",
-                ],
-                affected_roles=[r.role_name for r in identity.current_roles],
-                id_suffix="mfa_none",
-            ))
+            violations.append(
+                self._build_violation(
+                    tenant_id=tenant_id,
+                    identity=identity,
+                    violation_type=ViolationType.MFA_GAP,
+                    priority=ViolationPriority.CRITICAL if is_admin else ViolationPriority.HIGH,
+                    title="No MFA registered" + (" (admin)" if is_admin else ""),
+                    description=f"Identity '{identity.display_name}' has no MFA methods registered. This is a critical security gap.",
+                    remediation_steps=[
+                        "Register at least one MFA method (FIDO2 or Authenticator app recommended).",
+                        "Enforce MFA registration via Conditional Access policy.",
+                    ],
+                    affected_roles=[r.role_name for r in identity.current_roles],
+                    id_suffix="mfa_none",
+                )
+            )
             return violations
 
         methods = set(mfa_record.methods_registered)
         only_weak = methods and methods.issubset(WEAK_MFA_METHODS)
         if only_weak:
-            violations.append(self._build_violation(
-                tenant_id=tenant_id, identity=identity,
-                violation_type=ViolationType.MFA_GAP,
-                priority=ViolationPriority.HIGH,
-                title="Only weak MFA methods (SMS/email)",
-                description=f"Identity '{identity.display_name}' only has phishable MFA methods (SMS/email). Upgrade to phishing-resistant methods.",
-                remediation_steps=[
-                    "Register FIDO2 security key or Microsoft Authenticator.",
-                    "Use authentication strength policies to require phishing-resistant MFA.",
-                ],
-                affected_roles=[r.role_name for r in identity.current_roles],
-                id_suffix="mfa_weak",
-            ))
+            violations.append(
+                self._build_violation(
+                    tenant_id=tenant_id,
+                    identity=identity,
+                    violation_type=ViolationType.MFA_GAP,
+                    priority=ViolationPriority.HIGH,
+                    title="Only weak MFA methods (SMS/email)",
+                    description=f"Identity '{identity.display_name}' only has phishable MFA methods (SMS/email). Upgrade to phishing-resistant methods.",
+                    remediation_steps=[
+                        "Register FIDO2 security key or Microsoft Authenticator.",
+                        "Use authentication strength policies to require phishing-resistant MFA.",
+                    ],
+                    affected_roles=[r.role_name for r in identity.current_roles],
+                    id_suffix="mfa_weak",
+                )
+            )
 
         if is_admin and not (methods & PHISHING_RESISTANT_METHODS):
-            violations.append(self._build_violation(
-                tenant_id=tenant_id, identity=identity,
-                violation_type=ViolationType.MFA_GAP,
-                priority=ViolationPriority.HIGH,
-                title="Admin without phishing-resistant MFA",
-                description=f"Admin '{identity.display_name}' lacks FIDO2/WHfB/certificate auth. Admins should use phishing-resistant methods.",
-                remediation_steps=[
-                    "Register a FIDO2 security key or Windows Hello for Business.",
-                    "Enforce phishing-resistant MFA via authentication strength policy.",
-                ],
-                affected_roles=[r.role_name for r in identity.current_roles],
-                id_suffix="mfa_admin_no_pr",
-            ))
+            violations.append(
+                self._build_violation(
+                    tenant_id=tenant_id,
+                    identity=identity,
+                    violation_type=ViolationType.MFA_GAP,
+                    priority=ViolationPriority.HIGH,
+                    title="Admin without phishing-resistant MFA",
+                    description=f"Admin '{identity.display_name}' lacks FIDO2/WHfB/certificate auth. Admins should use phishing-resistant methods.",
+                    remediation_steps=[
+                        "Register a FIDO2 security key or Windows Hello for Business.",
+                        "Enforce phishing-resistant MFA via authentication strength policy.",
+                    ],
+                    affected_roles=[r.role_name for r in identity.current_roles],
+                    id_suffix="mfa_admin_no_pr",
+                )
+            )
 
         return violations
 
@@ -686,37 +745,44 @@ class BestPracticeAnalyzer:
         violations: list[BestPracticeViolation] = []
 
         admin_roles = [
-            r for r in identity.current_roles
+            r
+            for r in identity.current_roles
             if "administrator" in r.role_name.lower() or "global" in r.role_name.lower()
         ]
         if admin_roles:
-            violations.append(self._build_violation(
-                tenant_id=tenant_id, identity=identity,
-                violation_type=ViolationType.GUEST_ADMIN,
-                priority=ViolationPriority.CRITICAL,
-                title=f"Guest user with admin roles",
-                description=f"Guest '{identity.display_name}' holds admin roles: {', '.join(r.role_name for r in admin_roles)}. Guests should not have privileged access.",
-                remediation_steps=[
-                    "Remove admin roles from guest accounts.",
-                    "Convert to a member account if admin access is required.",
-                ],
-                affected_roles=[r.role_name for r in admin_roles],
-            ))
+            violations.append(
+                self._build_violation(
+                    tenant_id=tenant_id,
+                    identity=identity,
+                    violation_type=ViolationType.GUEST_ADMIN,
+                    priority=ViolationPriority.CRITICAL,
+                    title="Guest user with admin roles",
+                    description=f"Guest '{identity.display_name}' holds admin roles: {', '.join(r.role_name for r in admin_roles)}. Guests should not have privileged access.",
+                    remediation_steps=[
+                        "Remove admin roles from guest accounts.",
+                        "Convert to a member account if admin access is required.",
+                    ],
+                    affected_roles=[r.role_name for r in admin_roles],
+                )
+            )
 
         if identity.external_user_state == "PendingAcceptance":
             now = datetime.now(UTC)
             if identity.first_seen and (now - identity.first_seen).days > 30:
-                violations.append(self._build_violation(
-                    tenant_id=tenant_id, identity=identity,
-                    violation_type=ViolationType.GUEST_PENDING_INVITATION,
-                    priority=ViolationPriority.MEDIUM,
-                    title="Pending guest invitation > 30 days",
-                    description=f"Guest '{identity.display_name}' has not accepted the invitation for over 30 days.",
-                    remediation_steps=[
-                        "Resend the invitation or remove the guest account.",
-                    ],
-                    affected_roles=[],
-                ))
+                violations.append(
+                    self._build_violation(
+                        tenant_id=tenant_id,
+                        identity=identity,
+                        violation_type=ViolationType.GUEST_PENDING_INVITATION,
+                        priority=ViolationPriority.MEDIUM,
+                        title="Pending guest invitation > 30 days",
+                        description=f"Guest '{identity.display_name}' has not accepted the invitation for over 30 days.",
+                        remediation_steps=[
+                            "Resend the invitation or remove the guest account.",
+                        ],
+                        affected_roles=[],
+                    )
+                )
 
         if identity.last_seen:
             now = datetime.now(UTC)
@@ -724,31 +790,37 @@ class BestPracticeAnalyzer:
             if last_seen.tzinfo is None:
                 last_seen = last_seen.replace(tzinfo=UTC)
             if (now - last_seen).days > 90:
-                violations.append(self._build_violation(
-                    tenant_id=tenant_id, identity=identity,
-                    violation_type=ViolationType.GUEST_STALE,
-                    priority=ViolationPriority.HIGH,
-                    title=f"Stale guest user (inactive > 90 days)",
-                    description=f"Guest '{identity.display_name}' has not signed in for over 90 days. Remove stale guest access.",
-                    remediation_steps=[
-                        "Remove the guest account if the collaboration has ended.",
-                        "Set up access reviews for guest users.",
-                    ],
-                    affected_roles=[r.role_name for r in identity.current_roles],
-                ))
+                violations.append(
+                    self._build_violation(
+                        tenant_id=tenant_id,
+                        identity=identity,
+                        violation_type=ViolationType.GUEST_STALE,
+                        priority=ViolationPriority.HIGH,
+                        title="Stale guest user (inactive > 90 days)",
+                        description=f"Guest '{identity.display_name}' has not signed in for over 90 days. Remove stale guest access.",
+                        remediation_steps=[
+                            "Remove the guest account if the collaboration has ended.",
+                            "Set up access reviews for guest users.",
+                        ],
+                        affected_roles=[r.role_name for r in identity.current_roles],
+                    )
+                )
 
         if mfa_record and not mfa_record.is_mfa_registered:
-            violations.append(self._build_violation(
-                tenant_id=tenant_id, identity=identity,
-                violation_type=ViolationType.GUEST_NO_MFA,
-                priority=ViolationPriority.MEDIUM,
-                title="Guest user without MFA",
-                description=f"Guest '{identity.display_name}' has no MFA registered. Enforce MFA for guests via Conditional Access.",
-                remediation_steps=[
-                    "Create a CA policy requiring MFA for guest/external users.",
-                ],
-                affected_roles=[],
-            ))
+            violations.append(
+                self._build_violation(
+                    tenant_id=tenant_id,
+                    identity=identity,
+                    violation_type=ViolationType.GUEST_NO_MFA,
+                    priority=ViolationPriority.MEDIUM,
+                    title="Guest user without MFA",
+                    description=f"Guest '{identity.display_name}' has no MFA registered. Enforce MFA for guests via Conditional Access.",
+                    remediation_steps=[
+                        "Create a CA policy requiring MFA for guest/external users.",
+                    ],
+                    affected_roles=[],
+                )
+            )
 
         return violations
 

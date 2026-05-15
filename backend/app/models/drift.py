@@ -1,5 +1,6 @@
 # backend/app/models/drift.py
 """Pydantic v2 models for permission drift detection."""
+
 from __future__ import annotations
 
 from datetime import datetime

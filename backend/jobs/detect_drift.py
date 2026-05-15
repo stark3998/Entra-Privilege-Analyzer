@@ -1,5 +1,6 @@
 # jobs/detect_drift.py
 """Container Apps Job: run drift detection for all active tenants."""
+
 from __future__ import annotations
 
 import asyncio
@@ -51,11 +52,14 @@ async def main() -> None:
             try:
                 summary = await pipeline.run(tenant_id)
                 logger.info(
-                    "Drift detection complete for tenant %s: %s", tenant_id, summary,
+                    "Drift detection complete for tenant %s: %s",
+                    tenant_id,
+                    summary,
                 )
             except Exception:
                 logger.exception(
-                    "Drift detection failed for tenant %s", tenant_id,
+                    "Drift detection failed for tenant %s",
+                    tenant_id,
                 )
     finally:
         await repo.close()

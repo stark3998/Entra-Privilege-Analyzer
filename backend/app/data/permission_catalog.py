@@ -1,5 +1,6 @@
 # backend/app/data/permission_catalog.py
 """Loads and queries the shared/permission_mappings.json catalog."""
+
 from __future__ import annotations
 
 import json

@@ -4,17 +4,16 @@ import hashlib
 import logging
 import re
 import time
-from datetime import UTC, datetime, timedelta
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from app.models.action import ActionEvent, ActionSource
+from app.models.action import ActionEvent
 from app.models.pim_session import (
     ApprovalInfo,
     PimSession,
     PimSessionScope,
     PimSessionStatus,
-    SessionLocationInfo,
     TicketInfo,
 )
 from app.models.project import ScanRecord
@@ -31,7 +30,10 @@ logger = logging.getLogger(__name__)
 
 
 def _deterministic_id(
-    tenant_id: str, principal_id: str, role_def_id: str, activation_iso: str,
+    tenant_id: str,
+    principal_id: str,
+    role_def_id: str,
+    activation_iso: str,
 ) -> str:
     raw = f"{tenant_id}|{principal_id}|{role_def_id}|{activation_iso}"
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
@@ -39,9 +41,7 @@ def _deterministic_id(
 
 def _parse_iso_duration(duration: str) -> timedelta:
     """Parse ISO 8601 duration like PT8H, PT1H30M, P1D, etc."""
-    match = re.match(
-        r"P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration or ""
-    )
+    match = re.match(r"P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration or "")
     if not match:
         return timedelta(hours=8)
     days = int(match.group(1) or 0)
@@ -77,7 +77,9 @@ class PimSessionPipeline:
         self._arm_pim = arm_pim
         self._progress_callback = progress_callback
         self._detector = PimSessionAnomalyDetector(
-            repo, business_hours_start, business_hours_end,
+            repo,
+            business_hours_start,
+            business_hours_end,
         )
 
     async def _emit_progress(self, payload: dict[str, Any]) -> None:
@@ -86,7 +88,10 @@ class PimSessionPipeline:
         await self._progress_callback(payload)
 
     async def _update_phase(
-        self, scan: ScanRecord | None, status: str, items: int = 0,
+        self,
+        scan: ScanRecord | None,
+        status: str,
+        items: int = 0,
     ) -> None:
         if scan is None:
             return
@@ -124,16 +129,35 @@ class PimSessionPipeline:
         role_lookup: dict[str, str] = {
             d.get("id", ""): d.get("displayName", "Unknown Role") for d in role_defs
         }
-        await self._emit_progress({"type": "scan.progress", "message": f"Loaded {len(role_defs)} PIM role definitions.", "phase": "pim_sessions", "status": "running"})
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Loaded {len(role_defs)} PIM role definitions.",
+                "phase": "pim_sessions",
+                "status": "running",
+            }
+        )
 
         # 1. Fetch Entra ID PIM activation requests
         logger.info("Fetching Entra PIM activation requests for tenant %s", tenant_id)
         raw_requests = await self._graph.fetch_role_assignment_schedule_requests(
-            tenant_id, since=since,
+            tenant_id,
+            since=since,
         )
-        await self._emit_progress({"type": "scan.progress", "message": f"Fetched {len(raw_requests)} PIM activation requests.", "phase": "pim_sessions", "status": "running", "items_processed": len(raw_requests)})
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Fetched {len(raw_requests)} PIM activation requests.",
+                "phase": "pim_sessions",
+                "status": "running",
+                "items_processed": len(raw_requests),
+            }
+        )
         entra_sessions = self._parse_entra_requests(
-            tenant_id, raw_requests, role_lookup, now,
+            tenant_id,
+            raw_requests,
+            role_lookup,
+            now,
         )
 
         # 2. Fetch Azure RBAC PIM activation requests
@@ -141,17 +165,25 @@ class PimSessionPipeline:
         if self._arm_pim and subscription_ids:
             for sub_id in subscription_ids:
                 logger.info(
-                    "Fetching Azure RBAC PIM requests for subscription %s", sub_id,
+                    "Fetching Azure RBAC PIM requests for subscription %s",
+                    sub_id,
                 )
                 rbac_role_lookup = await self._arm_pim.fetch_rbac_role_definitions(
-                    tenant_id, sub_id,
+                    tenant_id,
+                    sub_id,
                 )
                 rbac_raw = await self._arm_pim.fetch_rbac_assignment_schedule_requests(
-                    tenant_id, sub_id, since=since,
+                    tenant_id,
+                    sub_id,
+                    since=since,
                 )
                 rbac_sessions.extend(
                     self._parse_rbac_requests(
-                        tenant_id, rbac_raw, rbac_role_lookup, sub_id, now,
+                        tenant_id,
+                        rbac_raw,
+                        rbac_role_lookup,
+                        sub_id,
+                        now,
                     )
                 )
 
@@ -172,8 +204,10 @@ class PimSessionPipeline:
 
             # Backfill audit events for this user during the session window
             audit_events = await self._graph.fetch_audit_events_for_user(
-                tenant_id, session.principal_id,
-                session.activation_time, end_time,
+                tenant_id,
+                session.principal_id,
+                session.activation_time,
+                end_time,
             )
             parsed_audit: list[ActionEvent] = []
             for raw in audit_events:
@@ -182,8 +216,10 @@ class PimSessionPipeline:
 
             # Backfill sign-in events
             sign_in_raw = await self._graph.fetch_sign_ins_for_user(
-                tenant_id, session.principal_id,
-                session.activation_time, end_time,
+                tenant_id,
+                session.principal_id,
+                session.activation_time,
+                end_time,
             )
 
             session.audit_event_count = len(parsed_audit)
@@ -203,7 +239,10 @@ class PimSessionPipeline:
 
             # Anomaly detection
             anomalies = await self._detector.detect(
-                tenant_id, session, parsed_audit, sign_in_raw,
+                tenant_id,
+                session,
+                parsed_audit,
+                sign_in_raw,
             )
             session.anomalies = anomalies
             session.risk_score = compute_risk_score(anomalies)
@@ -211,13 +250,25 @@ class PimSessionPipeline:
             await self._repo.upsert_pim_session(tenant_id, session)
             sessions_processed += 1
             if sessions_processed % 10 == 0 and sessions_processed > 0:
-                await self._emit_progress({"type": "scan.progress", "message": f"Processed {sessions_processed}/{len(all_sessions)} PIM sessions.", "phase": "pim_sessions", "status": "running", "items_processed": sessions_processed})
+                await self._emit_progress(
+                    {
+                        "type": "scan.progress",
+                        "message": f"Processed {sessions_processed}/{len(all_sessions)} PIM sessions.",
+                        "phase": "pim_sessions",
+                        "status": "running",
+                        "items_processed": sessions_processed,
+                    }
+                )
 
         # Update sync state
-        await self._repo.upsert_sync_state(tenant_id, "pim_sessions", {
-            "last_sync": now.isoformat(),
-            "sessions_processed": sessions_processed,
-        })
+        await self._repo.upsert_sync_state(
+            tenant_id,
+            "pim_sessions",
+            {
+                "last_sync": now.isoformat(),
+                "sessions_processed": sessions_processed,
+            },
+        )
 
         duration_ms = int((time.monotonic() - start_time) * 1000)
         summary = {
@@ -249,7 +300,9 @@ class PimSessionPipeline:
 
             schedule_info = req.get("scheduleInfo") or {}
             start_dt_str = schedule_info.get("startDateTime")
-            activation_time = _parse_dt(start_dt_str) or _parse_dt(req.get("createdDateTime")) or now
+            activation_time = (
+                _parse_dt(start_dt_str) or _parse_dt(req.get("createdDateTime")) or now
+            )
 
             expiration = schedule_info.get("expiration") or {}
             end_dt_str = expiration.get("endDateTime")
@@ -274,44 +327,58 @@ class PimSessionPipeline:
             upn = principal.get("userPrincipalName")
 
             ticket_raw = req.get("ticketInfo") or {}
-            ticket_info = TicketInfo(
-                ticket_number=ticket_raw.get("ticketNumber"),
-                ticket_system=ticket_raw.get("ticketSystem"),
-            ) if ticket_raw.get("ticketNumber") else None
+            ticket_info = (
+                TicketInfo(
+                    ticket_number=ticket_raw.get("ticketNumber"),
+                    ticket_system=ticket_raw.get("ticketSystem"),
+                )
+                if ticket_raw.get("ticketNumber")
+                else None
+            )
 
             approval_id = req.get("approvalId")
-            approval_info = ApprovalInfo(
-                approval_id=approval_id,
-            ) if approval_id else None
+            approval_info = (
+                ApprovalInfo(
+                    approval_id=approval_id,
+                )
+                if approval_id
+                else None
+            )
 
             session_id = _deterministic_id(
-                tenant_id, principal_id, role_def_id,
+                tenant_id,
+                principal_id,
+                role_def_id,
                 activation_time.isoformat(),
             )
 
-            sessions.append(PimSession(
-                id=session_id,
-                tenant_id=tenant_id,
-                principal_id=principal_id,
-                principal_display_name=display_name,
-                principal_upn=upn,
-                identity_id=f"User_{principal_id}",
-                role_definition_id=role_def_id,
-                role_name=role_name,
-                scope=scope,
-                session_scope=PimSessionScope.ENTRA_DIRECTORY,
-                activation_time=activation_time,
-                expiry_time=expiry_time,
-                duration_minutes=duration_minutes,
-                status=PimSessionStatus.ACTIVE if expiry_time > now else PimSessionStatus.EXPIRED,
-                is_active=expiry_time > now,
-                justification=req.get("justification"),
-                ticket_info=ticket_info,
-                approval_info=approval_info,
-                activation_request_id=req.get("id"),
-                created_at=now,
-                updated_at=now,
-            ))
+            sessions.append(
+                PimSession(
+                    id=session_id,
+                    tenant_id=tenant_id,
+                    principal_id=principal_id,
+                    principal_display_name=display_name,
+                    principal_upn=upn,
+                    identity_id=f"User_{principal_id}",
+                    role_definition_id=role_def_id,
+                    role_name=role_name,
+                    scope=scope,
+                    session_scope=PimSessionScope.ENTRA_DIRECTORY,
+                    activation_time=activation_time,
+                    expiry_time=expiry_time,
+                    duration_minutes=duration_minutes,
+                    status=PimSessionStatus.ACTIVE
+                    if expiry_time > now
+                    else PimSessionStatus.EXPIRED,
+                    is_active=expiry_time > now,
+                    justification=req.get("justification"),
+                    ticket_info=ticket_info,
+                    approval_info=approval_info,
+                    activation_request_id=req.get("id"),
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
 
         return sessions
 
@@ -353,36 +420,46 @@ class PimSessionPipeline:
             role_name = role_lookup.get(role_def_id, "Unknown Role")
 
             ticket_raw = props.get("ticketInfo") or {}
-            ticket_info = TicketInfo(
-                ticket_number=ticket_raw.get("ticketNumber"),
-                ticket_system=ticket_raw.get("ticketSystem"),
-            ) if ticket_raw.get("ticketNumber") else None
+            ticket_info = (
+                TicketInfo(
+                    ticket_number=ticket_raw.get("ticketNumber"),
+                    ticket_system=ticket_raw.get("ticketSystem"),
+                )
+                if ticket_raw.get("ticketNumber")
+                else None
+            )
 
             session_id = _deterministic_id(
-                tenant_id, principal_id, role_def_id,
+                tenant_id,
+                principal_id,
+                role_def_id,
                 activation_time.isoformat(),
             )
 
-            sessions.append(PimSession(
-                id=session_id,
-                tenant_id=tenant_id,
-                principal_id=principal_id,
-                principal_display_name="",
-                identity_id=f"User_{principal_id}",
-                role_definition_id=role_def_id,
-                role_name=role_name,
-                scope=scope,
-                session_scope=PimSessionScope.AZURE_RBAC,
-                activation_time=activation_time,
-                expiry_time=expiry_time,
-                duration_minutes=duration_minutes,
-                status=PimSessionStatus.ACTIVE if expiry_time > now else PimSessionStatus.EXPIRED,
-                is_active=expiry_time > now,
-                justification=props.get("justification"),
-                ticket_info=ticket_info,
-                activation_request_id=req.get("name"),
-                created_at=now,
-                updated_at=now,
-            ))
+            sessions.append(
+                PimSession(
+                    id=session_id,
+                    tenant_id=tenant_id,
+                    principal_id=principal_id,
+                    principal_display_name="",
+                    identity_id=f"User_{principal_id}",
+                    role_definition_id=role_def_id,
+                    role_name=role_name,
+                    scope=scope,
+                    session_scope=PimSessionScope.AZURE_RBAC,
+                    activation_time=activation_time,
+                    expiry_time=expiry_time,
+                    duration_minutes=duration_minutes,
+                    status=PimSessionStatus.ACTIVE
+                    if expiry_time > now
+                    else PimSessionStatus.EXPIRED,
+                    is_active=expiry_time > now,
+                    justification=props.get("justification"),
+                    ticket_info=ticket_info,
+                    activation_request_id=req.get("name"),
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
 
         return sessions

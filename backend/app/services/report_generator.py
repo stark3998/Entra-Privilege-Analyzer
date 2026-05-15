@@ -1,5 +1,6 @@
 # backend/app/services/report_generator.py
 """PDF and PowerPoint report generation for executive reports."""
+
 from __future__ import annotations
 
 import io
@@ -109,9 +110,7 @@ class ReportGenerator:
             # Top risky identities
             top_risky = data.get("top_risky_identities", [])
             if top_risky and isinstance(top_risky, list):
-                elements.append(
-                    Paragraph("Top Risky Identities", styles["Heading2"])
-                )
+                elements.append(Paragraph("Top Risky Identities", styles["Heading2"]))
                 id_data = [["Name", "Type", "Risk Score"]]
                 for identity in top_risky[:10]:
                     if isinstance(identity, dict):
@@ -157,9 +156,7 @@ class ReportGenerator:
             # Title slide
             title_slide_layout = prs.slide_layouts[0]
             slide = prs.slides.add_slide(title_slide_layout)
-            slide.shapes.title.text = (
-                f"Executive Security Report\n{data['tenant_name']}"
-            )
+            slide.shapes.title.text = f"Executive Security Report\n{data['tenant_name']}"
             slide.placeholders[1].text = f"Generated: {data['generated_at']}"
 
             # Summary slide
@@ -169,21 +166,11 @@ class ReportGenerator:
             body = slide.placeholders[1]
             tf = body.text_frame
             tf.text = f"Total Identities: {data.get('total_identities', 0)}"
-            tf.add_paragraph().text = (
-                f"Average Risk Score: {data.get('avg_risk_score', 0.0):.1f}"
-            )
-            tf.add_paragraph().text = (
-                f"High-Risk Identities: {data.get('high_risk_count', 0)}"
-            )
-            tf.add_paragraph().text = (
-                f"Open Drift Alerts: {data.get('drift_alerts_open', 0)}"
-            )
-            tf.add_paragraph().text = (
-                f"Compliance Score: {data.get('compliance_score', 0.0):.1f}%"
-            )
-            tf.add_paragraph().text = (
-                f"Recommendations: {data.get('recommendations_count', 0)}"
-            )
+            tf.add_paragraph().text = f"Average Risk Score: {data.get('avg_risk_score', 0.0):.1f}"
+            tf.add_paragraph().text = f"High-Risk Identities: {data.get('high_risk_count', 0)}"
+            tf.add_paragraph().text = f"Open Drift Alerts: {data.get('drift_alerts_open', 0)}"
+            tf.add_paragraph().text = f"Compliance Score: {data.get('compliance_score', 0.0):.1f}%"
+            tf.add_paragraph().text = f"Recommendations: {data.get('recommendations_count', 0)}"
 
             # Top risky identities slide
             top_risky = data.get("top_risky_identities", [])

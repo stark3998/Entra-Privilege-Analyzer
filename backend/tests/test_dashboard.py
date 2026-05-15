@@ -1,10 +1,11 @@
 # backend/tests/test_dashboard.py
 """Tests for Phase 6: Executive Dashboard & AI Narratives."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -15,10 +16,10 @@ from app.models.narrative import Narrative, NarrativeScope
 from app.services.cosmos import CosmosRepo, get_cosmos_repo
 from app.services.foundry import FoundryClient, get_foundry_client
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _test_settings() -> Settings:
     return Settings(
@@ -122,18 +123,19 @@ async def client_with_mocks(
 # Dashboard endpoint tests
 # ---------------------------------------------------------------------------
 
+
 class TestDashboardEndpoints:
     """Tests for the /dashboard API routes."""
 
     @pytest.mark.asyncio
     async def test_get_dashboard_returns_summary(
-        self, client_with_mocks: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mocks: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_dashboard_summary.return_value = _sample_dashboard_summary()
 
-        resp = await client_with_mocks.get(
-            "/api/tenants/local-dev-tenant/dashboard"
-        )
+        resp = await client_with_mocks.get("/api/tenants/local-dev-tenant/dashboard")
         assert resp.status_code == 200
         body = resp.json()
         assert body["total_identities"] == 120
@@ -147,26 +149,26 @@ class TestDashboardEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_dashboard_has_computed_at(
-        self, client_with_mocks: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mocks: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_dashboard_summary.return_value = _sample_dashboard_summary()
 
-        resp = await client_with_mocks.get(
-            "/api/tenants/local-dev-tenant/dashboard"
-        )
+        resp = await client_with_mocks.get("/api/tenants/local-dev-tenant/dashboard")
         assert resp.status_code == 200
         body = resp.json()
         assert "computed_at" in body
 
     @pytest.mark.asyncio
     async def test_get_trends_returns_30_day_data(
-        self, client_with_mocks: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mocks: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_trends.return_value = _sample_trends()
 
-        resp = await client_with_mocks.get(
-            "/api/tenants/local-dev-tenant/dashboard/trends"
-        )
+        resp = await client_with_mocks.get("/api/tenants/local-dev-tenant/dashboard/trends")
         assert resp.status_code == 200
         body = resp.json()
         assert "risk_score_trend" in body
@@ -177,13 +179,13 @@ class TestDashboardEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_trends_each_point_has_date_and_value(
-        self, client_with_mocks: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mocks: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_trends.return_value = _sample_trends()
 
-        resp = await client_with_mocks.get(
-            "/api/tenants/local-dev-tenant/dashboard/trends"
-        )
+        resp = await client_with_mocks.get("/api/tenants/local-dev-tenant/dashboard/trends")
         body = resp.json()
         for point in body["actions_trend"]:
             assert "date" in point
@@ -193,6 +195,7 @@ class TestDashboardEndpoints:
 # ---------------------------------------------------------------------------
 # Narrative endpoint tests
 # ---------------------------------------------------------------------------
+
 
 class TestNarrativeEndpoints:
     """Tests for the /narratives API routes."""
@@ -217,9 +220,7 @@ class TestNarrativeEndpoints:
             expires_at=datetime.now(UTC) + timedelta(hours=24),
         )
 
-        resp = await client_with_mocks.get(
-            "/api/tenants/local-dev-tenant/narratives/executive"
-        )
+        resp = await client_with_mocks.get("/api/tenants/local-dev-tenant/narratives/executive")
         assert resp.status_code == 200
         body = resp.json()
         assert "content" in body
@@ -244,9 +245,7 @@ class TestNarrativeEndpoints:
         )
         mock_repo.get_narrative.return_value = cached
 
-        resp = await client_with_mocks.get(
-            "/api/tenants/local-dev-tenant/narratives/executive"
-        )
+        resp = await client_with_mocks.get("/api/tenants/local-dev-tenant/narratives/executive")
         assert resp.status_code == 200
         body = resp.json()
         assert body["content"] == "Cached narrative content."
@@ -297,9 +296,7 @@ class TestNarrativeEndpoints:
             expires_at=datetime.now(UTC) + timedelta(hours=24),
         )
 
-        resp = await client_with_mocks.post(
-            "/api/tenants/local-dev-tenant/narratives/refresh"
-        )
+        resp = await client_with_mocks.post("/api/tenants/local-dev-tenant/narratives/refresh")
         assert resp.status_code == 202
         body = resp.json()
         assert body["status"] == "accepted"

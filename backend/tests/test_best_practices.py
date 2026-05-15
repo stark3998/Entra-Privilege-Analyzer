@@ -1,9 +1,9 @@
 # backend/tests/test_best_practices.py
 """Tests for Phase 5: Best Practice Advisor."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -12,7 +12,6 @@ from httpx import ASGITransport, AsyncClient
 from app.auth.deps import CurrentUser, get_current_user
 from app.config import Settings, get_settings
 from app.models.best_practice import (
-    BestPracticeSummary,
     BestPracticeViolation,
     ViolationPriority,
     ViolationType,
@@ -27,10 +26,10 @@ from app.models.role import RoleRecommendation, RoleScope
 from app.services.best_practice_analyzer import BestPracticeAnalyzer
 from app.services.cosmos import CosmosRepo, get_cosmos_repo
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _test_settings() -> Settings:
     return Settings(
@@ -169,6 +168,7 @@ async def client_with_mock_repo(mock_repo: AsyncMock) -> AsyncClient:
 # Stale identity detection tests
 # ---------------------------------------------------------------------------
 
+
 class TestStaleIdentityDetection:
     """Tests for stale identity rule at various thresholds."""
 
@@ -241,6 +241,7 @@ class TestStaleIdentityDetection:
 # ---------------------------------------------------------------------------
 # Permanent admin detection tests
 # ---------------------------------------------------------------------------
+
 
 class TestPermanentAdminDetection:
     """Tests for permanent admin role violation."""
@@ -322,6 +323,7 @@ class TestPermanentAdminDetection:
 # Separation of duties tests
 # ---------------------------------------------------------------------------
 
+
 class TestSeparationOfDuties:
     """Tests for separation of duties violation."""
 
@@ -364,6 +366,7 @@ class TestSeparationOfDuties:
 # ---------------------------------------------------------------------------
 # Compliance score calculation tests
 # ---------------------------------------------------------------------------
+
 
 class TestComplianceScore:
     """Tests for compliance_score in BestPracticeSummary."""
@@ -450,19 +453,20 @@ class TestComplianceScore:
 # Best practices endpoint tests
 # ---------------------------------------------------------------------------
 
+
 class TestBestPracticesEndpoints:
     """Tests for the /best-practices API routes."""
 
     @pytest.mark.asyncio
     async def test_list_violations(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         violation = _sample_violation()
         mock_repo.list_violations.return_value = ([violation], 1)
 
-        resp = await client_with_mock_repo.get(
-            "/api/tenants/local-dev-tenant/best-practices"
-        )
+        resp = await client_with_mock_repo.get("/api/tenants/local-dev-tenant/best-practices")
         assert resp.status_code == 200
         body = resp.json()
         assert body["total"] == 1
@@ -470,7 +474,9 @@ class TestBestPracticesEndpoints:
 
     @pytest.mark.asyncio
     async def test_list_violations_with_filter(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         violation = _sample_violation(violation_type=ViolationType.PERMANENT_ADMIN)
         mock_repo.list_violations.return_value = ([violation], 1)
@@ -484,7 +490,9 @@ class TestBestPracticesEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_violation_found(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         violation = _sample_violation()
         mock_repo.get_violation.return_value = violation
@@ -497,18 +505,20 @@ class TestBestPracticesEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_violation_not_found(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_violation.return_value = None
 
-        resp = await client_with_mock_repo.get(
-            "/api/tenants/local-dev-tenant/best-practices/nope"
-        )
+        resp = await client_with_mock_repo.get("/api/tenants/local-dev-tenant/best-practices/nope")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_trigger_evaluation(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         # Background task will call list_identities and upsert_violation
         mock_repo.list_identities.return_value = ([], 0)
@@ -521,7 +531,9 @@ class TestBestPracticesEndpoints:
 
     @pytest.mark.asyncio
     async def test_compliance_summary(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         """Summary endpoint should return a live evaluation."""
         # No identities -> perfect compliance

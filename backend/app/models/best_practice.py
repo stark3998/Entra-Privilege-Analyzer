@@ -1,5 +1,6 @@
 # backend/app/models/best_practice.py
 """Pydantic v2 models for best practice violation analysis."""
+
 from __future__ import annotations
 
 from datetime import datetime

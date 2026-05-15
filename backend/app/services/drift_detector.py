@@ -1,5 +1,6 @@
 # backend/app/services/drift_detector.py
 """Two-layer permission drift detection: first-seen and frequency anomaly."""
+
 from __future__ import annotations
 
 import logging
@@ -169,10 +170,14 @@ class DriftDetector:
         baseline_actions: set[str] = {b.action for b in baselines}
 
         first_seen = await self.detect_first_seen(
-            tenant_id, identity, baseline_actions,
+            tenant_id,
+            identity,
+            baseline_actions,
         )
         frequency = await self.detect_frequency_anomaly(
-            tenant_id, identity, baselines,
+            tenant_id,
+            identity,
+            baselines,
         )
 
         return first_seen + frequency

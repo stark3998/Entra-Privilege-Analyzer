@@ -1,5 +1,6 @@
 # backend/app/routers/reports.py
 """API endpoints for downloading executive reports."""
+
 from __future__ import annotations
 
 import logging
@@ -39,9 +40,7 @@ async def download_executive_report(
             content=content,
             media_type="application/pdf",
             headers={
-                "Content-Disposition": (
-                    f'attachment; filename="executive_report_{tenant_id}.pdf"'
-                ),
+                "Content-Disposition": (f'attachment; filename="executive_report_{tenant_id}.pdf"'),
             },
         )
     elif format == "pptx":
@@ -49,8 +48,7 @@ async def download_executive_report(
         return Response(
             content=content,
             media_type=(
-                "application/vnd.openxmlformats-officedocument"
-                ".presentationml.presentation"
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             ),
             headers={
                 "Content-Disposition": (

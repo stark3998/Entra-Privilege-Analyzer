@@ -140,7 +140,9 @@ async def create_project(
     if has_credentials:
         validator = PermissionValidator()
         perm_result = await validator.validate(
-            payload.client_id, payload.client_secret, payload.target_tenant_id,
+            payload.client_id,
+            payload.client_secret,
+            payload.target_tenant_id,
         )
         crypto = CryptoService(settings)
         encrypted_secret = crypto.encrypt(payload.client_secret)
@@ -187,7 +189,11 @@ async def update_project(
 ) -> dict[str, Any]:
     """Update project settings. Requires admin role."""
     project = await validate_project_access(
-        project_id, user, repo, settings, required_role="admin",
+        project_id,
+        user,
+        repo,
+        settings,
+        required_role="admin",
     )
     if payload.name is not None:
         project.name = payload.name
@@ -228,7 +234,11 @@ async def validate_permissions(
 ) -> dict[str, Any]:
     """Re-validate Graph API permissions for a project's credentials."""
     project = await validate_project_access(
-        project_id, user, repo, settings, required_role="admin",
+        project_id,
+        user,
+        repo,
+        settings,
+        required_role="admin",
     )
     if not project.client_id or not project.encrypted_client_secret:
         raise HTTPException(
@@ -240,7 +250,9 @@ async def validate_permissions(
 
     validator = PermissionValidator()
     perm_result = await validator.validate(
-        project.client_id, secret, project.target_tenant_id,
+        project.client_id,
+        secret,
+        project.target_tenant_id,
     )
 
     project.permission_status = perm_result
@@ -260,12 +272,18 @@ async def update_credentials(
 ) -> dict[str, Any]:
     """Update project credentials and re-validate permissions. Admin only."""
     project = await validate_project_access(
-        project_id, user, repo, settings, required_role="admin",
+        project_id,
+        user,
+        repo,
+        settings,
+        required_role="admin",
     )
 
     validator = PermissionValidator()
     perm_result = await validator.validate(
-        payload.client_id, payload.client_secret, project.target_tenant_id,
+        payload.client_id,
+        payload.client_secret,
+        project.target_tenant_id,
     )
 
     crypto = CryptoService(settings)
@@ -326,7 +344,11 @@ async def invite_member(
 ) -> dict[str, Any]:
     """Invite a member to a project. Admin only."""
     project = await validate_project_access(
-        project_id, user, repo, settings, required_role="admin",
+        project_id,
+        user,
+        repo,
+        settings,
+        required_role="admin",
     )
 
     if payload.role not in ("admin", "operator", "viewer"):
@@ -374,7 +396,11 @@ async def update_member(
 ) -> dict[str, Any]:
     """Update a member's role. Admin only."""
     await validate_project_access(
-        project_id, user, repo, settings, required_role="admin",
+        project_id,
+        user,
+        repo,
+        settings,
+        required_role="admin",
     )
 
     members = await repo.list_project_members(project_id)
@@ -403,14 +429,19 @@ async def remove_member(
 ) -> Response:
     """Remove a member from a project. Admin only."""
     await validate_project_access(
-        project_id, user, repo, settings, required_role="admin",
+        project_id,
+        user,
+        repo,
+        settings,
+        required_role="admin",
     )
 
     members = await repo.list_project_members(project_id)
     target = next((m for m in members if m.id == member_id), None)
     if target is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Member not found",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Member not found",
         )
     if target.user_id == user.oid or target.email.lower() == user.email.lower():
         raise HTTPException(

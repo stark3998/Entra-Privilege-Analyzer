@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -26,10 +25,10 @@ from app.services.iac_exporter import IacExporter
 from app.services.role_mapper import RoleMapper
 from app.services.role_recommender import RoleRecommender
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _test_settings() -> Settings:
     return Settings(
@@ -140,6 +139,7 @@ async def client_with_mock_repo(mock_repo: AsyncMock) -> AsyncClient:
 # Permission catalog tests
 # ---------------------------------------------------------------------------
 
+
 class TestPermissionCatalog:
     """Tests for action_to_permission mapping."""
 
@@ -163,14 +163,13 @@ class TestPermissionCatalog:
 # Built-in role matching tests
 # ---------------------------------------------------------------------------
 
+
 class TestBuiltInRoleMatching:
     """Tests for find_matching_entra_roles."""
 
     def test_exact_permission_match(self) -> None:
         """Helpdesk Administrator has microsoft.directory/users/password/update."""
-        matches = find_matching_entra_roles(
-            {"microsoft.directory/users/password/update"}
-        )
+        matches = find_matching_entra_roles({"microsoft.directory/users/password/update"})
         # Helpdesk Admin should appear with a positive score
         helpdesk = [m for m in matches if m.role_name == "Helpdesk Administrator"]
         assert len(helpdesk) == 1
@@ -179,9 +178,7 @@ class TestBuiltInRoleMatching:
     def test_wildcard_match_covers_specific(self) -> None:
         """User Administrator (microsoft.directory/users/allProperties/allTasks) should
         cover microsoft.directory/users/password/update."""
-        matches = find_matching_entra_roles(
-            {"microsoft.directory/users/password/update"}
-        )
+        matches = find_matching_entra_roles({"microsoft.directory/users/password/update"})
         user_admin = [m for m in matches if m.role_name == "User Administrator"]
         assert len(user_admin) == 1
         assert user_admin[0].match_score > 0
@@ -189,9 +186,7 @@ class TestBuiltInRoleMatching:
     def test_global_admin_covers_everything(self) -> None:
         """Global Administrator (microsoft.directory/*/allTasks) should match any
         microsoft.directory permission."""
-        matches = find_matching_entra_roles(
-            {"microsoft.directory/users/password/update"}
-        )
+        matches = find_matching_entra_roles({"microsoft.directory/users/password/update"})
         ga = [m for m in matches if m.role_name == "Global Administrator"]
         assert len(ga) == 1
         assert ga[0].match_score > 0
@@ -204,9 +199,7 @@ class TestBuiltInRoleMatching:
             assert m.match_score == 0.0
 
     def test_results_sorted_by_score_desc(self) -> None:
-        matches = find_matching_entra_roles(
-            {"microsoft.directory/users/password/update"}
-        )
+        matches = find_matching_entra_roles({"microsoft.directory/users/password/update"})
         scores = [m.match_score for m in matches]
         assert scores == sorted(scores, reverse=True)
 
@@ -214,6 +207,7 @@ class TestBuiltInRoleMatching:
 # ---------------------------------------------------------------------------
 # RoleMapper tests
 # ---------------------------------------------------------------------------
+
 
 class TestRoleMapper:
     """Tests for RoleMapper.map_identity_permissions."""
@@ -273,6 +267,7 @@ class TestRoleMapper:
 # IaC exporter tests
 # ---------------------------------------------------------------------------
 
+
 class TestIacExporter:
     """Tests for IacExporter output."""
 
@@ -319,6 +314,7 @@ class TestIacExporter:
 # RoleRecommender integration test
 # ---------------------------------------------------------------------------
 
+
 class TestRoleRecommender:
     """Integration test for RoleRecommender.compute_recommendation."""
 
@@ -328,7 +324,9 @@ class TestRoleRecommender:
             roles=[
                 CurrentRole(role_id="r1", role_name="User.ReadWrite.All", scope="/"),
                 CurrentRole(role_id="r2", role_name="Directory.ReadWrite.All", scope="/"),
-                CurrentRole(role_id="r3", role_name="RoleManagement.ReadWrite.Directory", scope="/"),
+                CurrentRole(
+                    role_id="r3", role_name="RoleManagement.ReadWrite.Directory", scope="/"
+                ),
             ],
         )
         mapper = RoleMapper()
@@ -347,19 +345,20 @@ class TestRoleRecommender:
 # Recommendation endpoint tests
 # ---------------------------------------------------------------------------
 
+
 class TestRecommendationEndpoints:
     """Tests for the /recommendations API routes."""
 
     @pytest.mark.asyncio
     async def test_list_recommendations(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         rec = _sample_recommendation()
         mock_repo.list_recommendations.return_value = ([rec], 1)
 
-        resp = await client_with_mock_repo.get(
-            "/api/tenants/local-dev-tenant/recommendations"
-        )
+        resp = await client_with_mock_repo.get("/api/tenants/local-dev-tenant/recommendations")
         assert resp.status_code == 200
         body = resp.json()
         assert body["total"] == 1
@@ -367,7 +366,9 @@ class TestRecommendationEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_recommendation_found(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         rec = _sample_recommendation()
         mock_repo.get_recommendation.return_value = rec
@@ -380,7 +381,9 @@ class TestRecommendationEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_recommendation_not_found(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_recommendation.return_value = None
 
@@ -391,7 +394,9 @@ class TestRecommendationEndpoints:
 
     @pytest.mark.asyncio
     async def test_export_terraform(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         rec = _sample_recommendation()
         mock_repo.get_recommendation.return_value = rec
@@ -406,7 +411,9 @@ class TestRecommendationEndpoints:
 
     @pytest.mark.asyncio
     async def test_export_not_found(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_recommendation.return_value = None
 

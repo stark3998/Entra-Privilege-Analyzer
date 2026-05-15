@@ -1,5 +1,6 @@
 # jobs/compute_baselines.py
 """Container Apps Job: compute rolling baselines for all active tenants."""
+
 from __future__ import annotations
 
 import asyncio
@@ -47,11 +48,14 @@ async def main() -> None:
             try:
                 summary = await pipeline.run(tenant_id)
                 logger.info(
-                    "Baselines complete for tenant %s: %s", tenant_id, summary,
+                    "Baselines complete for tenant %s: %s",
+                    tenant_id,
+                    summary,
                 )
             except Exception:
                 logger.exception(
-                    "Baseline computation failed for tenant %s", tenant_id,
+                    "Baseline computation failed for tenant %s",
+                    tenant_id,
                 )
     finally:
         await repo.close()

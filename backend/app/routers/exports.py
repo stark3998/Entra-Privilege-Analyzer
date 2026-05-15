@@ -70,7 +70,9 @@ async def bulk_export(
     validate_tenant_access(tenant_id, user, settings)
 
     items, _ = await repo.list_recommendations(
-        tenant_id=tenant_id, offset=0, limit=_MAX_BULK_EXPORT,
+        tenant_id=tenant_id,
+        offset=0,
+        limit=_MAX_BULK_EXPORT,
     )
 
     if not items:

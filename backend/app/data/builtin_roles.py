@@ -1,5 +1,6 @@
 # backend/app/data/builtin_roles.py
 """Loads built-in role catalogs and finds best-matching roles for a permission set."""
+
 from __future__ import annotations
 
 import fnmatch
@@ -47,8 +48,7 @@ def _wildcard_covers(pattern: str, target: str) -> bool:
     # Convert Entra patterns to fnmatch-compatible patterns:
     #   allTasks -> *   allProperties -> *   allEntities -> *
     glob_pattern = (
-        pattern_lower
-        .replace("alltasks", "*")
+        pattern_lower.replace("alltasks", "*")
         .replace("allproperties", "*")
         .replace("allentities", "*")
     )
@@ -80,9 +80,7 @@ def find_matching_entra_roles(
         # Excess = role permissions that don't cover any required permission
         excess: list[str] = []
         for rp in role_perms:
-            covers_any = any(
-                _wildcard_covers(rp, req) for req in required_permissions
-            )
+            covers_any = any(_wildcard_covers(rp, req) for req in required_permissions)
             if not covers_any:
                 excess.append(rp)
 
@@ -137,9 +135,7 @@ def find_matching_azure_roles(
 
         excess: list[str] = []
         for ra in all_role_actions:
-            covers_any = any(
-                _azure_wildcard_covers(ra, req) for req in required_actions
-            )
+            covers_any = any(_azure_wildcard_covers(ra, req) for req in required_actions)
             if not covers_any:
                 excess.append(ra)
 

@@ -1,8 +1,8 @@
 # backend/app/main.py
 from __future__ import annotations
 
-import logging
 import asyncio
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -13,7 +13,6 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings, get_settings
 from app.observability import setup_observability
-from app.services.scan_events import ScanEventBroker
 from app.routers import (
     actions,
     best_practices,
@@ -33,6 +32,7 @@ from app.routers import (
     tenants,
     webhooks,
 )
+from app.services.scan_events import ScanEventBroker
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s — %(message)s",
     )
-    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(
-        logging.WARNING
-    )
+    logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
 
     if settings.local_mode:
         logger.warning("LOCAL MODE ACTIVE — authentication disabled")

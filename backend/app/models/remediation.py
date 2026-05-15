@@ -1,5 +1,6 @@
 # backend/app/models/remediation.py
 """Pydantic v2 models for remediation action workflow."""
+
 from __future__ import annotations
 
 from datetime import datetime

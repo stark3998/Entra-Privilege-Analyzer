@@ -1,5 +1,6 @@
 # backend/app/data/compliance_mappings.py
 """Static mapping of ViolationType values to compliance framework control IDs."""
+
 from __future__ import annotations
 
 COMPLIANCE_MAPPINGS: dict[str, dict[str, list[dict[str, str]]]] = {
@@ -56,7 +57,10 @@ COMPLIANCE_MAPPINGS: dict[str, dict[str, list[dict[str, str]]]] = {
         ],
         "nist80053": [
             {"id": "AC-6", "name": "Least privilege"},
-            {"id": "AC-6(10)", "name": "Prohibit non-privileged users from executing privileged functions"},
+            {
+                "id": "AC-6(10)",
+                "name": "Prohibit non-privileged users from executing privileged functions",
+            },
         ],
     },
     "separation_of_duties": {
@@ -128,7 +132,8 @@ COMPLIANCE_MAPPINGS: dict[str, dict[str, list[dict[str, str]]]] = {
 
 
 def get_compliance_controls(
-    violation_type: str, framework: str,
+    violation_type: str,
+    framework: str,
 ) -> list[dict[str, str]]:
     """Return compliance controls for a violation type and framework.
 

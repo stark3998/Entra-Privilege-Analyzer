@@ -1,9 +1,9 @@
 # backend/tests/test_drift.py
 """Tests for Phase 4: Permission Drift Detection."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -29,10 +29,10 @@ from app.services.cosmos import CosmosRepo, get_cosmos_repo
 from app.services.drift_detector import DriftDetector
 from app.services.risk_scorer import RiskScorer
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _test_settings() -> Settings:
     return Settings(
@@ -163,6 +163,7 @@ async def client_with_mock_repo(mock_repo: AsyncMock) -> AsyncClient:
 # First-seen detection tests
 # ---------------------------------------------------------------------------
 
+
 class TestFirstSeenDetection:
     """Tests for DriftDetector.detect_first_seen."""
 
@@ -206,6 +207,7 @@ class TestFirstSeenDetection:
 # ---------------------------------------------------------------------------
 # Frequency anomaly detection tests
 # ---------------------------------------------------------------------------
+
 
 class TestFrequencyAnomalyDetection:
     """Tests for DriftDetector.detect_frequency_anomaly."""
@@ -277,6 +279,7 @@ class TestFrequencyAnomalyDetection:
 # ---------------------------------------------------------------------------
 # Risk scorer tests
 # ---------------------------------------------------------------------------
+
 
 class TestRiskScorer:
     """Tests for RiskScorer.compute_risk_score."""
@@ -371,19 +374,20 @@ class TestRiskScorer:
 # Drift alert endpoint tests
 # ---------------------------------------------------------------------------
 
+
 class TestDriftAlertEndpoints:
     """Tests for the /drift-alerts API routes."""
 
     @pytest.mark.asyncio
     async def test_list_drift_alerts(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         alert = _sample_drift_alert()
         mock_repo.list_drift_alerts.return_value = ([alert], 1)
 
-        resp = await client_with_mock_repo.get(
-            "/api/tenants/local-dev-tenant/drift-alerts"
-        )
+        resp = await client_with_mock_repo.get("/api/tenants/local-dev-tenant/drift-alerts")
         assert resp.status_code == 200
         body = resp.json()
         assert body["total"] == 1
@@ -391,7 +395,9 @@ class TestDriftAlertEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_drift_alert_found(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         alert = _sample_drift_alert()
         mock_repo.get_drift_alert.return_value = alert
@@ -404,18 +410,20 @@ class TestDriftAlertEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_drift_alert_not_found(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_drift_alert.return_value = None
 
-        resp = await client_with_mock_repo.get(
-            "/api/tenants/local-dev-tenant/drift-alerts/nope"
-        )
+        resp = await client_with_mock_repo.get("/api/tenants/local-dev-tenant/drift-alerts/nope")
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_patch_drift_alert_acknowledge(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         alert = _sample_drift_alert()
         mock_repo.get_drift_alert.return_value = alert
@@ -431,7 +439,9 @@ class TestDriftAlertEndpoints:
 
     @pytest.mark.asyncio
     async def test_patch_drift_alert_not_found(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_drift_alert.return_value = None
 
@@ -443,14 +453,14 @@ class TestDriftAlertEndpoints:
 
     @pytest.mark.asyncio
     async def test_trigger_drift_detection(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         # Background task will call list_identities — configure mock
         mock_repo.list_identities.return_value = ([], 0)
 
-        resp = await client_with_mock_repo.post(
-            "/api/tenants/local-dev-tenant/drift-alerts/detect"
-        )
+        resp = await client_with_mock_repo.post("/api/tenants/local-dev-tenant/drift-alerts/detect")
         assert resp.status_code == 202
         assert resp.json()["status"] == "accepted"
 
@@ -459,12 +469,15 @@ class TestDriftAlertEndpoints:
 # Baseline endpoint tests
 # ---------------------------------------------------------------------------
 
+
 class TestBaselineEndpoints:
     """Tests for the /baselines API routes."""
 
     @pytest.mark.asyncio
     async def test_get_baselines(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         baseline = _sample_baseline("Add user", mean=3.0, stddev=1.0)
         mock_repo.list_baselines.return_value = [baseline]

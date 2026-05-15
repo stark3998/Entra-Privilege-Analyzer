@@ -1,5 +1,6 @@
 # backend/app/services/role_mapper.py
 """Maps observed actions to required permissions and identifies overprivilege gaps."""
+
 from __future__ import annotations
 
 import logging

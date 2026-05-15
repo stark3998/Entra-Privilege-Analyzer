@@ -1,5 +1,6 @@
 # jobs/generate_recommendations.py
 """Container Apps Job: compute role recommendations for all active tenants."""
+
 from __future__ import annotations
 
 import asyncio
@@ -51,11 +52,14 @@ async def main() -> None:
             try:
                 summary = await pipeline.run(tenant_id)
                 logger.info(
-                    "Recommendations complete for tenant %s: %s", tenant_id, summary,
+                    "Recommendations complete for tenant %s: %s",
+                    tenant_id,
+                    summary,
                 )
             except Exception:
                 logger.exception(
-                    "Recommendation computation failed for tenant %s", tenant_id,
+                    "Recommendation computation failed for tenant %s",
+                    tenant_id,
                 )
     finally:
         await repo.close()

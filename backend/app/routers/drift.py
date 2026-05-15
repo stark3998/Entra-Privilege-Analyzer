@@ -1,5 +1,6 @@
 # backend/app/routers/drift.py
 """API endpoints for permission drift detection and baseline management."""
+
 from __future__ import annotations
 
 import logging
@@ -11,7 +12,6 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from app.auth.deps import CurrentUser, require_role, validate_tenant_access
 from app.config import Settings, get_settings
 from app.models.drift import DriftAlertUpdate, DriftSeverity, DriftStatus
-from app.pipelines.baseline_pipeline import BaselinePipeline
 from app.pipelines.drift_pipeline import DriftPipeline
 from app.services.cosmos import CosmosRepo, get_cosmos_repo
 from app.services.drift_detector import DriftDetector

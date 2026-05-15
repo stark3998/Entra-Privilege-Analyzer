@@ -1,5 +1,6 @@
 # backend/app/routers/webhooks.py
 """API endpoints for Microsoft Graph webhook notifications and subscriptions."""
+
 from __future__ import annotations
 
 import logging
@@ -54,7 +55,9 @@ async def graph_webhook(
         tenant_id = notification.get("tenantId", "")
         if tenant_id and handler.validate_tenant_id(tenant_id):
             background_tasks.add_task(
-                handler.process_notification, tenant_id, notification,
+                handler.process_notification,
+                tenant_id,
+                notification,
             )
             queued += 1
 
@@ -93,7 +96,9 @@ async def create_subscription(
 
     handler = WebhookHandler(repo)
     subscription = await handler.create_subscription(
-        tenant_id, resource, notification_url,
+        tenant_id,
+        resource,
+        notification_url,
     )
     return {"status": "accepted", "subscription": subscription}
 

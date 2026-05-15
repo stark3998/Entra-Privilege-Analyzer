@@ -80,7 +80,7 @@ def _retry_delay_seconds(response: httpx.Response, attempt: int) -> float:
         except ValueError:
             logger.warning("Invalid Retry-After header from Graph: %s", retry_after)
 
-    return min(_GRAPH_MAX_BACKOFF_SECONDS, _GRAPH_BASE_BACKOFF_SECONDS * float(2 ** attempt))
+    return min(_GRAPH_MAX_BACKOFF_SECONDS, _GRAPH_BASE_BACKOFF_SECONDS * float(2**attempt))
 
 
 class GraphIngestService:
@@ -110,7 +110,11 @@ class GraphIngestService:
     def _raise_graph_error(self, response: httpx.Response, *, endpoint: str) -> None:
         """Raise a typed Graph exception from a failed response."""
         code, graph_message = _parse_graph_error_payload(response)
-        message = graph_message or response.text or f"Microsoft Graph request failed with {response.status_code}"
+        message = (
+            graph_message
+            or response.text
+            or f"Microsoft Graph request failed with {response.status_code}"
+        )
 
         if response.status_code == 403:
             detail = (
@@ -318,9 +322,7 @@ class GraphIngestService:
             new_delta = data.get("@odata.deltaLink")
             return events, new_delta
 
-        since = (datetime.now(UTC) - timedelta(days=30)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        since = (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
         url = f"{self._graph_base}/auditLogs/directoryAudits"
         params = {"$filter": f"activityDateTime ge {since}", "$top": "999"}
         events = await self._graph_get_all_pages(token, url, params, phase_name="audit_logs")
@@ -354,7 +356,9 @@ class GraphIngestService:
         url = f"{self._graph_base}/auditLogs/directoryAudits"
         params = {"$filter": f"activityDateTime ge {since}", "$top": "999"}
         async for page in self._graph_get_pages_stream(
-            token, url, params,
+            token,
+            url,
+            params,
             phase_name="audit_logs",
             start_from_next_link=resume_next_link,
             page_offset=page_offset,
@@ -374,7 +378,9 @@ class GraphIngestService:
         url = f"{self._graph_base}/auditLogs/signIns"
         params = {"$filter": f"createdDateTime ge {cutoff}", "$top": "999"}
         async for page in self._graph_get_pages_stream(
-            token, url, params,
+            token,
+            url,
+            params,
             phase_name="sign_in_logs",
             start_from_next_link=resume_next_link,
             page_offset=page_offset,
@@ -424,7 +430,8 @@ class GraphIngestService:
     # ------------------------------------------------------------------
 
     async def fetch_role_assignment_schedule_instances(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch all active role assignments including PIM-activated ones."""
         token = await self._get_token(tenant_id)
@@ -432,7 +439,8 @@ class GraphIngestService:
         return await self._graph_get_all_pages(token, url, phase_name="role_assignments")
 
     async def fetch_role_eligibility_schedule_instances(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch all PIM-eligible role assignments."""
         token = await self._get_token(tenant_id)
@@ -457,7 +465,9 @@ class GraphIngestService:
         return await self._graph_get_all_pages(token, url, params, phase_name="identity_profiles")
 
     async def fetch_application_owners(
-        self, tenant_id: str, app_object_id: str,
+        self,
+        tenant_id: str,
+        app_object_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch owners of a specific app registration."""
         token = await self._get_token(tenant_id)
@@ -466,7 +476,8 @@ class GraphIngestService:
         return await self._graph_get_all_pages(token, url, params, phase_name="identity_profiles")
 
     async def fetch_oauth2_permission_grants(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch delegated permission grants."""
         token = await self._get_token(tenant_id)
@@ -478,7 +489,8 @@ class GraphIngestService:
     # ------------------------------------------------------------------
 
     async def fetch_mfa_registration_details(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch bulk MFA registration status for all users."""
         token = await self._get_token(tenant_id)
@@ -490,7 +502,8 @@ class GraphIngestService:
     # ------------------------------------------------------------------
 
     async def fetch_conditional_access_policies(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch all Conditional Access policies."""
         token = await self._get_token(tenant_id)
@@ -508,7 +521,9 @@ class GraphIngestService:
         return await self._graph_get_all_pages(token, url, phase_name="identity_profiles")
 
     async def fetch_risk_detections(
-        self, tenant_id: str, since: datetime | None = None,
+        self,
+        tenant_id: str,
+        since: datetime | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch risk detections. Requires P1+ license."""
         token = await self._get_token(tenant_id)
@@ -547,7 +562,9 @@ class GraphIngestService:
         async with httpx.AsyncClient(timeout=60.0) as client:
             while current_url is not None:
                 resp = await client.get(
-                    current_url, headers=headers, params=current_params,
+                    current_url,
+                    headers=headers,
+                    params=current_params,
                 )
                 resp.raise_for_status()
                 data = resp.json()
@@ -568,7 +585,9 @@ class GraphIngestService:
         return all_items
 
     async def fetch_group_transitive_members(
-        self, tenant_id: str, group_id: str,
+        self,
+        tenant_id: str,
+        group_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch transitive (nested) members of a group."""
         token = await self._get_token(tenant_id)
@@ -577,7 +596,9 @@ class GraphIngestService:
         return await self._graph_get_all_pages(token, url, params, phase_name="identity_profiles")
 
     async def fetch_group_owners(
-        self, tenant_id: str, group_id: str,
+        self,
+        tenant_id: str,
+        group_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch owners of a group."""
         token = await self._get_token(tenant_id)
@@ -590,7 +611,8 @@ class GraphIngestService:
     # ------------------------------------------------------------------
 
     async def fetch_access_review_definitions(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch access review definitions. Requires Entra ID Governance."""
         token = await self._get_token(tenant_id)
@@ -602,7 +624,8 @@ class GraphIngestService:
     # ------------------------------------------------------------------
 
     async def fetch_cross_tenant_access_partners(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch cross-tenant access policy partner configurations."""
         token = await self._get_token(tenant_id)
@@ -618,7 +641,9 @@ class GraphIngestService:
     # ------------------------------------------------------------------
 
     async def fetch_role_assignment_schedule_requests(
-        self, tenant_id: str, since: datetime | None = None,
+        self,
+        tenant_id: str,
+        since: datetime | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch PIM activation requests (selfActivate) for Entra directory roles."""
         token = await self._get_token(tenant_id)
@@ -634,14 +659,14 @@ class GraphIngestService:
         return await self._graph_get_all_pages(token, url, params, phase_name="pim_sessions")
 
     async def fetch_pim_audit_events(
-        self, tenant_id: str, since: datetime | None = None,
+        self,
+        tenant_id: str,
+        since: datetime | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch audit events for PIM role management activities."""
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/auditLogs/directoryAudits"
-        cutoff = (since or (datetime.now(UTC) - timedelta(days=30))).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        cutoff = (since or (datetime.now(UTC) - timedelta(days=30))).strftime("%Y-%m-%dT%H:%M:%SZ")
         params = {
             "$filter": f"category eq 'RoleManagement' and activityDateTime ge {cutoff}",
             "$top": "999",
@@ -649,7 +674,11 @@ class GraphIngestService:
         return await self._graph_get_all_pages(token, url, params, phase_name="pim_sessions")
 
     async def fetch_sign_ins_for_user(
-        self, tenant_id: str, user_id: str, start: datetime, end: datetime,
+        self,
+        tenant_id: str,
+        user_id: str,
+        start: datetime,
+        end: datetime,
     ) -> list[dict[str, Any]]:
         """Fetch sign-in logs for a specific user within a time window."""
         token = await self._get_token(tenant_id)
@@ -667,7 +696,11 @@ class GraphIngestService:
         return await self._graph_get_all_pages(token, url, params, phase_name="pim_sessions")
 
     async def fetch_audit_events_for_user(
-        self, tenant_id: str, user_id: str, start: datetime, end: datetime,
+        self,
+        tenant_id: str,
+        user_id: str,
+        start: datetime,
+        end: datetime,
     ) -> list[dict[str, Any]]:
         """Fetch audit events initiated by a specific user within a time window.
 
@@ -679,15 +712,13 @@ class GraphIngestService:
         start_str = start.strftime("%Y-%m-%dT%H:%M:%SZ")
         end_str = end.strftime("%Y-%m-%dT%H:%M:%SZ")
         params = {
-            "$filter": (
-                f"activityDateTime ge {start_str} "
-                f"and activityDateTime le {end_str}"
-            ),
+            "$filter": (f"activityDateTime ge {start_str} and activityDateTime le {end_str}"),
             "$top": "999",
         }
         all_events = await self._graph_get_all_pages(token, url, params, phase_name="pim_sessions")
         return [
-            e for e in all_events
+            e
+            for e in all_events
             if (e.get("initiatedBy", {}).get("user") or {}).get("id") == user_id
         ]
 
@@ -696,7 +727,9 @@ class GraphIngestService:
     # ------------------------------------------------------------------
 
     async def fetch_service_principal_owners(
-        self, tenant_id: str, sp_id: str,
+        self,
+        tenant_id: str,
+        sp_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch owners of a specific service principal."""
         token = await self._get_token(tenant_id)
@@ -705,7 +738,9 @@ class GraphIngestService:
         return await self._graph_get_all_pages(token, url, params, phase_name="access_paths")
 
     async def fetch_service_principal_app_role_assignments(
-        self, tenant_id: str, sp_id: str,
+        self,
+        tenant_id: str,
+        sp_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch granted application permission assignments for a service principal."""
         token = await self._get_token(tenant_id)
@@ -713,7 +748,9 @@ class GraphIngestService:
         return await self._graph_get_all_pages(token, url, phase_name="access_paths")
 
     async def fetch_service_principal_by_app_id(
-        self, tenant_id: str, app_id: str,
+        self,
+        tenant_id: str,
+        app_id: str,
     ) -> dict[str, Any] | None:
         """Fetch a service principal by its appId (e.g. MS Graph SP)."""
         token = await self._get_token(tenant_id)
@@ -730,7 +767,8 @@ class GraphIngestService:
     # ------------------------------------------------------------------
 
     async def fetch_service_principal_sign_in_activities(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch last sign-in activity for service principals (beta only).
 
@@ -742,12 +780,16 @@ class GraphIngestService:
             return await self._graph_get_all_pages(token, url, phase_name="identity_profiles")
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (400, 404):
-                logger.debug("servicePrincipalSignInActivities not available (version=%s)", self._settings.graph_api_version)
+                logger.debug(
+                    "servicePrincipalSignInActivities not available (version=%s)",
+                    self._settings.graph_api_version,
+                )
                 return []
             raise
 
     async def fetch_app_credential_sign_in_activities(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[dict[str, Any]]:
         """Fetch last sign-in activity per app credential (beta only).
 
@@ -759,7 +801,10 @@ class GraphIngestService:
             return await self._graph_get_all_pages(token, url, phase_name="identity_profiles")
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (400, 404):
-                logger.debug("appCredentialSignInActivities not available (version=%s)", self._settings.graph_api_version)
+                logger.debug(
+                    "appCredentialSignInActivities not available (version=%s)",
+                    self._settings.graph_api_version,
+                )
                 return []
             raise
 
@@ -768,9 +813,7 @@ class GraphIngestService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_audit_event(
-        tenant_id: str, raw: dict[str, Any]
-    ) -> tuple[ActionEvent, str, str]:
+    def parse_audit_event(tenant_id: str, raw: dict[str, Any]) -> tuple[ActionEvent, str, str]:
         """Parse a raw audit log entry into an ActionEvent.
 
         Returns (event, actor_object_id, actor_display_name).
@@ -781,11 +824,7 @@ class GraphIngestService:
         app_info = initiated_by.get("app") or {}
 
         actor_id = user_info.get("id") or app_info.get("id") or "unknown"
-        actor_name = (
-            user_info.get("displayName")
-            or app_info.get("displayName")
-            or "Unknown"
-        )
+        actor_name = user_info.get("displayName") or app_info.get("displayName") or "Unknown"
 
         targets = raw.get("targetResources", [])
         first_target = targets[0] if targets else {}
@@ -825,9 +864,7 @@ class GraphIngestService:
         return event, actor_id, actor_name
 
     @staticmethod
-    def parse_sign_in_event(
-        tenant_id: str, raw: dict[str, Any]
-    ) -> tuple[ActionEvent, str, str]:
+    def parse_sign_in_event(tenant_id: str, raw: dict[str, Any]) -> tuple[ActionEvent, str, str]:
         """Parse a raw sign-in log entry into an ActionEvent.
 
         Returns (event, actor_object_id, actor_display_name).

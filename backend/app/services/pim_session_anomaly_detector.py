@@ -69,12 +69,8 @@ class PimSessionAnomalyDetector:
         anomalies.extend(self._check_unusual_time(session, now))
         anomalies.extend(self._check_no_justification(session, now))
         anomalies.extend(self._check_sensitive_actions(session_audit_events, now))
-        anomalies.extend(
-            await self._check_first_time_role(tenant_id, session, now)
-        )
-        anomalies.extend(
-            self._check_new_location(session, sign_in_raw, now)
-        )
+        anomalies.extend(await self._check_first_time_role(tenant_id, session, now))
+        anomalies.extend(self._check_new_location(session, sign_in_raw, now))
         anomalies.extend(
             await self._check_high_volume(tenant_id, session, session_audit_events, now)
         )
@@ -82,70 +78,87 @@ class PimSessionAnomalyDetector:
         return anomalies
 
     def _check_unusual_time(
-        self, session: PimSession, now: datetime,
+        self,
+        session: PimSession,
+        now: datetime,
     ) -> list[PimSessionAnomaly]:
         hour = session.activation_time.hour
         weekday = session.activation_time.weekday()
 
         if weekday >= 5:
-            return [PimSessionAnomaly(
-                anomaly_type=PimSessionAnomalyType.UNUSUAL_ACTIVATION_TIME,
-                severity="high",
-                details=f"Role activated on a weekend ({session.activation_time.strftime('%A')}).",
-                detected_at=now,
-            )]
+            return [
+                PimSessionAnomaly(
+                    anomaly_type=PimSessionAnomalyType.UNUSUAL_ACTIVATION_TIME,
+                    severity="high",
+                    details=f"Role activated on a weekend ({session.activation_time.strftime('%A')}).",
+                    detected_at=now,
+                )
+            ]
 
         if hour < self._bh_start or hour >= self._bh_end:
-            return [PimSessionAnomaly(
-                anomaly_type=PimSessionAnomalyType.UNUSUAL_ACTIVATION_TIME,
-                severity="medium",
-                details=(
-                    f"Role activated outside business hours "
-                    f"({session.activation_time.strftime('%H:%M')} UTC, "
-                    f"business hours: {self._bh_start:02d}:00-{self._bh_end:02d}:00)."
-                ),
-                detected_at=now,
-            )]
+            return [
+                PimSessionAnomaly(
+                    anomaly_type=PimSessionAnomalyType.UNUSUAL_ACTIVATION_TIME,
+                    severity="medium",
+                    details=(
+                        f"Role activated outside business hours "
+                        f"({session.activation_time.strftime('%H:%M')} UTC, "
+                        f"business hours: {self._bh_start:02d}:00-{self._bh_end:02d}:00)."
+                    ),
+                    detected_at=now,
+                )
+            ]
 
         return []
 
     def _check_no_justification(
-        self, session: PimSession, now: datetime,
+        self,
+        session: PimSession,
+        now: datetime,
     ) -> list[PimSessionAnomaly]:
         if session.justification:
             return []
         if session.role_name not in _HIGH_PRIVILEGE_ROLES:
             return []
-        return [PimSessionAnomaly(
-            anomaly_type=PimSessionAnomalyType.NO_JUSTIFICATION,
-            severity="medium",
-            details=(
-                f"High-privilege role '{session.role_name}' activated "
-                f"without providing a justification."
-            ),
-            detected_at=now,
-        )]
+        return [
+            PimSessionAnomaly(
+                anomaly_type=PimSessionAnomalyType.NO_JUSTIFICATION,
+                severity="medium",
+                details=(
+                    f"High-privilege role '{session.role_name}' activated "
+                    f"without providing a justification."
+                ),
+                detected_at=now,
+            )
+        ]
 
     def _check_sensitive_actions(
-        self, events: list[ActionEvent], now: datetime,
+        self,
+        events: list[ActionEvent],
+        now: datetime,
     ) -> list[PimSessionAnomaly]:
         found = [e.action for e in events if e.action in _SENSITIVE_ACTIONS]
         if not found:
             return []
         unique = sorted(set(found))
-        return [PimSessionAnomaly(
-            anomaly_type=PimSessionAnomalyType.SENSITIVE_ACTION,
-            severity="high",
-            details=(
-                f"Sensitive actions performed during session: {', '.join(unique[:5])}"
-                + (f" (+{len(unique) - 5} more)" if len(unique) > 5 else "")
-                + "."
-            ),
-            detected_at=now,
-        )]
+        return [
+            PimSessionAnomaly(
+                anomaly_type=PimSessionAnomalyType.SENSITIVE_ACTION,
+                severity="high",
+                details=(
+                    f"Sensitive actions performed during session: {', '.join(unique[:5])}"
+                    + (f" (+{len(unique) - 5} more)" if len(unique) > 5 else "")
+                    + "."
+                ),
+                detected_at=now,
+            )
+        ]
 
     async def _check_first_time_role(
-        self, tenant_id: str, session: PimSession, now: datetime,
+        self,
+        tenant_id: str,
+        session: PimSession,
+        now: datetime,
     ) -> list[PimSessionAnomaly]:
         existing, _ = await self._repo.list_pim_sessions(
             tenant_id,
@@ -158,18 +171,23 @@ class PimSessionAnomalyDetector:
             return []
 
         severity = "critical" if session.role_name in _HIGH_PRIVILEGE_ROLES else "medium"
-        return [PimSessionAnomaly(
-            anomaly_type=PimSessionAnomalyType.FIRST_TIME_ROLE,
-            severity=severity,
-            details=(
-                f"First-time activation of '{session.role_name}' "
-                f"by {session.principal_display_name}."
-            ),
-            detected_at=now,
-        )]
+        return [
+            PimSessionAnomaly(
+                anomaly_type=PimSessionAnomalyType.FIRST_TIME_ROLE,
+                severity=severity,
+                details=(
+                    f"First-time activation of '{session.role_name}' "
+                    f"by {session.principal_display_name}."
+                ),
+                detected_at=now,
+            )
+        ]
 
     def _check_new_location(
-        self, session: PimSession, sign_in_raw: list[dict[str, Any]], now: datetime,
+        self,
+        session: PimSession,
+        sign_in_raw: list[dict[str, Any]],
+        now: datetime,
     ) -> list[PimSessionAnomaly]:
         session_countries: set[str] = set()
         for si in sign_in_raw:
@@ -182,7 +200,7 @@ class PimSessionAnomalyDetector:
             return []
 
         known_countries: set[str] = set()
-        for loc_info in (session.locations or []):
+        for loc_info in session.locations or []:
             if loc_info.country:
                 known_countries.add(loc_info.country)
 
@@ -190,15 +208,17 @@ class PimSessionAnomalyDetector:
         if not new_countries or not known_countries:
             return []
 
-        return [PimSessionAnomaly(
-            anomaly_type=PimSessionAnomalyType.NEW_LOCATION,
-            severity="high",
-            details=(
-                f"Sign-in from new country/region during session: "
-                f"{', '.join(sorted(new_countries))}."
-            ),
-            detected_at=now,
-        )]
+        return [
+            PimSessionAnomaly(
+                anomaly_type=PimSessionAnomalyType.NEW_LOCATION,
+                severity="high",
+                details=(
+                    f"Sign-in from new country/region during session: "
+                    f"{', '.join(sorted(new_countries))}."
+                ),
+                detected_at=now,
+            )
+        ]
 
     async def _check_high_volume(
         self,
@@ -223,7 +243,7 @@ class PimSessionAnomalyDetector:
         counts = [s.total_event_count for s in prior]
         mean = sum(counts) / len(counts)
         variance = sum((c - mean) ** 2 for c in counts) / len(counts)
-        stddev = variance ** 0.5
+        stddev = variance**0.5
 
         if stddev == 0:
             return []
@@ -233,15 +253,17 @@ class PimSessionAnomalyDetector:
             return []
 
         severity = "high" if z_score > 3.0 else "medium"
-        return [PimSessionAnomaly(
-            anomaly_type=PimSessionAnomalyType.HIGH_VOLUME_ACTIONS,
-            severity=severity,
-            details=(
-                f"Unusually high activity during session: {current_count} events "
-                f"(z-score {z_score:.1f}, mean {mean:.1f}, stddev {stddev:.1f})."
-            ),
-            detected_at=now,
-        )]
+        return [
+            PimSessionAnomaly(
+                anomaly_type=PimSessionAnomalyType.HIGH_VOLUME_ACTIONS,
+                severity=severity,
+                details=(
+                    f"Unusually high activity during session: {current_count} events "
+                    f"(z-score {z_score:.1f}, mean {mean:.1f}, stddev {stddev:.1f})."
+                ),
+                detected_at=now,
+            )
+        ]
 
 
 def compute_risk_score(anomalies: list[PimSessionAnomaly]) -> float:
@@ -261,12 +283,14 @@ def extract_locations(sign_in_raw: list[dict[str, Any]]) -> list[SessionLocation
         seen.add(key)
         loc = si.get("location") or {}
         geo = loc.get("geoCoordinates") or {}
-        locations.append(SessionLocationInfo(
-            ip_address=ip,
-            city=loc.get("city"),
-            state=loc.get("state"),
-            country=loc.get("countryOrRegion"),
-            latitude=geo.get("latitude"),
-            longitude=geo.get("longitude"),
-        ))
+        locations.append(
+            SessionLocationInfo(
+                ip_address=ip,
+                city=loc.get("city"),
+                state=loc.get("state"),
+                country=loc.get("countryOrRegion"),
+                latitude=geo.get("latitude"),
+                longitude=geo.get("longitude"),
+            )
+        )
     return locations

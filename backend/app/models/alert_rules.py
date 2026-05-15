@@ -1,5 +1,6 @@
 # backend/app/models/alert_rules.py
 """Pydantic v2 models for alert rules and scan scheduling."""
+
 from __future__ import annotations
 
 from datetime import datetime

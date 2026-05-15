@@ -4,6 +4,7 @@ Each endpoint validates project access, extracts the target_tenant_id,
 and delegates to the same CosmosRepo / service methods used by the
 original tenant-scoped routers.
 """
+
 from __future__ import annotations
 
 import io
@@ -24,7 +25,13 @@ from app.models.best_practice import ViolationPriority, ViolationType
 from app.models.drift import DriftAlertUpdate, DriftSeverity, DriftStatus
 from app.models.export import ExportFormat
 from app.models.identity import IdentityType
-from app.models.narrative import AnalyticsData, DashboardSummary, DashboardTrends, NarrativeScope, TrendPoint
+from app.models.narrative import (
+    AnalyticsData,
+    DashboardSummary,
+    DashboardTrends,
+    NarrativeScope,
+    TrendPoint,
+)
 from app.pipelines.drift_pipeline import DriftPipeline
 from app.pipelines.recommendation_pipeline import RecommendationPipeline
 from app.services.best_practice_analyzer import BestPracticeAnalyzer
@@ -61,7 +68,11 @@ async def _tenant_id(
 ) -> str:
     """Validate access and return the project's target tenant ID."""
     project = await validate_project_access(
-        project_id, user, repo, settings, required_role=required_role,
+        project_id,
+        user,
+        repo,
+        settings,
+        required_role=required_role,
     )
     return project.target_tenant_id
 
@@ -168,9 +179,7 @@ async def get_analytics(
         avg_actions_per_identity=data.get("avg_actions_per_identity", 0.0),
         failed_action_pct=data.get("failed_action_pct", 0.0),
         new_identities_count=data.get("new_identities_count", 0),
-        daily_action_counts=[
-            TrendPoint(**d) for d in data.get("daily_action_counts", [])
-        ],
+        daily_action_counts=[TrendPoint(**d) for d in data.get("daily_action_counts", [])],
         top_actions=data.get("top_actions", []),
         most_active_identities=data.get("most_active_identities", []),
         actions_by_source=data.get("actions_by_source", {}),
@@ -217,7 +226,9 @@ async def list_identities(
     items, total = await repo.list_identities(tid, type, search, offset, size)
     return {
         "items": [i.model_dump(mode="json") for i in items],
-        "total": total, "page": page, "size": size,
+        "total": total,
+        "page": page,
+        "size": size,
     }
 
 
@@ -253,7 +264,9 @@ async def list_actions(
     items, total = await repo.list_actions(tid, identity_id, start, end, offset, size)
     return {
         "items": [i.model_dump(mode="json") for i in items],
-        "total": total, "page": page, "size": size,
+        "total": total,
+        "page": page,
+        "size": size,
     }
 
 
@@ -275,11 +288,16 @@ async def list_recommendations(
     tid = await _tenant_id(project_id, user, repo, settings)
     offset = (page - 1) * size
     items, total = await repo.list_recommendations(
-        tid, identity_type.value if identity_type else None, offset, size,
+        tid,
+        identity_type.value if identity_type else None,
+        offset,
+        size,
     )
     return {
         "items": [i.model_dump(mode="json") for i in items],
-        "total": total, "page": page, "size": size,
+        "total": total,
+        "page": page,
+        "size": size,
     }
 
 
@@ -356,7 +374,8 @@ async def bulk_export(
     buf.seek(0)
     safe = re.sub(r"[^a-zA-Z0-9_-]", "", project_id)
     return StreamingResponse(
-        buf, media_type="application/zip",
+        buf,
+        media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="roles-{safe}.zip"'},
     )
 
@@ -384,11 +403,15 @@ async def list_drift_alerts(
         tid,
         severity.value if severity else None,
         drift_status.value if drift_status else None,
-        identity_id, offset, size,
+        identity_id,
+        offset,
+        size,
     )
     return {
         "items": [i.model_dump(mode="json") for i in items],
-        "total": total, "page": page, "size": size,
+        "total": total,
+        "page": page,
+        "size": size,
     }
 
 
@@ -483,12 +506,17 @@ async def list_violations(
     tid = await _tenant_id(project_id, user, repo, settings)
     offset = (page - 1) * size
     items, total = await repo.list_violations(
-        tid, violation_type.value if violation_type else None,
-        priority.value if priority else None, offset, size,
+        tid,
+        violation_type.value if violation_type else None,
+        priority.value if priority else None,
+        offset,
+        size,
     )
     return {
         "items": [i.model_dump(mode="json") for i in items],
-        "total": total, "page": page, "size": size,
+        "total": total,
+        "page": page,
+        "size": size,
     }
 
 
@@ -597,7 +625,8 @@ async def download_executive_report(
     if format == "pdf":
         content = await generator.generate_executive_pdf(tid)
         return Response(
-            content=content, media_type="application/pdf",
+            content=content,
+            media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="report_{project_id}.pdf"'},
         )
     content = await generator.generate_executive_pptx(tid)
@@ -627,7 +656,9 @@ async def list_app_registrations(
     items, total = await repo.list_app_registrations(tid, offset, size)
     return {
         "items": [i.model_dump(mode="json") for i in items],
-        "total": total, "page": page, "size": size,
+        "total": total,
+        "page": page,
+        "size": size,
     }
 
 
@@ -673,12 +704,14 @@ async def analyze_ca_policies(
 ) -> dict[str, Any]:
     tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
     from app.services.ca_analyzer import ConditionalAccessAnalyzer
+
     async def _run(t: str, r: CosmosRepo) -> None:
         policies = await r.list_ca_policies(t)
         analyzer = ConditionalAccessAnalyzer()
         violations = analyzer.evaluate_policies(t, policies)
         for v in violations:
             await r.upsert_violation(t, v)
+
     background_tasks.add_task(_run, tid, repo)
     return {"status": "accepted", "message": "CA policy analysis started"}
 
@@ -702,7 +735,9 @@ async def list_groups(
     items, total = await repo.list_groups(tid, offset, size)
     return {
         "items": [i.model_dump(mode="json") for i in items],
-        "total": total, "page": page, "size": size,
+        "total": total,
+        "page": page,
+        "size": size,
     }
 
 
@@ -782,6 +817,7 @@ async def create_sod_rule(
 ) -> dict[str, Any]:
     tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
     from app.models.sod_policy import SodConflictRule
+
     rule = SodConflictRule(
         id=str(uuid.uuid4()),
         tenant_id=tid,
@@ -828,7 +864,9 @@ async def list_remediation_actions(
     items, total = await repo.list_remediation_actions(tid, offset, size)
     return {
         "items": [i.model_dump(mode="json") for i in items],
-        "total": total, "page": page, "size": size,
+        "total": total,
+        "page": page,
+        "size": size,
     }
 
 
@@ -842,6 +880,7 @@ async def request_remediation(
 ) -> dict[str, Any]:
     tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
     from app.services.remediation_engine import RemediationEngine
+
     engine = RemediationEngine(repo)
     action = await engine.request_action(
         tenant_id=tid,
@@ -865,6 +904,7 @@ async def approve_remediation(
 ) -> dict[str, Any]:
     tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
     from app.services.remediation_engine import RemediationEngine
+
     engine = RemediationEngine(repo)
     action = await engine.approve_action(tid, action_id, user.email)
     return action.model_dump(mode="json")
@@ -881,6 +921,7 @@ async def reject_remediation(
 ) -> dict[str, Any]:
     tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
     from app.services.remediation_engine import RemediationEngine
+
     engine = RemediationEngine(repo)
     reason = (body or {}).get("reason", "")
     action = await engine.reject_action(tid, action_id, user.email, reason)
@@ -914,6 +955,7 @@ async def create_scan_schedule(
 ) -> dict[str, Any]:
     await _tenant_id(project_id, user, repo, settings, required_role="operator")
     from app.models.alert_rules import ScanSchedule
+
     schedule = ScanSchedule(
         id=str(uuid.uuid4()),
         project_id=project_id,
@@ -964,7 +1006,8 @@ async def create_alert_rule(
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     await _tenant_id(project_id, user, repo, settings, required_role="operator")
-    from app.models.alert_rules import AlertRule, AlertChannel, AlertChannelType, AlertRuleType
+    from app.models.alert_rules import AlertChannel, AlertChannelType, AlertRule, AlertRuleType
+
     channel = AlertChannel(
         channel_type=AlertChannelType(body["channel"]["channel_type"]),
         config=body["channel"].get("config", {}),
@@ -1010,19 +1053,22 @@ async def get_compliance_report(
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     tid = await _tenant_id(project_id, user, repo, settings)
-    from app.data.compliance_mappings import get_compliance_controls, SUPPORTED_FRAMEWORKS
+    from app.data.compliance_mappings import get_compliance_controls
+
     violations, _ = await repo.list_violations(tid, offset=0, limit=1000)
     controls: list[dict[str, Any]] = []
     for v in violations:
         mapping = get_compliance_controls(v.violation_type, framework)
         if mapping:
-            controls.append({
-                "violation_id": v.id,
-                "violation_type": v.violation_type,
-                "severity": v.priority,
-                "resolved": v.resolved,
-                "controls": mapping,
-            })
+            controls.append(
+                {
+                    "violation_id": v.id,
+                    "violation_type": v.violation_type,
+                    "severity": v.priority,
+                    "resolved": v.resolved,
+                    "controls": mapping,
+                }
+            )
     return {
         "framework": framework,
         "tenant_id": tid,
@@ -1067,13 +1113,17 @@ async def trigger_sync(
 ) -> dict[str, Any]:
     """Trigger sync using the project's credentials."""
     project = await validate_project_access(
-        project_id, user, repo, settings, required_role="operator",
+        project_id,
+        user,
+        repo,
+        settings,
+        required_role="operator",
     )
 
+    from app.pipelines.ingest_pipeline import IngestPipeline
     from app.services.crypto import CryptoService
     from app.services.graph_ingest import GraphIngestService
     from app.services.graph_roles import GraphRolesService
-    from app.pipelines.ingest_pipeline import IngestPipeline
 
     crypto = CryptoService(settings)
     secret = crypto.decrypt(project.encrypted_client_secret)
@@ -1118,9 +1168,13 @@ async def list_pim_sessions(
     tid = await _tenant_id(project_id, user, repo, settings)
     offset = (page - 1) * size
     items, total = await repo.list_pim_sessions(
-        tid, status=pim_status, principal_id=principal_id,
-        role_name=role_name, has_anomalies=has_anomalies,
-        offset=offset, limit=size,
+        tid,
+        status=pim_status,
+        principal_id=principal_id,
+        role_name=role_name,
+        has_anomalies=has_anomalies,
+        offset=offset,
+        limit=size,
     )
     return {
         "items": [s.model_dump(mode="json") for s in items],
@@ -1185,9 +1239,12 @@ async def get_pim_session_events(
         raise HTTPException(status_code=404, detail="PIM session not found")
     offset = (page - 1) * size
     items, total = await repo.get_session_action_events(
-        tid, session.identity_id,
-        session.activation_time, session.expiry_time,
-        offset=offset, limit=size,
+        tid,
+        session.identity_id,
+        session.activation_time,
+        session.expiry_time,
+        offset=offset,
+        limit=size,
     )
     return {
         "items": [e.model_dump(mode="json") for e in items],
@@ -1210,7 +1267,10 @@ async def get_identity_pim_sessions(
     tid = await _tenant_id(project_id, user, repo, settings)
     offset = (page - 1) * size
     items, total = await repo.get_pim_sessions_for_identity(
-        tid, identity_id, offset=offset, limit=size,
+        tid,
+        identity_id,
+        offset=offset,
+        limit=size,
     )
     return {
         "items": [s.model_dump(mode="json") for s in items],
@@ -1236,14 +1296,17 @@ async def trigger_pim_session_sync(
     tid = project.target_tenant_id
 
     crypto = CryptoService(settings)
-    secret = crypto.decrypt(project.encrypted_client_secret) if project.encrypted_client_secret else ""
+    secret = (
+        crypto.decrypt(project.encrypted_client_secret) if project.encrypted_client_secret else ""
+    )
     graph = GraphIngestService(
         settings,
         client_id=project.client_id or None,
         client_secret=secret or None,
     )
     pipeline = PimSessionPipeline(
-        repo, graph,
+        repo,
+        graph,
         business_hours_start=settings.pim_session_business_hours_start,
         business_hours_end=settings.pim_session_business_hours_end,
     )
@@ -1276,7 +1339,9 @@ async def list_access_paths(
 ) -> dict[str, Any]:
     tid = await _tenant_id(project_id, user, repo, settings)
     offset = (page - 1) * size
-    items, total = await repo.list_access_path_analyses(tid, min_risk=min_risk, offset=offset, limit=size)
+    items, total = await repo.list_access_path_analyses(
+        tid, min_risk=min_risk, offset=offset, limit=size
+    )
     return {
         "items": [i.model_dump(mode="json") for i in items],
         "total": total,

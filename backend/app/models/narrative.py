@@ -1,5 +1,6 @@
 # backend/app/models/narrative.py
 """Pydantic v2 models for executive dashboard and AI-generated narratives."""
+
 from __future__ import annotations
 
 from datetime import datetime

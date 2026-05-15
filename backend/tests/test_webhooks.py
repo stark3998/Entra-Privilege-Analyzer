@@ -1,5 +1,6 @@
 # backend/tests/test_webhooks.py
 """Tests for Phase 7: Webhooks & Report Export."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -14,10 +15,10 @@ from app.services.cosmos import CosmosRepo, get_cosmos_repo
 from app.services.foundry import get_foundry_client
 from app.services.redis_cache import get_redis_cache
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _test_settings() -> Settings:
     return Settings(
@@ -91,12 +92,14 @@ async def client_with_executive_only(mock_repo: AsyncMock) -> AsyncClient:
 # Webhook validation tests
 # ---------------------------------------------------------------------------
 
+
 class TestWebhookValidation:
     """Tests for the Graph webhook validation handshake."""
 
     @pytest.mark.asyncio
     async def test_validation_returns_token_as_text(
-        self, client_with_mock_repo: AsyncClient,
+        self,
+        client_with_mock_repo: AsyncClient,
     ) -> None:
         """Graph sends validationToken as query param; we must echo it as text/plain."""
         resp = await client_with_mock_repo.post(
@@ -108,7 +111,8 @@ class TestWebhookValidation:
 
     @pytest.mark.asyncio
     async def test_validation_rejects_special_chars(
-        self, client_with_mock_repo: AsyncClient,
+        self,
+        client_with_mock_repo: AsyncClient,
     ) -> None:
         resp = await client_with_mock_repo.post(
             "/api/webhooks/graph?validationToken=token%3Dwith%26special"
@@ -120,12 +124,15 @@ class TestWebhookValidation:
 # Webhook notification tests
 # ---------------------------------------------------------------------------
 
+
 class TestWebhookNotification:
     """Tests for processing Graph change notifications."""
 
     @pytest.mark.asyncio
     async def test_notification_processing(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         payload = {
             "value": [
@@ -147,7 +154,8 @@ class TestWebhookNotification:
 
     @pytest.mark.asyncio
     async def test_empty_notification_list(
-        self, client_with_mock_repo: AsyncClient,
+        self,
+        client_with_mock_repo: AsyncClient,
     ) -> None:
         resp = await client_with_mock_repo.post(
             "/api/webhooks/graph",
@@ -161,12 +169,15 @@ class TestWebhookNotification:
 # Subscription endpoint tests
 # ---------------------------------------------------------------------------
 
+
 class TestSubscriptionEndpoints:
     """Tests for subscription management endpoints."""
 
     @pytest.mark.asyncio
     async def test_create_subscription(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         resp = await client_with_mock_repo.post(
             "/api/tenants/local-dev-tenant/subscriptions/create",
@@ -182,7 +193,8 @@ class TestSubscriptionEndpoints:
 
     @pytest.mark.asyncio
     async def test_create_subscription_requires_iam_admin(
-        self, client_with_executive_only: AsyncClient,
+        self,
+        client_with_executive_only: AsyncClient,
     ) -> None:
         """Executive-only users should be denied subscription creation."""
         resp = await client_with_executive_only.post(
@@ -196,7 +208,9 @@ class TestSubscriptionEndpoints:
 
     @pytest.mark.asyncio
     async def test_list_subscriptions(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         # Mock the internal query used by WebhookHandler.list_subscriptions
         mock_repo._sync_state = MagicMock()
@@ -207,9 +221,7 @@ class TestSubscriptionEndpoints:
 
         mock_repo._sync_state.query_items = MagicMock(return_value=_empty_gen())
 
-        resp = await client_with_mock_repo.get(
-            "/api/tenants/local-dev-tenant/subscriptions"
-        )
+        resp = await client_with_mock_repo.get("/api/tenants/local-dev-tenant/subscriptions")
         assert resp.status_code == 200
         body = resp.json()
         assert body["count"] == 0
@@ -217,11 +229,10 @@ class TestSubscriptionEndpoints:
 
     @pytest.mark.asyncio
     async def test_list_subscriptions_requires_iam_admin(
-        self, client_with_executive_only: AsyncClient,
+        self,
+        client_with_executive_only: AsyncClient,
     ) -> None:
-        resp = await client_with_executive_only.get(
-            "/api/tenants/local-dev-tenant/subscriptions"
-        )
+        resp = await client_with_executive_only.get("/api/tenants/local-dev-tenant/subscriptions")
         assert resp.status_code == 403
 
 
@@ -229,12 +240,15 @@ class TestSubscriptionEndpoints:
 # Report endpoint tests
 # ---------------------------------------------------------------------------
 
+
 class TestReportEndpoints:
     """Tests for the /reports API routes."""
 
     @pytest.mark.asyncio
     async def test_download_pdf_report(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_dashboard_summary.return_value = {
             "total_identities": 10,
@@ -260,7 +274,9 @@ class TestReportEndpoints:
 
     @pytest.mark.asyncio
     async def test_download_pptx_report(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_dashboard_summary.return_value = {
             "total_identities": 10,
@@ -285,7 +301,8 @@ class TestReportEndpoints:
 
     @pytest.mark.asyncio
     async def test_invalid_report_format(
-        self, client_with_mock_repo: AsyncClient,
+        self,
+        client_with_mock_repo: AsyncClient,
     ) -> None:
         resp = await client_with_mock_repo.get(
             "/api/tenants/local-dev-tenant/reports/executive?format=csv"
@@ -297,19 +314,20 @@ class TestReportEndpoints:
 # Settings endpoint tests
 # ---------------------------------------------------------------------------
 
+
 class TestSettingsEndpoints:
     """Tests for the /settings API routes."""
 
     @pytest.mark.asyncio
     async def test_get_settings_auto_creates_default(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_tenant_config.return_value = None
         mock_repo.upsert_tenant_config.side_effect = lambda c: c
 
-        resp = await client_with_mock_repo.get(
-            "/api/tenants/local-dev-tenant/settings"
-        )
+        resp = await client_with_mock_repo.get("/api/tenants/local-dev-tenant/settings")
         assert resp.status_code == 200
         data = resp.json()
         assert data["tenant_id"] == "local-dev-tenant"
@@ -318,16 +336,17 @@ class TestSettingsEndpoints:
 
     @pytest.mark.asyncio
     async def test_get_settings_requires_iam_admin(
-        self, client_with_executive_only: AsyncClient,
+        self,
+        client_with_executive_only: AsyncClient,
     ) -> None:
-        resp = await client_with_executive_only.get(
-            "/api/tenants/local-dev-tenant/settings"
-        )
+        resp = await client_with_executive_only.get("/api/tenants/local-dev-tenant/settings")
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
     async def test_update_settings_auto_creates_then_updates(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock,
+        self,
+        client_with_mock_repo: AsyncClient,
+        mock_repo: AsyncMock,
     ) -> None:
         mock_repo.get_tenant_config.return_value = None
         mock_repo.upsert_tenant_config.side_effect = lambda c: c

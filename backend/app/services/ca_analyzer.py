@@ -1,5 +1,6 @@
 # backend/app/services/ca_analyzer.py
 """Conditional Access policy analyzer — 12 tenant-level checks."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -73,18 +74,20 @@ class ConditionalAccessAnalyzer:
                 and "block" in p.grant_controls.built_in_controls
             ):
                 return []
-        return [self._build(
-            tenant_id=tenant_id,
-            violation_type=ViolationType.CA_LEGACY_AUTH_NOT_BLOCKED,
-            priority=ViolationPriority.CRITICAL,
-            title="Legacy authentication not blocked",
-            description="No enabled CA policy blocks legacy authentication (exchangeActiveSync + other). Legacy auth bypasses MFA.",
-            remediation_steps=[
-                "Create a CA policy targeting all users with client app types 'Exchange ActiveSync' and 'Other clients'.",
-                "Set grant controls to 'Block access'.",
-                "Monitor in report-only mode first, then enable.",
-            ],
-        )]
+        return [
+            self._build(
+                tenant_id=tenant_id,
+                violation_type=ViolationType.CA_LEGACY_AUTH_NOT_BLOCKED,
+                priority=ViolationPriority.CRITICAL,
+                title="Legacy authentication not blocked",
+                description="No enabled CA policy blocks legacy authentication (exchangeActiveSync + other). Legacy auth bypasses MFA.",
+                remediation_steps=[
+                    "Create a CA policy targeting all users with client app types 'Exchange ActiveSync' and 'Other clients'.",
+                    "Set grant controls to 'Block access'.",
+                    "Monitor in report-only mode first, then enable.",
+                ],
+            )
+        ]
 
     # ------------------------------------------------------------------
     # Check 2: No MFA for admins
@@ -101,17 +104,19 @@ class ConditionalAccessAnalyzer:
                 continue
             if p.grant_controls and "mfa" in p.grant_controls.built_in_controls:
                 return []
-        return [self._build(
-            tenant_id=tenant_id,
-            violation_type=ViolationType.CA_NO_MFA_FOR_ADMINS,
-            priority=ViolationPriority.CRITICAL,
-            title="No MFA required for admin roles",
-            description="No enabled CA policy requires MFA for Global Admin, Privileged Role Admin, Security Admin, or CA Admin.",
-            remediation_steps=[
-                "Create a CA policy targeting admin directory roles.",
-                "Require MFA or phishing-resistant authentication strength.",
-            ],
-        )]
+        return [
+            self._build(
+                tenant_id=tenant_id,
+                violation_type=ViolationType.CA_NO_MFA_FOR_ADMINS,
+                priority=ViolationPriority.CRITICAL,
+                title="No MFA required for admin roles",
+                description="No enabled CA policy requires MFA for Global Admin, Privileged Role Admin, Security Admin, or CA Admin.",
+                remediation_steps=[
+                    "Create a CA policy targeting admin directory roles.",
+                    "Require MFA or phishing-resistant authentication strength.",
+                ],
+            )
+        ]
 
     # ------------------------------------------------------------------
     # Check 3: No MFA for all users
@@ -130,17 +135,19 @@ class ConditionalAccessAnalyzer:
                 and "mfa" in p.grant_controls.built_in_controls
             ):
                 return []
-        return [self._build(
-            tenant_id=tenant_id,
-            violation_type=ViolationType.CA_NO_MFA_FOR_ALL,
-            priority=ViolationPriority.HIGH,
-            title="No MFA required for all users and all apps",
-            description="No enabled CA policy requires MFA for all users across all applications.",
-            remediation_steps=[
-                "Create a CA policy targeting all users and all cloud apps with MFA requirement.",
-                "Exclude emergency access (break-glass) accounts only.",
-            ],
-        )]
+        return [
+            self._build(
+                tenant_id=tenant_id,
+                violation_type=ViolationType.CA_NO_MFA_FOR_ALL,
+                priority=ViolationPriority.HIGH,
+                title="No MFA required for all users and all apps",
+                description="No enabled CA policy requires MFA for all users across all applications.",
+                remediation_steps=[
+                    "Create a CA policy targeting all users and all cloud apps with MFA requirement.",
+                    "Exclude emergency access (break-glass) accounts only.",
+                ],
+            )
+        ]
 
     # ------------------------------------------------------------------
     # Check 4: Excessive exclusions on MFA policies
@@ -155,23 +162,24 @@ class ConditionalAccessAnalyzer:
         for p in enabled:
             if not (p.grant_controls and "mfa" in p.grant_controls.built_in_controls):
                 continue
-            exclusion_count = (
-                len(p.conditions.users.exclude_users)
-                + len(p.conditions.users.exclude_groups)
+            exclusion_count = len(p.conditions.users.exclude_users) + len(
+                p.conditions.users.exclude_groups
             )
             if exclusion_count > 5:
-                violations.append(self._build(
-                    tenant_id=tenant_id,
-                    violation_type=ViolationType.CA_EXCESSIVE_EXCLUSIONS,
-                    priority=ViolationPriority.HIGH,
-                    title=f"MFA policy '{p.display_name}' has {exclusion_count} exclusions",
-                    description=f"Policy '{p.display_name}' excludes {exclusion_count} users/groups from MFA. Excessive exclusions weaken security posture.",
-                    remediation_steps=[
-                        "Review and reduce user/group exclusions to break-glass accounts only.",
-                        "Use named locations or compliant device grants instead of user exclusions.",
-                    ],
-                    policy_id=p.id,
-                ))
+                violations.append(
+                    self._build(
+                        tenant_id=tenant_id,
+                        violation_type=ViolationType.CA_EXCESSIVE_EXCLUSIONS,
+                        priority=ViolationPriority.HIGH,
+                        title=f"MFA policy '{p.display_name}' has {exclusion_count} exclusions",
+                        description=f"Policy '{p.display_name}' excludes {exclusion_count} users/groups from MFA. Excessive exclusions weaken security posture.",
+                        remediation_steps=[
+                            "Review and reduce user/group exclusions to break-glass accounts only.",
+                            "Use named locations or compliant device grants instead of user exclusions.",
+                        ],
+                        policy_id=p.id,
+                    )
+                )
         return violations
 
     # ------------------------------------------------------------------
@@ -187,20 +195,24 @@ class ConditionalAccessAnalyzer:
         for p in enabled:
             if not (p.grant_controls and "mfa" in p.grant_controls.built_in_controls):
                 continue
-            excluded_admin_roles = set(p.conditions.users.exclude_roles).intersection(_ADMIN_ROLE_IDS)
+            excluded_admin_roles = set(p.conditions.users.exclude_roles).intersection(
+                _ADMIN_ROLE_IDS
+            )
             if excluded_admin_roles:
-                violations.append(self._build(
-                    tenant_id=tenant_id,
-                    violation_type=ViolationType.CA_ADMIN_EXCLUDED,
-                    priority=ViolationPriority.CRITICAL,
-                    title=f"Admin roles excluded from MFA in '{p.display_name}'",
-                    description=f"Policy '{p.display_name}' excludes {len(excluded_admin_roles)} admin role(s) from MFA. Admins must never be excluded.",
-                    remediation_steps=[
-                        "Remove admin role exclusions from this policy immediately.",
-                        "Create a separate CA policy specifically for admin roles if different controls are needed.",
-                    ],
-                    policy_id=p.id,
-                ))
+                violations.append(
+                    self._build(
+                        tenant_id=tenant_id,
+                        violation_type=ViolationType.CA_ADMIN_EXCLUDED,
+                        priority=ViolationPriority.CRITICAL,
+                        title=f"Admin roles excluded from MFA in '{p.display_name}'",
+                        description=f"Policy '{p.display_name}' excludes {len(excluded_admin_roles)} admin role(s) from MFA. Admins must never be excluded.",
+                        remediation_steps=[
+                            "Remove admin role exclusions from this policy immediately.",
+                            "Create a separate CA policy specifically for admin roles if different controls are needed.",
+                        ],
+                        policy_id=p.id,
+                    )
+                )
         return violations
 
     # ------------------------------------------------------------------
@@ -215,18 +227,20 @@ class ConditionalAccessAnalyzer:
         for p in enabled:
             if p.conditions.sign_in_risk_levels or p.conditions.user_risk_levels:
                 return []
-        return [self._build(
-            tenant_id=tenant_id,
-            violation_type=ViolationType.CA_NO_RISK_POLICY,
-            priority=ViolationPriority.HIGH,
-            title="No risk-based Conditional Access policy",
-            description="No enabled CA policy uses sign-in risk or user risk levels. Risk-based policies are essential for Identity Protection.",
-            remediation_steps=[
-                "Create a policy requiring MFA for medium+ sign-in risk.",
-                "Create a policy requiring password change for high user risk.",
-                "Ensure Entra ID P2 licensing is in place for risk detection.",
-            ],
-        )]
+        return [
+            self._build(
+                tenant_id=tenant_id,
+                violation_type=ViolationType.CA_NO_RISK_POLICY,
+                priority=ViolationPriority.HIGH,
+                title="No risk-based Conditional Access policy",
+                description="No enabled CA policy uses sign-in risk or user risk levels. Risk-based policies are essential for Identity Protection.",
+                remediation_steps=[
+                    "Create a policy requiring MFA for medium+ sign-in risk.",
+                    "Create a policy requiring password change for high user risk.",
+                    "Ensure Entra ID P2 licensing is in place for risk detection.",
+                ],
+            )
+        ]
 
     # ------------------------------------------------------------------
     # Check 7: Critical policies in report-only mode
@@ -238,10 +252,7 @@ class ConditionalAccessAnalyzer:
         all_policies: list[ConditionalAccessPolicyRecord],
     ) -> list[BestPracticeViolation]:
         violations: list[BestPracticeViolation] = []
-        report_only = [
-            p for p in all_policies
-            if p.state == "enabledForReportingButNotEnforced"
-        ]
+        report_only = [p for p in all_policies if p.state == "enabledForReportingButNotEnforced"]
         for p in report_only:
             client_types = set(p.conditions.client_app_types)
             is_legacy_block = _LEGACY_AUTH_TYPES.issubset(client_types)
@@ -252,18 +263,20 @@ class ConditionalAccessAnalyzer:
                 and "mfa" in p.grant_controls.built_in_controls
             )
             if is_legacy_block or is_all_users_mfa:
-                violations.append(self._build(
-                    tenant_id=tenant_id,
-                    violation_type=ViolationType.CA_REPORT_ONLY_CRITICAL,
-                    priority=ViolationPriority.MEDIUM,
-                    title=f"Critical policy '{p.display_name}' is report-only",
-                    description=f"Policy '{p.display_name}' is in report-only mode but covers a critical control (legacy auth block or all-users MFA). Enable it after review.",
-                    remediation_steps=[
-                        "Review the policy's report-only impact in the sign-in logs.",
-                        "Switch the policy state to 'enabled' once impact is acceptable.",
-                    ],
-                    policy_id=p.id,
-                ))
+                violations.append(
+                    self._build(
+                        tenant_id=tenant_id,
+                        violation_type=ViolationType.CA_REPORT_ONLY_CRITICAL,
+                        priority=ViolationPriority.MEDIUM,
+                        title=f"Critical policy '{p.display_name}' is report-only",
+                        description=f"Policy '{p.display_name}' is in report-only mode but covers a critical control (legacy auth block or all-users MFA). Enable it after review.",
+                        remediation_steps=[
+                            "Review the policy's report-only impact in the sign-in logs.",
+                            "Switch the policy state to 'enabled' once impact is acceptable.",
+                        ],
+                        policy_id=p.id,
+                    )
+                )
         return violations
 
     # ------------------------------------------------------------------
@@ -277,19 +290,23 @@ class ConditionalAccessAnalyzer:
     ) -> list[BestPracticeViolation]:
         compliance_controls = {"compliantDevice", "domainJoinedDevice"}
         for p in enabled:
-            if p.grant_controls and compliance_controls.intersection(p.grant_controls.built_in_controls):
+            if p.grant_controls and compliance_controls.intersection(
+                p.grant_controls.built_in_controls
+            ):
                 return []
-        return [self._build(
-            tenant_id=tenant_id,
-            violation_type=ViolationType.CA_NO_DEVICE_COMPLIANCE,
-            priority=ViolationPriority.MEDIUM,
-            title="No device compliance requirement in CA policies",
-            description="No enabled CA policy requires a compliant or domain-joined device. Device compliance adds a strong signal for access decisions.",
-            remediation_steps=[
-                "Create a CA policy requiring compliant device for corporate app access.",
-                "Ensure Intune device compliance policies are configured.",
-            ],
-        )]
+        return [
+            self._build(
+                tenant_id=tenant_id,
+                violation_type=ViolationType.CA_NO_DEVICE_COMPLIANCE,
+                priority=ViolationPriority.MEDIUM,
+                title="No device compliance requirement in CA policies",
+                description="No enabled CA policy requires a compliant or domain-joined device. Device compliance adds a strong signal for access decisions.",
+                remediation_steps=[
+                    "Create a CA policy requiring compliant device for corporate app access.",
+                    "Ensure Intune device compliance policies are configured.",
+                ],
+            )
+        ]
 
     # ------------------------------------------------------------------
     # Check 9: No MFA for guest users
@@ -305,17 +322,19 @@ class ConditionalAccessAnalyzer:
             has_mfa = p.grant_controls and "mfa" in p.grant_controls.built_in_controls
             if targets_guests and has_mfa:
                 return []
-        return [self._build(
-            tenant_id=tenant_id,
-            violation_type=ViolationType.CA_NO_GUEST_MFA,
-            priority=ViolationPriority.HIGH,
-            title="No MFA required for guest/external users",
-            description="No enabled CA policy requires MFA specifically for guest or external users.",
-            remediation_steps=[
-                "Create a CA policy targeting 'Guest or external users' with MFA requirement.",
-                "Consider requiring phishing-resistant MFA for guests accessing sensitive apps.",
-            ],
-        )]
+        return [
+            self._build(
+                tenant_id=tenant_id,
+                violation_type=ViolationType.CA_NO_GUEST_MFA,
+                priority=ViolationPriority.HIGH,
+                title="No MFA required for guest/external users",
+                description="No enabled CA policy requires MFA specifically for guest or external users.",
+                remediation_steps=[
+                    "Create a CA policy targeting 'Guest or external users' with MFA requirement.",
+                    "Consider requiring phishing-resistant MFA for guests accessing sensitive apps.",
+                ],
+            )
+        ]
 
     # ------------------------------------------------------------------
     # Check 10: Grant controls with OR operator and multiple controls
@@ -334,18 +353,20 @@ class ConditionalAccessAnalyzer:
                 and len(p.grant_controls.built_in_controls) > 1
             ):
                 controls = ", ".join(p.grant_controls.built_in_controls)
-                violations.append(self._build(
-                    tenant_id=tenant_id,
-                    violation_type=ViolationType.CA_GRANT_OR_OPERATOR,
-                    priority=ViolationPriority.MEDIUM,
-                    title=f"OR operator with multiple grant controls in '{p.display_name}'",
-                    description=f"Policy '{p.display_name}' uses OR between [{controls}]. Users can satisfy the weakest control. Use AND for defense in depth.",
-                    remediation_steps=[
-                        "Change the grant operator to 'AND' to require all controls.",
-                        "If OR is intentional, document the justification.",
-                    ],
-                    policy_id=p.id,
-                ))
+                violations.append(
+                    self._build(
+                        tenant_id=tenant_id,
+                        violation_type=ViolationType.CA_GRANT_OR_OPERATOR,
+                        priority=ViolationPriority.MEDIUM,
+                        title=f"OR operator with multiple grant controls in '{p.display_name}'",
+                        description=f"Policy '{p.display_name}' uses OR between [{controls}]. Users can satisfy the weakest control. Use AND for defense in depth.",
+                        remediation_steps=[
+                            "Change the grant operator to 'AND' to require all controls.",
+                            "If OR is intentional, document the justification.",
+                        ],
+                        policy_id=p.id,
+                    )
+                )
         return violations
 
     # ------------------------------------------------------------------
@@ -362,17 +383,19 @@ class ConditionalAccessAnalyzer:
             has_mfa = p.grant_controls and "mfa" in p.grant_controls.built_in_controls
             if targets_azure_mgmt and has_mfa:
                 return []
-        return [self._build(
-            tenant_id=tenant_id,
-            violation_type=ViolationType.CA_NO_AZURE_MGMT_MFA,
-            priority=ViolationPriority.HIGH,
-            title="No MFA required for Azure Management",
-            description=f"No enabled CA policy requires MFA for the Azure Management app ({_AZURE_MGMT_APP_ID}). Portal and CLI access should require MFA.",
-            remediation_steps=[
-                "Create a CA policy targeting the 'Microsoft Azure Management' cloud app.",
-                "Require MFA or phishing-resistant authentication strength.",
-            ],
-        )]
+        return [
+            self._build(
+                tenant_id=tenant_id,
+                violation_type=ViolationType.CA_NO_AZURE_MGMT_MFA,
+                priority=ViolationPriority.HIGH,
+                title="No MFA required for Azure Management",
+                description=f"No enabled CA policy requires MFA for the Azure Management app ({_AZURE_MGMT_APP_ID}). Portal and CLI access should require MFA.",
+                remediation_steps=[
+                    "Create a CA policy targeting the 'Microsoft Azure Management' cloud app.",
+                    "Require MFA or phishing-resistant authentication strength.",
+                ],
+            )
+        ]
 
     # ------------------------------------------------------------------
     # Check 12: All-apps policy with application exclusions
@@ -385,23 +408,22 @@ class ConditionalAccessAnalyzer:
     ) -> list[BestPracticeViolation]:
         violations: list[BestPracticeViolation] = []
         for p in enabled:
-            if (
-                "All" in p.conditions.include_applications
-                and p.conditions.exclude_applications
-            ):
+            if "All" in p.conditions.include_applications and p.conditions.exclude_applications:
                 count = len(p.conditions.exclude_applications)
-                violations.append(self._build(
-                    tenant_id=tenant_id,
-                    violation_type=ViolationType.CA_ALL_APPS_EXCLUSIONS,
-                    priority=ViolationPriority.MEDIUM,
-                    title=f"All-apps policy '{p.display_name}' excludes {count} app(s)",
-                    description=f"Policy '{p.display_name}' targets all applications but excludes {count}. Excluded apps bypass this policy's controls.",
-                    remediation_steps=[
-                        "Review excluded applications and remove unnecessary exclusions.",
-                        "Create separate policies for apps that need different controls.",
-                    ],
-                    policy_id=p.id,
-                ))
+                violations.append(
+                    self._build(
+                        tenant_id=tenant_id,
+                        violation_type=ViolationType.CA_ALL_APPS_EXCLUSIONS,
+                        priority=ViolationPriority.MEDIUM,
+                        title=f"All-apps policy '{p.display_name}' excludes {count} app(s)",
+                        description=f"Policy '{p.display_name}' targets all applications but excludes {count}. Excluded apps bypass this policy's controls.",
+                        remediation_steps=[
+                            "Review excluded applications and remove unnecessary exclusions.",
+                            "Create separate policies for apps that need different controls.",
+                        ],
+                        policy_id=p.id,
+                    )
+                )
         return violations
 
     # ------------------------------------------------------------------

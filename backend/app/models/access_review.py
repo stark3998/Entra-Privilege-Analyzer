@@ -1,5 +1,6 @@
 # backend/app/models/access_review.py
 """Pydantic v2 model for Entra ID access review definitions."""
+
 from __future__ import annotations
 
 from datetime import datetime

@@ -1,5 +1,6 @@
 # backend/app/services/custom_role_analyzer.py
 """Best-practice checks for Entra ID / Azure RBAC custom role definitions."""
+
 from __future__ import annotations
 
 import logging
@@ -101,9 +102,7 @@ class CustomRoleAnalyzer:
         role: CustomRoleProfile,
     ) -> list[BestPracticeViolation]:
         """Equivalent to built-in: overlap >= 90% with a built-in role."""
-        high_overlap = [
-            o for o in role.overlap_with_builtin if o.overlap_pct >= 0.9
-        ]
+        high_overlap = [o for o in role.overlap_with_builtin if o.overlap_pct >= 0.9]
         if not high_overlap:
             return []
 
@@ -163,10 +162,7 @@ class CustomRoleAnalyzer:
     ) -> list[BestPracticeViolation]:
         """Critical permissions: role contains actions that enable privilege escalation."""
         perms_lower = [p.lower() for p in role.permissions]
-        matched = [
-            ep for ep in _ESCALATION_PERMISSIONS
-            if any(ep in perm for perm in perms_lower)
-        ]
+        matched = [ep for ep in _ESCALATION_PERMISSIONS if any(ep in perm for perm in perms_lower)]
         if not matched:
             return []
 

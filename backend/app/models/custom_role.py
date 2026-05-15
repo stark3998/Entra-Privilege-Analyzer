@@ -1,5 +1,6 @@
 # backend/app/models/custom_role.py
 """Pydantic v2 model for Entra ID / Azure RBAC custom role definitions."""
+
 from __future__ import annotations
 
 from datetime import datetime

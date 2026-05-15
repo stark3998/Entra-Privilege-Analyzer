@@ -1,5 +1,6 @@
 # backend/app/services/group_analyzer.py
 """Best-practice checks for Entra ID groups with role assignments."""
+
 from __future__ import annotations
 
 import logging
@@ -53,7 +54,9 @@ class GroupAnalyzer:
             assigned_roles = role_assignments.get(group.id, []) or group.roles_assigned
 
             violations.extend(self._check_ownerless_role_group(tenant_id, group, assigned_roles))
-            violations.extend(self._check_non_role_assignable_admin(tenant_id, group, assigned_roles))
+            violations.extend(
+                self._check_non_role_assignable_admin(tenant_id, group, assigned_roles)
+            )
             violations.extend(self._check_dynamic_admin(tenant_id, group, assigned_roles))
             violations.extend(self._check_broad_dynamic_rule(tenant_id, group))
             violations.extend(self._check_large_role_bearing(tenant_id, group, assigned_roles))

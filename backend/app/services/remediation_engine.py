@@ -1,5 +1,6 @@
 # backend/app/services/remediation_engine.py
 """Remediation action lifecycle: request -> approve -> execute."""
+
 from __future__ import annotations
 
 import logging
@@ -48,7 +49,9 @@ class RemediationEngine:
             requested_by=requested_by,
             status=RemediationStatus.PENDING,
             justification=justification,
-            graph_operation=self._describe_graph_operation(action_type, target_identity_id, target_resource_id),
+            graph_operation=self._describe_graph_operation(
+                action_type, target_identity_id, target_resource_id
+            ),
             created_at=now,
         )
 
@@ -63,7 +66,10 @@ class RemediationEngine:
         return action
 
     async def approve_action(
-        self, tenant_id: str, action_id: str, approved_by: str,
+        self,
+        tenant_id: str,
+        action_id: str,
+        approved_by: str,
     ) -> RemediationAction:
         """Approve a pending remediation action."""
         action = await self._repo.get_remediation_action(tenant_id, action_id)
@@ -83,12 +89,18 @@ class RemediationEngine:
         )
         await self._repo.upsert_remediation_action(action)
         logger.info(
-            "Remediation action approved: id=%s by=%s", action_id, approved_by,
+            "Remediation action approved: id=%s by=%s",
+            action_id,
+            approved_by,
         )
         return action
 
     async def reject_action(
-        self, tenant_id: str, action_id: str, rejected_by: str, reason: str,
+        self,
+        tenant_id: str,
+        action_id: str,
+        rejected_by: str,
+        reason: str,
     ) -> RemediationAction:
         """Reject a pending remediation action."""
         action = await self._repo.get_remediation_action(tenant_id, action_id)
@@ -117,7 +129,10 @@ class RemediationEngine:
         return action
 
     async def execute_action(
-        self, tenant_id: str, action_id: str, obo_token: str,
+        self,
+        tenant_id: str,
+        action_id: str,
+        obo_token: str,
     ) -> RemediationAction:
         """Execute an approved remediation action via Graph API.
 
@@ -142,8 +157,7 @@ class RemediationEngine:
         try:
             # ---- Placeholder: actual Graph API calls go here ----
             logger.info(
-                "PLACEHOLDER: would execute Graph API call for action %s: %s "
-                "(token length=%d)",
+                "PLACEHOLDER: would execute Graph API call for action %s: %s (token length=%d)",
                 action_id,
                 action.graph_operation,
                 len(obo_token),
@@ -169,7 +183,9 @@ class RemediationEngine:
             )
             await self._repo.upsert_remediation_action(action)
             logger.error(
-                "Remediation action failed: id=%s error=%s", action_id, exc,
+                "Remediation action failed: id=%s error=%s",
+                action_id,
+                exc,
             )
 
         return action
@@ -191,8 +207,7 @@ class RemediationEngine:
                 f"for identity {target_identity_id}"
             ),
             RemediationActionType.DISABLE_ACCOUNT: (
-                f"PATCH /users/{target_identity_id} "
-                f"set accountEnabled=false"
+                f"PATCH /users/{target_identity_id} set accountEnabled=false"
             ),
             RemediationActionType.REMOVE_GROUP_MEMBER: (
                 f"DELETE /groups/{target_resource_id}/members/{target_identity_id}/$ref"

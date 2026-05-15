@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any
 
 from app.models.identity import CurrentRole
 from app.services.graph_ingest import GraphIngestService

@@ -1,5 +1,6 @@
 # backend/app/pipelines/drift_pipeline.py
 """Orchestrates drift detection across all identities in a tenant."""
+
 from __future__ import annotations
 
 import logging
@@ -40,7 +41,9 @@ class DriftPipeline:
         page_size = 100
         while True:
             items, total = await self._repo.list_identities(
-                tenant_id=tenant_id, offset=offset, limit=page_size,
+                tenant_id=tenant_id,
+                offset=offset,
+                limit=page_size,
             )
             all_identities.extend(items)
             if offset + page_size >= total:
@@ -67,7 +70,9 @@ class DriftPipeline:
                 permission_gaps = rec.permission_gaps if rec else []
 
                 risk_score = self._scorer.compute_risk_score(
-                    identity, alerts, permission_gaps,
+                    identity,
+                    alerts,
+                    permission_gaps,
                 )
 
                 # Update identity risk_score

@@ -1,5 +1,6 @@
 # backend/app/services/risk_scorer.py
 """Composite risk scoring for identities based on drift, privilege, and staleness."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -70,11 +71,7 @@ class RiskScorer:
 
     def _drift_component(self, alerts: list[DriftAlert]) -> float:
         """Score from active (non-resolved) drift alerts."""
-        raw = sum(
-            _SEVERITY_WEIGHTS.get(a.severity, 1.0)
-            for a in alerts
-            if a.status != "resolved"
-        )
+        raw = sum(_SEVERITY_WEIGHTS.get(a.severity, 1.0) for a in alerts if a.status != "resolved")
         # Normalise: raw / _MAX_DRIFT_RAW * 100, capped at 100
         return min(raw / _MAX_DRIFT_RAW * 100.0, 100.0)
 

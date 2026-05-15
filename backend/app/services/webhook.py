@@ -1,5 +1,6 @@
 # backend/app/services/webhook.py
 """Microsoft Graph change notification webhook handler."""
+
 from __future__ import annotations
 
 import logging
@@ -12,9 +13,7 @@ from app.services.cosmos import CosmosRepo
 logger = logging.getLogger(__name__)
 
 _VALIDATION_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_\-\.]{1,512}$")
-_TENANT_ID_PATTERN = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
+_TENANT_ID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
 class WebhookHandler:
@@ -39,7 +38,9 @@ class WebhookHandler:
         return bool(_TENANT_ID_PATTERN.match(tenant_id))
 
     async def process_notification(
-        self, tenant_id: str, notification: dict[str, Any],
+        self,
+        tenant_id: str,
+        notification: dict[str, Any],
     ) -> None:
         """Extract change data from a Graph notification and log for processing."""
         if self._expected_client_state:

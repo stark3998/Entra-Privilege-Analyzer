@@ -7,18 +7,18 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
-import pytest
 import httpx
+import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.auth.deps import CurrentUser, get_current_user
-from app.pipelines.ingest_pipeline import IngestPipeline
 from app.config import Settings, get_settings
 from app.models.action import ActionEvent, ActionSource
 from app.models.identity import IdentityProfile, IdentityType
-from app.services.graph_ingest import GraphIngestService, GraphPermissionError, GraphThrottledError
 from app.models.project import Project, ScanRecord
+from app.pipelines.ingest_pipeline import IngestPipeline
 from app.services.cosmos import CosmosRepo, get_cosmos_repo
+from app.services.graph_ingest import GraphIngestService, GraphPermissionError, GraphThrottledError
 from app.services.scan_events import ScanEventBroker
 
 # ---------------------------------------------------------------------------
@@ -103,6 +103,7 @@ SAMPLE_SIGN_IN_LOG_FAILURE: dict[str, Any] = {
 # Test fixtures
 # ---------------------------------------------------------------------------
 
+
 def _test_settings() -> Settings:
     return Settings(
         local_mode=True,
@@ -159,6 +160,7 @@ async def client_with_mock_repo(mock_repo: AsyncMock) -> AsyncClient:
 # parse_audit_event tests
 # ---------------------------------------------------------------------------
 
+
 class TestParseAuditEvent:
     """Tests for GraphIngestService.parse_audit_event."""
 
@@ -213,6 +215,7 @@ class TestParseAuditEvent:
 # parse_sign_in_event tests
 # ---------------------------------------------------------------------------
 
+
 class TestParseSignInEvent:
     """Tests for GraphIngestService.parse_sign_in_event."""
 
@@ -255,6 +258,7 @@ class TestParseSignInEvent:
 # ---------------------------------------------------------------------------
 # Identity list endpoint tests (mocked cosmos)
 # ---------------------------------------------------------------------------
+
 
 class TestListIdentitiesEndpoint:
     """Tests for GET /api/tenants/{tid}/identities."""
@@ -309,9 +313,7 @@ class TestListIdentitiesEndpoint:
         """When no identities exist, return an empty list with total=0."""
         mock_repo.list_identities.return_value = ([], 0)
 
-        resp = await client_with_mock_repo.get(
-            "/api/tenants/local-dev-tenant/identities"
-        )
+        resp = await client_with_mock_repo.get("/api/tenants/local-dev-tenant/identities")
         assert resp.status_code == 200
         body = resp.json()
         assert body["items"] == []
@@ -321,6 +323,7 @@ class TestListIdentitiesEndpoint:
 # ---------------------------------------------------------------------------
 # Tenant-ID validation tests
 # ---------------------------------------------------------------------------
+
 
 class TestTenantIdValidation:
     """Ensure requests for a different tenant are rejected when not in local mode."""
@@ -401,15 +404,14 @@ class TestTenantIdValidation:
         """In LOCAL_MODE, any tenant_id should be allowed."""
         mock_repo.list_identities.return_value = ([], 0)
 
-        resp = await client_with_mock_repo.get(
-            "/api/tenants/any-random-tenant/identities"
-        )
+        resp = await client_with_mock_repo.get("/api/tenants/any-random-tenant/identities")
         assert resp.status_code == 200
 
 
 # ---------------------------------------------------------------------------
 # Get identity endpoint tests
 # ---------------------------------------------------------------------------
+
 
 class TestGetIdentityEndpoint:
     """Tests for GET /api/tenants/{tid}/identities/{id}."""
@@ -431,9 +433,7 @@ class TestGetIdentityEndpoint:
         )
         mock_repo.get_identity.return_value = profile
 
-        resp = await client_with_mock_repo.get(
-            "/api/tenants/local-dev-tenant/identities/User_abc"
-        )
+        resp = await client_with_mock_repo.get("/api/tenants/local-dev-tenant/identities/User_abc")
         assert resp.status_code == 200
         assert resp.json()["display_name"] == "Alice"
 
@@ -458,10 +458,16 @@ class TestGraphIngestErrors:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A transient 429 should be retried with backoff before succeeding."""
-        service = GraphIngestService(_test_settings(), token_provider=AsyncMock(return_value="token"))
+        service = GraphIngestService(
+            _test_settings(), token_provider=AsyncMock(return_value="token")
+        )
         responses = [
-            httpx.Response(429, headers={"Retry-After": "0"}, json={"error": {"code": "TooManyRequests", "message": "Slow down"}}),
-            httpx.Response(200, json={"value": [{"id": "event-1"}]})
+            httpx.Response(
+                429,
+                headers={"Retry-After": "0"},
+                json={"error": {"code": "TooManyRequests", "message": "Slow down"}},
+            ),
+            httpx.Response(200, json={"value": [{"id": "event-1"}]}),
         ]
         sleep_calls: list[float] = []
 
@@ -481,7 +487,9 @@ class TestGraphIngestErrors:
             get = _get
 
         monkeypatch.setattr("app.services.graph_ingest.asyncio.sleep", _sleep)
-        monkeypatch.setattr("app.services.graph_ingest.httpx.AsyncClient", lambda *args, **kwargs: _FakeClient())
+        monkeypatch.setattr(
+            "app.services.graph_ingest.httpx.AsyncClient", lambda *args, **kwargs: _FakeClient()
+        )
 
         events, delta_link = await service.fetch_audit_logs("tenant-001")
 
@@ -490,14 +498,18 @@ class TestGraphIngestErrors:
         assert sleep_calls == [0.0]
 
     @pytest.mark.asyncio
-    async def test_caps_retry_after_delay(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_caps_retry_after_delay(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A large Retry-After value should be capped to the configured max backoff."""
-        service = GraphIngestService(_test_settings(), token_provider=AsyncMock(return_value="token"))
+        service = GraphIngestService(
+            _test_settings(), token_provider=AsyncMock(return_value="token")
+        )
         responses = [
-            httpx.Response(429, headers={"Retry-After": "120"}, json={"error": {"code": "TooManyRequests", "message": "Slow down"}}),
-            httpx.Response(200, json={"value": [{"id": "event-1"}]})
+            httpx.Response(
+                429,
+                headers={"Retry-After": "120"},
+                json={"error": {"code": "TooManyRequests", "message": "Slow down"}},
+            ),
+            httpx.Response(200, json={"value": [{"id": "event-1"}]}),
         ]
         sleep_calls: list[float] = []
 
@@ -517,7 +529,9 @@ class TestGraphIngestErrors:
             get = _get
 
         monkeypatch.setattr("app.services.graph_ingest.asyncio.sleep", _sleep)
-        monkeypatch.setattr("app.services.graph_ingest.httpx.AsyncClient", lambda *args, **kwargs: _FakeClient())
+        monkeypatch.setattr(
+            "app.services.graph_ingest.httpx.AsyncClient", lambda *args, **kwargs: _FakeClient()
+        )
 
         await service.fetch_audit_logs("tenant-001")
 
@@ -528,12 +542,19 @@ class TestGraphIngestErrors:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Graph 403s should become a typed permission error with context."""
-        service = GraphIngestService(_test_settings(), token_provider=AsyncMock(return_value="token"))
+        service = GraphIngestService(
+            _test_settings(), token_provider=AsyncMock(return_value="token")
+        )
 
         async def _get(*args: Any, **kwargs: Any) -> httpx.Response:
             return httpx.Response(
                 403,
-                json={"error": {"code": "Authorization_RequestDenied", "message": "Insufficient privileges to complete the operation."}},
+                json={
+                    "error": {
+                        "code": "Authorization_RequestDenied",
+                        "message": "Insufficient privileges to complete the operation.",
+                    }
+                },
             )
 
         class _FakeClient:
@@ -545,7 +566,9 @@ class TestGraphIngestErrors:
 
             get = _get
 
-        monkeypatch.setattr("app.services.graph_ingest.httpx.AsyncClient", lambda *args, **kwargs: _FakeClient())
+        monkeypatch.setattr(
+            "app.services.graph_ingest.httpx.AsyncClient", lambda *args, **kwargs: _FakeClient()
+        )
 
         with pytest.raises(GraphPermissionError) as exc_info:
             await service.fetch_audit_logs("tenant-001")
@@ -618,7 +641,9 @@ class TestTriggerScanErrorMapping:
         raise AssertionError("background scan task did not persist final state")
 
     @pytest.fixture()
-    async def scan_client(self, mock_repo: AsyncMock, monkeypatch: pytest.MonkeyPatch) -> AsyncClient:
+    async def scan_client(
+        self, mock_repo: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> AsyncClient:
         from app.main import create_app
 
         project = Project(
@@ -658,6 +683,7 @@ class TestTriggerScanErrorMapping:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A delegated/app Graph permission failure should be persisted after the async 202 response."""
+
         async def _run(*args: Any, **kwargs: Any) -> dict[str, Any]:
             raise GraphPermissionError(
                 "Microsoft Graph denied access to https://graph.microsoft.com/beta/auditLogs/directoryAudits. Check that the configured identity has the required Graph permissions.",
@@ -681,9 +707,7 @@ class TestTriggerScanErrorMapping:
         scan_client: AsyncClient,
         mock_repo: AsyncMock,
     ) -> None:
-        resp = await scan_client.post(
-            "/api/projects/project-001/scans/trigger?auth_mode=delegated"
-        )
+        resp = await scan_client.post("/api/projects/project-001/scans/trigger?auth_mode=delegated")
 
         assert resp.status_code == 401
         assert resp.json()["detail"] == "Missing Bearer token"
@@ -697,6 +721,7 @@ class TestTriggerScanErrorMapping:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Graph throttling should be persisted after the async 202 response."""
+
         async def _run(*args: Any, **kwargs: Any) -> dict[str, Any]:
             raise GraphThrottledError(
                 "Microsoft Graph throttled requests to https://graph.microsoft.com/beta/auditLogs/directoryAudits after retrying.",
@@ -729,7 +754,10 @@ class TestTriggerScanErrorMapping:
         resp = await scan_client.post("/api/projects/project-001/scans/trigger")
 
         assert resp.status_code == 503
-        assert resp.json()["detail"] == "Scan event streaming is temporarily unavailable. Retry the scan."
+        assert (
+            resp.json()["detail"]
+            == "Scan event streaming is temporarily unavailable. Retry the scan."
+        )
         assert mock_repo.upsert_scan.await_count >= 2
         persisted_scan = mock_repo.upsert_scan.await_args_list[-1].args[0]
         assert persisted_scan.status == "failed"
@@ -754,7 +782,10 @@ class TestTriggerScanErrorMapping:
         assert resp.status_code == 202
         await self._wait_for_background_scan_write(mock_repo)
         persisted_scan = mock_repo.upsert_scan.await_args_list[-1].args[0]
-        assert persisted_scan.error_message == "Scan failed due to an internal server error. Check backend logs for details."
+        assert (
+            persisted_scan.error_message
+            == "Scan failed due to an internal server error. Check backend logs for details."
+        )
 
     @pytest.mark.asyncio
     async def test_trigger_scan_reclaims_expired_running_scan(
@@ -812,11 +843,7 @@ class TestTriggerScanErrorMapping:
         assert reclaimed_scan.id == "scan-stale"
         assert reclaimed_scan.status == "failed"
         assert reclaimed_scan.error_message == "Scan abandoned after backend restart or task loss."
-        new_scan_writes = [
-            scan
-            for scan in persisted_scans[1:]
-            if scan.id != "scan-stale"
-        ]
+        new_scan_writes = [scan for scan in persisted_scans[1:] if scan.id != "scan-stale"]
         assert new_scan_writes
         assert any(scan.status in {"running", "completed"} for scan in new_scan_writes)
         running_writes = [scan for scan in new_scan_writes if scan.status == "running"]
@@ -973,4 +1000,3 @@ class TestTriggerScanErrorMapping:
         assert final_scan.owner_instance_id is None
         assert final_scan.heartbeat_at is None
         assert final_scan.lease_expires_at is None
-

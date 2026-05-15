@@ -1,5 +1,6 @@
 # backend/app/services/role_recommender.py
 """Main recommendation engine — computes least-privilege role recommendations."""
+
 from __future__ import annotations
 
 import logging
@@ -59,8 +60,7 @@ class RoleRecommender:
         custom_role = CustomRoleDefinition(
             name=f"Custom-{profile.identity_type.value}-{object_id_prefix}",
             description=(
-                f"Least-privilege custom role for {profile.display_name} "
-                f"based on observed actions"
+                f"Least-privilege custom role for {profile.display_name} based on observed actions"
             ),
             scope=scope,
             permissions=sorted(required_permissions),

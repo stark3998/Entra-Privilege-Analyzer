@@ -11,24 +11,24 @@ from azure.cosmos.aio import ContainerProxy, CosmosClient, DatabaseProxy
 from azure.cosmos.exceptions import CosmosHttpResponseError, CosmosResourceNotFoundError
 
 from app.config import Settings
+from app.models.access_path import AccessPathAnalysis, AccessPathSummary
+from app.models.access_review import AccessReviewDefinition
 from app.models.action import ActionEvent
 from app.models.alert_rules import AlertRule, ScanSchedule
-from app.models.best_practice import BestPracticeViolation
-from app.models.drift import BaselineStats, DriftAlert
-from app.models.identity import IdentityProfile
-from app.models.narrative import Narrative
-from app.models.project import Project, ProjectMember, ScanLogEntry, ScanRecord
-from app.models.role import RoleRecommendation
-from app.models.access_review import AccessReviewDefinition
 from app.models.app_registration import AppRegistrationProfile
+from app.models.best_practice import BestPracticeViolation
 from app.models.conditional_access import ConditionalAccessPolicyRecord
 from app.models.custom_role import CustomRoleProfile
+from app.models.drift import BaselineStats, DriftAlert
 from app.models.group import GroupProfile
+from app.models.identity import IdentityProfile
 from app.models.mfa_status import MfaRegistrationRecord
+from app.models.narrative import Narrative
+from app.models.pim_session import PimSession
+from app.models.project import Project, ProjectMember, ScanLogEntry, ScanRecord
 from app.models.remediation import RemediationAction
+from app.models.role import RoleRecommendation
 from app.models.sod_policy import SodConflictRule
-from app.models.pim_session import PimSession, PimSessionAnalytics
-from app.models.access_path import AccessPathAnalysis, AccessPathSummary
 from app.models.tenant import TenantConfig
 
 logger = logging.getLogger(__name__)
@@ -315,9 +315,7 @@ class CosmosRepo:
         except CosmosResourceNotFoundError:
             return None
 
-    async def upsert_identity(
-        self, tenant_id: str, profile: IdentityProfile
-    ) -> IdentityProfile:
+    async def upsert_identity(self, tenant_id: str, profile: IdentityProfile) -> IdentityProfile:
         """Insert or replace an identity profile."""
         body = profile.model_dump(mode="json")
         body["tenantId"] = tenant_id
@@ -410,9 +408,7 @@ class CosmosRepo:
                 await self._action_events.upsert_item(body=body)
                 inserted += 1
             except CosmosHttpResponseError as exc:
-                logger.warning(
-                    "Failed to insert action event %s: %s", event.id, exc.message
-                )
+                logger.warning("Failed to insert action event %s: %s", event.id, exc.message)
         return inserted
 
     async def load_all_action_events(
@@ -437,7 +433,9 @@ class CosmosRepo:
         return [
             ActionEvent.model_validate(item)
             async for item in self._action_events.query_items(
-                query=query, parameters=parameters, partition_key=tenant_id,
+                query=query,
+                parameters=parameters,
+                partition_key=tenant_id,
             )
         ]
 
@@ -510,7 +508,9 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def get_recommendation(
-        self, tenant_id: str, identity_id: str,
+        self,
+        tenant_id: str,
+        identity_id: str,
     ) -> RoleRecommendation | None:
         """Point-read a role recommendation by tenant and identity ID."""
         try:
@@ -523,7 +523,9 @@ class CosmosRepo:
             return None
 
     async def upsert_recommendation(
-        self, tenant_id: str, rec: RoleRecommendation,
+        self,
+        tenant_id: str,
+        rec: RoleRecommendation,
     ) -> RoleRecommendation:
         """Insert or replace a role recommendation."""
         body = rec.model_dump(mode="json")
@@ -706,7 +708,9 @@ class CosmosRepo:
             raise
 
     async def list_baselines(
-        self, tenant_id: str, identity_id: str,
+        self,
+        tenant_id: str,
+        identity_id: str,
     ) -> list[BaselineStats]:
         """List all baseline stats for a specific identity."""
         query = "SELECT * FROM c WHERE c.tenantId = @tenantId AND c.identity_id = @identityId"
@@ -729,7 +733,9 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def get_violation(
-        self, tenant_id: str, violation_id: str,
+        self,
+        tenant_id: str,
+        violation_id: str,
     ) -> BestPracticeViolation | None:
         """Point-read a best practice violation by tenant and violation ID."""
         try:
@@ -742,7 +748,9 @@ class CosmosRepo:
             return None
 
     async def upsert_violation(
-        self, tenant_id: str, violation: BestPracticeViolation,
+        self,
+        tenant_id: str,
+        violation: BestPracticeViolation,
     ) -> BestPracticeViolation:
         """Insert or replace a best practice violation."""
         body = violation.model_dump(mode="json")
@@ -856,13 +864,12 @@ class CosmosRepo:
             raise
 
     async def list_sync_states_by_prefix(
-        self, tenant_id: str, prefix: str,
+        self,
+        tenant_id: str,
+        prefix: str,
     ) -> list[dict[str, Any]]:
         """Query sync_state documents whose sync_type starts with a prefix."""
-        query = (
-            "SELECT * FROM c WHERE c.tenantId = @tenantId "
-            "AND STARTSWITH(c.sync_type, @prefix)"
-        )
+        query = "SELECT * FROM c WHERE c.tenantId = @tenantId AND STARTSWITH(c.sync_type, @prefix)"
         parameters: list[dict[str, str]] = [
             {"name": "@tenantId", "value": tenant_id},
             {"name": "@prefix", "value": prefix},
@@ -918,7 +925,8 @@ class CosmosRepo:
         items: list[Project] = [
             Project.model_validate(item)
             async for item in self._projects.query_items(
-                query=query, parameters=params,
+                query=query,
+                parameters=params,
             )
         ]
         return items[0] if items else None
@@ -929,7 +937,8 @@ class CosmosRepo:
         items: list[dict[str, Any]] = [
             item
             async for item in self._projects.query_items(
-                query=query, parameters=params,
+                query=query,
+                parameters=params,
             )
         ]
         return items[0] if items else None
@@ -947,7 +956,9 @@ class CosmosRepo:
             return None
 
         active_scan_id = project_doc.get("active_scan_id")
-        active_lease_expires_at = _parse_cosmos_datetime(project_doc.get("active_scan_lease_expires_at"))
+        active_lease_expires_at = _parse_cosmos_datetime(
+            project_doc.get("active_scan_lease_expires_at")
+        )
         if (
             active_scan_id
             and active_scan_id != scan_id
@@ -979,7 +990,9 @@ class CosmosRepo:
         except CosmosHttpResponseError as exc:
             if getattr(exc, "status_code", None) in {409, 412}:
                 return None
-            logger.error("Cosmos try_acquire_project_scan_lease failed for %s: %s", project_id, exc.message)
+            logger.error(
+                "Cosmos try_acquire_project_scan_lease failed for %s: %s", project_id, exc.message
+            )
             raise
 
     async def renew_project_scan_lease(
@@ -1011,7 +1024,12 @@ class CosmosRepo:
         except CosmosHttpResponseError as exc:
             if getattr(exc, "status_code", None) in {409, 412}:
                 return False
-            logger.error("Cosmos renew_project_scan_lease failed for %s/%s: %s", project_id, scan_id, exc.message)
+            logger.error(
+                "Cosmos renew_project_scan_lease failed for %s/%s: %s",
+                project_id,
+                scan_id,
+                exc.message,
+            )
             raise
 
     async def has_project_scan_lease(
@@ -1028,7 +1046,9 @@ class CosmosRepo:
             return False
         if project_doc.get("active_scan_owner_instance_id") != owner_instance_id:
             return False
-        active_lease_expires_at = _parse_cosmos_datetime(project_doc.get("active_scan_lease_expires_at"))
+        active_lease_expires_at = _parse_cosmos_datetime(
+            project_doc.get("active_scan_lease_expires_at")
+        )
         return active_lease_expires_at is not None and active_lease_expires_at > as_of
 
     async def release_project_scan_lease(
@@ -1080,7 +1100,12 @@ class CosmosRepo:
                     if attempt == _PROJECT_LEASE_RELEASE_RETRIES - 1:
                         return None
                     continue
-                logger.error("Cosmos release_project_scan_lease failed for %s/%s: %s", project_id, scan_id, exc.message)
+                logger.error(
+                    "Cosmos release_project_scan_lease failed for %s/%s: %s",
+                    project_id,
+                    scan_id,
+                    exc.message,
+                )
                 raise
         return None
 
@@ -1114,7 +1139,12 @@ class CosmosRepo:
         except CosmosHttpResponseError as exc:
             if getattr(exc, "status_code", None) in {409, 412}:
                 return False
-            logger.error("Cosmos clear_project_scan_lease failed for %s/%s: %s", project_id, scan_id, exc.message)
+            logger.error(
+                "Cosmos clear_project_scan_lease failed for %s/%s: %s",
+                project_id,
+                scan_id,
+                exc.message,
+            )
             raise
 
     async def upsert_project(self, project: Project) -> Project:
@@ -1129,7 +1159,9 @@ class CosmosRepo:
             raise
 
     async def list_projects_for_user(
-        self, user_id: str, email: str = "",
+        self,
+        user_id: str,
+        email: str = "",
     ) -> list[Project]:
         """List all projects owned by a user plus projects they are a member of."""
         owned_query = "SELECT * FROM c WHERE c.ownerId = @userId"
@@ -1137,7 +1169,9 @@ class CosmosRepo:
         owned: list[Project] = [
             Project.model_validate(item)
             async for item in self._projects.query_items(
-                query=owned_query, parameters=owned_params, partition_key=user_id,
+                query=owned_query,
+                parameters=owned_params,
+                partition_key=user_id,
             )
         ]
 
@@ -1170,13 +1204,12 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def get_project_member(
-        self, project_id: str, user_id: str,
+        self,
+        project_id: str,
+        user_id: str,
     ) -> ProjectMember | None:
         """Find a member record by project and user ID."""
-        query = (
-            "SELECT * FROM c WHERE c.projectId = @projectId "
-            "AND c.user_id = @userId"
-        )
+        query = "SELECT * FROM c WHERE c.projectId = @projectId AND c.user_id = @userId"
         params: list[dict[str, str]] = [
             {"name": "@projectId", "value": project_id},
             {"name": "@userId", "value": user_id},
@@ -1184,19 +1217,20 @@ class CosmosRepo:
         items: list[ProjectMember] = [
             ProjectMember.model_validate(item)
             async for item in self._project_members.query_items(
-                query=query, parameters=params, partition_key=project_id,
+                query=query,
+                parameters=params,
+                partition_key=project_id,
             )
         ]
         return items[0] if items else None
 
     async def get_project_member_by_email(
-        self, project_id: str, email: str,
+        self,
+        project_id: str,
+        email: str,
     ) -> ProjectMember | None:
         """Find a member record by project and email (case-insensitive)."""
-        query = (
-            "SELECT * FROM c WHERE c.projectId = @projectId "
-            "AND LOWER(c.email) = LOWER(@email)"
-        )
+        query = "SELECT * FROM c WHERE c.projectId = @projectId AND LOWER(c.email) = LOWER(@email)"
         params: list[dict[str, str]] = [
             {"name": "@projectId", "value": project_id},
             {"name": "@email", "value": email},
@@ -1204,7 +1238,9 @@ class CosmosRepo:
         items: list[ProjectMember] = [
             ProjectMember.model_validate(item)
             async for item in self._project_members.query_items(
-                query=query, parameters=params, partition_key=project_id,
+                query=query,
+                parameters=params,
+                partition_key=project_id,
             )
         ]
         return items[0] if items else None
@@ -1219,7 +1255,9 @@ class CosmosRepo:
         except CosmosHttpResponseError as exc:
             logger.error(
                 "Cosmos upsert_project_member failed for %s/%s: %s",
-                member.project_id, member.id, exc.message,
+                member.project_id,
+                member.id,
+                exc.message,
             )
             raise
 
@@ -1230,7 +1268,9 @@ class CosmosRepo:
         return [
             ProjectMember.model_validate(item)
             async for item in self._project_members.query_items(
-                query=query, parameters=params, partition_key=project_id,
+                query=query,
+                parameters=params,
+                partition_key=project_id,
             )
         ]
 
@@ -1242,17 +1282,16 @@ class CosmosRepo:
             pass
 
     async def list_user_memberships(
-        self, user_id: str, email: str = "",
+        self,
+        user_id: str,
+        email: str = "",
     ) -> list[ProjectMember]:
         """Find all project memberships for a user (cross-partition).
 
         Matches on user_id (OID) OR email to include unclaimed invites.
         """
         if email:
-            query = (
-                "SELECT * FROM c WHERE c.user_id = @userId "
-                "OR LOWER(c.email) = LOWER(@email)"
-            )
+            query = "SELECT * FROM c WHERE c.user_id = @userId OR LOWER(c.email) = LOWER(@email)"
             params: list[dict[str, str]] = [
                 {"name": "@userId", "value": user_id},
                 {"name": "@email", "value": email},
@@ -1263,7 +1302,8 @@ class CosmosRepo:
         return [
             ProjectMember.model_validate(item)
             async for item in self._project_members.query_items(
-                query=query, parameters=params,
+                query=query,
+                parameters=params,
             )
         ]
 
@@ -1275,7 +1315,8 @@ class CosmosRepo:
         """Point-read a scan record."""
         try:
             item: dict[str, Any] = await self._scan_history.read_item(
-                item=scan_id, partition_key=project_id,
+                item=scan_id,
+                partition_key=project_id,
             )
             return ScanRecord.model_validate(item)
         except CosmosResourceNotFoundError:
@@ -1289,11 +1330,16 @@ class CosmosRepo:
             result: dict[str, Any] = await self._scan_history.upsert_item(body=body)
             return ScanRecord.model_validate(result)
         except CosmosHttpResponseError as exc:
-            logger.error("Cosmos upsert_scan failed for %s/%s: %s", scan.project_id, scan.id, exc.message)
+            logger.error(
+                "Cosmos upsert_scan failed for %s/%s: %s", scan.project_id, scan.id, exc.message
+            )
             raise
 
     async def list_scans(
-        self, project_id: str, offset: int = 0, limit: int = 20,
+        self,
+        project_id: str,
+        offset: int = 0,
+        limit: int = 20,
     ) -> tuple[list[ScanRecord], int]:
         """List scan history for a project, newest first."""
         count_query = "SELECT VALUE COUNT(1) FROM c WHERE c.projectId = @projectId"
@@ -1301,7 +1347,9 @@ class CosmosRepo:
         count_results: list[int] = [
             item
             async for item in self._scan_history.query_items(
-                query=count_query, parameters=params, partition_key=project_id,
+                query=count_query,
+                parameters=params,
+                partition_key=project_id,
             )
         ]
         total = count_results[0] if count_results else 0
@@ -1318,7 +1366,9 @@ class CosmosRepo:
         items: list[ScanRecord] = [
             ScanRecord.model_validate(item)
             async for item in self._scan_history.query_items(
-                query=data_query, parameters=data_params, partition_key=project_id,
+                query=data_query,
+                parameters=data_params,
+                partition_key=project_id,
             )
         ]
         return items, total
@@ -1333,7 +1383,9 @@ class CosmosRepo:
         items: list[ScanRecord] = [
             ScanRecord.model_validate(item)
             async for item in self._scan_history.query_items(
-                query=query, parameters=params, partition_key=project_id,
+                query=query,
+                parameters=params,
+                partition_key=project_id,
             )
         ]
         return items[0] if items else None
@@ -1374,19 +1426,22 @@ class CosmosRepo:
         count_results: list[int] = [
             item
             async for item in self._scan_events.query_items(
-                query=count_query, parameters=params, partition_key=scan_id,
+                query=count_query,
+                parameters=params,
+                partition_key=scan_id,
             )
         ]
         total = count_results[0] if count_results else 0
 
         query = (
-            f"SELECT * FROM c WHERE {where} "
-            f"ORDER BY c.timestamp ASC OFFSET {offset} LIMIT {limit}"
+            f"SELECT * FROM c WHERE {where} ORDER BY c.timestamp ASC OFFSET {offset} LIMIT {limit}"
         )
         items: list[ScanLogEntry] = [
             ScanLogEntry.model_validate(item)
             async for item in self._scan_events.query_items(
-                query=query, parameters=params, partition_key=scan_id,
+                query=query,
+                parameters=params,
+                partition_key=scan_id,
             )
         ]
         return items, total
@@ -1401,12 +1456,14 @@ class CosmosRepo:
         return [
             ScanSchedule.model_validate(item)
             async for item in self._scan_schedules.query_items(
-                query=query, parameters=[],
+                query=query,
+                parameters=[],
             )
         ]
 
     async def get_scan_schedules_for_project(
-        self, project_id: str,
+        self,
+        project_id: str,
     ) -> list[ScanSchedule]:
         """List all scan schedules for a project."""
         query = "SELECT * FROM c WHERE c.projectId = @projectId"
@@ -1414,7 +1471,9 @@ class CosmosRepo:
         return [
             ScanSchedule.model_validate(item)
             async for item in self._scan_schedules.query_items(
-                query=query, parameters=params, partition_key=project_id,
+                query=query,
+                parameters=params,
+                partition_key=project_id,
             )
         ]
 
@@ -1428,7 +1487,9 @@ class CosmosRepo:
         except CosmosHttpResponseError as exc:
             logger.error(
                 "Cosmos upsert_scan_schedule failed for %s/%s: %s",
-                schedule.project_id, schedule.id, exc.message,
+                schedule.project_id,
+                schedule.id,
+                exc.message,
             )
             raise
 
@@ -1436,7 +1497,8 @@ class CosmosRepo:
         """Delete a scan schedule."""
         try:
             await self._scan_schedules.delete_item(
-                item=schedule_id, partition_key=project_id,
+                item=schedule_id,
+                partition_key=project_id,
             )
         except CosmosResourceNotFoundError:
             pass
@@ -1446,7 +1508,8 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def get_alert_rules_for_project(
-        self, project_id: str,
+        self,
+        project_id: str,
     ) -> list[AlertRule]:
         """List all alert rules for a project."""
         query = "SELECT * FROM c WHERE c.projectId = @projectId"
@@ -1454,17 +1517,22 @@ class CosmosRepo:
         return [
             AlertRule.model_validate(item)
             async for item in self._alert_rules.query_items(
-                query=query, parameters=params, partition_key=project_id,
+                query=query,
+                parameters=params,
+                partition_key=project_id,
             )
         ]
 
     async def get_alert_rule(
-        self, project_id: str, rule_id: str,
+        self,
+        project_id: str,
+        rule_id: str,
     ) -> AlertRule | None:
         """Point-read an alert rule."""
         try:
             item: dict[str, Any] = await self._alert_rules.read_item(
-                item=rule_id, partition_key=project_id,
+                item=rule_id,
+                partition_key=project_id,
             )
             return AlertRule.model_validate(item)
         except CosmosResourceNotFoundError:
@@ -1480,7 +1548,9 @@ class CosmosRepo:
         except CosmosHttpResponseError as exc:
             logger.error(
                 "Cosmos upsert_alert_rule failed for %s/%s: %s",
-                rule.project_id, rule.id, exc.message,
+                rule.project_id,
+                rule.id,
+                exc.message,
             )
             raise
 
@@ -1488,7 +1558,8 @@ class CosmosRepo:
         """Delete an alert rule."""
         try:
             await self._alert_rules.delete_item(
-                item=rule_id, partition_key=project_id,
+                item=rule_id,
+                partition_key=project_id,
             )
         except CosmosResourceNotFoundError:
             pass
@@ -1498,7 +1569,9 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def upsert_app_registration(
-        self, tenant_id: str, app: AppRegistrationProfile,
+        self,
+        tenant_id: str,
+        app: AppRegistrationProfile,
     ) -> AppRegistrationProfile:
         """Insert or replace an app registration profile."""
         body = app.model_dump(mode="json")
@@ -1516,7 +1589,9 @@ class CosmosRepo:
             raise
 
     async def get_app_registration(
-        self, tenant_id: str, app_id: str,
+        self,
+        tenant_id: str,
+        app_id: str,
     ) -> AppRegistrationProfile | None:
         """Point-read an app registration by tenant and app ID."""
         try:
@@ -1529,7 +1604,10 @@ class CosmosRepo:
             return None
 
     async def list_app_registrations(
-        self, tenant_id: str, offset: int = 0, limit: int = 50,
+        self,
+        tenant_id: str,
+        offset: int = 0,
+        limit: int = 50,
     ) -> tuple[list[AppRegistrationProfile], int]:
         """List app registrations for a tenant with pagination.
 
@@ -1576,7 +1654,9 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def upsert_mfa_record(
-        self, tenant_id: str, record: MfaRegistrationRecord,
+        self,
+        tenant_id: str,
+        record: MfaRegistrationRecord,
     ) -> MfaRegistrationRecord:
         """Insert or replace an MFA registration record."""
         body = record.model_dump(mode="json")
@@ -1594,7 +1674,9 @@ class CosmosRepo:
             raise
 
     async def get_mfa_record(
-        self, tenant_id: str, record_id: str,
+        self,
+        tenant_id: str,
+        record_id: str,
     ) -> MfaRegistrationRecord | None:
         """Point-read an MFA record by tenant and record ID."""
         try:
@@ -1607,7 +1689,10 @@ class CosmosRepo:
             return None
 
     async def list_mfa_records(
-        self, tenant_id: str, offset: int = 0, limit: int = 50,
+        self,
+        tenant_id: str,
+        offset: int = 0,
+        limit: int = 50,
     ) -> tuple[list[MfaRegistrationRecord], int]:
         """List MFA registration records for a tenant with pagination.
 
@@ -1631,8 +1716,7 @@ class CosmosRepo:
 
         # Paged results
         data_query = (
-            f"SELECT * FROM c WHERE {where_clause}"
-            f" ORDER BY c.id OFFSET @offset LIMIT @limit"
+            f"SELECT * FROM c WHERE {where_clause} ORDER BY c.id OFFSET @offset LIMIT @limit"
         )
         data_params: list[dict[str, Any]] = [
             *parameters,
@@ -1654,7 +1738,9 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def upsert_ca_policy(
-        self, tenant_id: str, policy: ConditionalAccessPolicyRecord,
+        self,
+        tenant_id: str,
+        policy: ConditionalAccessPolicyRecord,
     ) -> ConditionalAccessPolicyRecord:
         """Insert or replace a conditional access policy record."""
         body = policy.model_dump(mode="json")
@@ -1672,7 +1758,8 @@ class CosmosRepo:
             raise
 
     async def list_ca_policies(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[ConditionalAccessPolicyRecord]:
         """List all conditional access policies for a tenant."""
         query = "SELECT * FROM c WHERE c.tenantId = @tenantId"
@@ -1691,7 +1778,9 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def upsert_risk_detection(
-        self, tenant_id: str, detection: dict[str, Any],
+        self,
+        tenant_id: str,
+        detection: dict[str, Any],
     ) -> None:
         """Insert or replace a risk detection summary (stored as raw dict)."""
         detection["tenantId"] = tenant_id
@@ -1707,12 +1796,13 @@ class CosmosRepo:
             raise
 
     async def list_risk_detections(
-        self, tenant_id: str, limit: int = 100,
+        self,
+        tenant_id: str,
+        limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List risk detection summaries for a tenant."""
         query = (
-            "SELECT * FROM c WHERE c.tenantId = @tenantId"
-            " ORDER BY c._ts DESC OFFSET 0 LIMIT @limit"
+            "SELECT * FROM c WHERE c.tenantId = @tenantId ORDER BY c._ts DESC OFFSET 0 LIMIT @limit"
         )
         parameters: list[dict[str, Any]] = [
             {"name": "@tenantId", "value": tenant_id},
@@ -1732,7 +1822,9 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def upsert_group(
-        self, tenant_id: str, group: GroupProfile,
+        self,
+        tenant_id: str,
+        group: GroupProfile,
     ) -> GroupProfile:
         """Insert or replace a group profile."""
         body = group.model_dump(mode="json")
@@ -1750,7 +1842,9 @@ class CosmosRepo:
             raise
 
     async def get_group(
-        self, tenant_id: str, group_id: str,
+        self,
+        tenant_id: str,
+        group_id: str,
     ) -> GroupProfile | None:
         """Point-read a group profile by tenant and group ID."""
         try:
@@ -1763,7 +1857,10 @@ class CosmosRepo:
             return None
 
     async def list_groups(
-        self, tenant_id: str, offset: int = 0, limit: int = 50,
+        self,
+        tenant_id: str,
+        offset: int = 0,
+        limit: int = 50,
     ) -> tuple[list[GroupProfile], int]:
         """List group profiles for a tenant with pagination.
 
@@ -1810,7 +1907,9 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def upsert_access_review(
-        self, tenant_id: str, review: AccessReviewDefinition,
+        self,
+        tenant_id: str,
+        review: AccessReviewDefinition,
     ) -> AccessReviewDefinition:
         """Insert or replace an access review definition."""
         body = review.model_dump(mode="json")
@@ -1828,7 +1927,8 @@ class CosmosRepo:
             raise
 
     async def list_access_reviews(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[AccessReviewDefinition]:
         """List all access review definitions for a tenant."""
         query = "SELECT * FROM c WHERE c.tenantId = @tenantId"
@@ -1847,7 +1947,8 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def get_sod_rules(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[SodConflictRule]:
         """List all separation-of-duty conflict rules for a tenant."""
         query = "SELECT * FROM c WHERE c.tenantId = @tenantId"
@@ -1862,7 +1963,9 @@ class CosmosRepo:
         ]
 
     async def upsert_sod_rule(
-        self, tenant_id: str, rule: SodConflictRule,
+        self,
+        tenant_id: str,
+        rule: SodConflictRule,
     ) -> SodConflictRule:
         """Insert or replace a separation-of-duty conflict rule."""
         body = rule.model_dump(mode="json")
@@ -1880,12 +1983,15 @@ class CosmosRepo:
             raise
 
     async def delete_sod_rule(
-        self, tenant_id: str, rule_id: str,
+        self,
+        tenant_id: str,
+        rule_id: str,
     ) -> None:
         """Delete a separation-of-duty conflict rule."""
         try:
             await self._sod_rules.delete_item(
-                item=rule_id, partition_key=tenant_id,
+                item=rule_id,
+                partition_key=tenant_id,
             )
         except CosmosResourceNotFoundError:
             pass
@@ -1895,7 +2001,9 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def upsert_custom_role(
-        self, tenant_id: str, role: CustomRoleProfile,
+        self,
+        tenant_id: str,
+        role: CustomRoleProfile,
     ) -> CustomRoleProfile:
         """Insert or replace a custom role profile."""
         body = role.model_dump(mode="json")
@@ -1913,7 +2021,8 @@ class CosmosRepo:
             raise
 
     async def list_custom_roles(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[CustomRoleProfile]:
         """List all custom role profiles for a tenant."""
         query = "SELECT * FROM c WHERE c.tenantId = @tenantId"
@@ -1932,7 +2041,9 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def create_remediation_action(
-        self, tenant_id: str, action: RemediationAction,
+        self,
+        tenant_id: str,
+        action: RemediationAction,
     ) -> RemediationAction:
         """Insert a new remediation action."""
         body = action.model_dump(mode="json")
@@ -1950,7 +2061,9 @@ class CosmosRepo:
             raise
 
     async def get_remediation_action(
-        self, tenant_id: str, action_id: str,
+        self,
+        tenant_id: str,
+        action_id: str,
     ) -> RemediationAction | None:
         """Point-read a remediation action by tenant and action ID."""
         try:
@@ -1963,7 +2076,9 @@ class CosmosRepo:
             return None
 
     async def update_remediation_status(
-        self, tenant_id: str, action: RemediationAction,
+        self,
+        tenant_id: str,
+        action: RemediationAction,
     ) -> RemediationAction:
         """Update (upsert) a remediation action, typically to change its status."""
         body = action.model_dump(mode="json")
@@ -1981,7 +2096,10 @@ class CosmosRepo:
             raise
 
     async def list_remediation_actions(
-        self, tenant_id: str, offset: int = 0, limit: int = 50,
+        self,
+        tenant_id: str,
+        offset: int = 0,
+        limit: int = 50,
     ) -> tuple[list[RemediationAction], int]:
         """List remediation actions for a tenant with pagination.
 
@@ -2005,8 +2123,7 @@ class CosmosRepo:
 
         # Paged results
         data_query = (
-            f"SELECT * FROM c WHERE {where_clause}"
-            f" ORDER BY c._ts DESC OFFSET @offset LIMIT @limit"
+            f"SELECT * FROM c WHERE {where_clause} ORDER BY c._ts DESC OFFSET @offset LIMIT @limit"
         )
         data_params: list[dict[str, Any]] = [
             *parameters,
@@ -2028,7 +2145,9 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def upsert_pim_session(
-        self, tenant_id: str, session: PimSession,
+        self,
+        tenant_id: str,
+        session: PimSession,
     ) -> PimSession:
         body = session.model_dump(mode="json")
         body["tenantId"] = tenant_id
@@ -2036,11 +2155,14 @@ class CosmosRepo:
         return PimSession.model_validate(result)
 
     async def get_pim_session(
-        self, tenant_id: str, session_id: str,
+        self,
+        tenant_id: str,
+        session_id: str,
     ) -> PimSession | None:
         try:
             item: dict[str, Any] = await self._pim_sessions.read_item(
-                item=session_id, partition_key=tenant_id,
+                item=session_id,
+                partition_key=tenant_id,
             )
             return PimSession.model_validate(item)
         except CosmosResourceNotFoundError:
@@ -2077,8 +2199,11 @@ class CosmosRepo:
 
         count_query = f"SELECT VALUE COUNT(1) FROM c WHERE {where}"
         count_results: list[int] = [
-            item async for item in self._pim_sessions.query_items(
-                query=count_query, parameters=params, partition_key=tenant_id,
+            item
+            async for item in self._pim_sessions.query_items(
+                query=count_query,
+                parameters=params,
+                partition_key=tenant_id,
             )
         ]
         total = count_results[0] if count_results else 0
@@ -2096,13 +2221,16 @@ class CosmosRepo:
         items: list[PimSession] = [
             PimSession.model_validate(item)
             async for item in self._pim_sessions.query_items(
-                query=data_query, parameters=data_params, partition_key=tenant_id,
+                query=data_query,
+                parameters=data_params,
+                partition_key=tenant_id,
             )
         ]
         return items, total
 
     async def get_active_pim_sessions(
-        self, tenant_id: str,
+        self,
+        tenant_id: str,
     ) -> list[PimSession]:
         query = (
             "SELECT * FROM c WHERE c.tenantId = @tenantId AND c.status = 'active' "
@@ -2112,12 +2240,18 @@ class CosmosRepo:
         return [
             PimSession.model_validate(item)
             async for item in self._pim_sessions.query_items(
-                query=query, parameters=params, partition_key=tenant_id,
+                query=query,
+                parameters=params,
+                partition_key=tenant_id,
             )
         ]
 
     async def get_pim_sessions_for_identity(
-        self, tenant_id: str, identity_id: str, offset: int = 0, limit: int = 20,
+        self,
+        tenant_id: str,
+        identity_id: str,
+        offset: int = 0,
+        limit: int = 20,
     ) -> tuple[list[PimSession], int]:
         base_where = "c.tenantId = @tenantId AND c.identity_id = @identityId"
         params: list[dict[str, str]] = [
@@ -2127,8 +2261,11 @@ class CosmosRepo:
 
         count_query = f"SELECT VALUE COUNT(1) FROM c WHERE {base_where}"
         count_results: list[int] = [
-            item async for item in self._pim_sessions.query_items(
-                query=count_query, parameters=params, partition_key=tenant_id,
+            item
+            async for item in self._pim_sessions.query_items(
+                query=count_query,
+                parameters=params,
+                partition_key=tenant_id,
             )
         ]
         total = count_results[0] if count_results else 0
@@ -2146,13 +2283,17 @@ class CosmosRepo:
         items: list[PimSession] = [
             PimSession.model_validate(item)
             async for item in self._pim_sessions.query_items(
-                query=data_query, parameters=data_params, partition_key=tenant_id,
+                query=data_query,
+                parameters=data_params,
+                partition_key=tenant_id,
             )
         ]
         return items, total
 
     async def get_pim_session_analytics(
-        self, tenant_id: str, days: int = 30,
+        self,
+        tenant_id: str,
+        days: int = 30,
     ) -> dict[str, Any]:
         from collections import Counter
         from datetime import UTC, timedelta
@@ -2167,8 +2308,11 @@ class CosmosRepo:
 
         all_query = f"SELECT * FROM c WHERE {base_where}"
         sessions: list[dict[str, Any]] = [
-            item async for item in self._pim_sessions.query_items(
-                query=all_query, parameters=params, partition_key=tenant_id,
+            item
+            async for item in self._pim_sessions.query_items(
+                query=all_query,
+                parameters=params,
+                partition_key=tenant_id,
             )
         ]
 
@@ -2210,26 +2354,26 @@ class CosmosRepo:
             "sessions_with_anomalies": with_anomalies,
             "avg_session_duration_minutes": round(avg_duration, 1),
             "top_activated_roles": [
-                {"role_name": name, "count": cnt}
-                for name, cnt in role_counter.most_common(10)
+                {"role_name": name, "count": cnt} for name, cnt in role_counter.most_common(10)
             ],
             "top_activators": [
                 {"principal_display_name": name, "count": cnt}
                 for name, cnt in activator_counter.most_common(10)
             ],
             "activations_by_hour": dict(hour_counter),
-            "activations_by_day": [
-                {"date": d, "count": c}
-                for d, c in sorted(day_counter.items())
-            ],
+            "activations_by_day": [{"date": d, "count": c} for d, c in sorted(day_counter.items())],
             "anomaly_counts_by_type": dict(anomaly_type_counter),
             "computed_at": now.isoformat(),
         }
 
     async def get_session_action_events(
-        self, tenant_id: str, identity_id: str,
-        start: datetime, end: datetime,
-        offset: int = 0, limit: int = 50,
+        self,
+        tenant_id: str,
+        identity_id: str,
+        start: datetime,
+        end: datetime,
+        offset: int = 0,
+        limit: int = 50,
     ) -> tuple[list[ActionEvent], int]:
         where = (
             "c.tenantId = @tenantId AND c.identity_id = @identityId "
@@ -2244,16 +2388,17 @@ class CosmosRepo:
 
         count_query = f"SELECT VALUE COUNT(1) FROM c WHERE {where}"
         count_results: list[int] = [
-            item async for item in self._action_events.query_items(
-                query=count_query, parameters=params, partition_key=tenant_id,
+            item
+            async for item in self._action_events.query_items(
+                query=count_query,
+                parameters=params,
+                partition_key=tenant_id,
             )
         ]
         total = count_results[0] if count_results else 0
 
         data_query = (
-            f"SELECT * FROM c WHERE {where} "
-            "ORDER BY c.timestamp ASC "
-            "OFFSET @offset LIMIT @limit"
+            f"SELECT * FROM c WHERE {where} ORDER BY c.timestamp ASC OFFSET @offset LIMIT @limit"
         )
         data_params = [
             *params,
@@ -2263,7 +2408,9 @@ class CosmosRepo:
         items: list[ActionEvent] = [
             ActionEvent.model_validate(item)
             async for item in self._action_events.query_items(
-                query=data_query, parameters=data_params, partition_key=tenant_id,
+                query=data_query,
+                parameters=data_params,
+                partition_key=tenant_id,
             )
         ]
         return items, total
@@ -2338,7 +2485,9 @@ class CosmosRepo:
         type_params: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
         identities_by_type: dict[str, int] = {}
         async for item in self._identity_profiles.query_items(
-            query=type_query, parameters=type_params, partition_key=tenant_id,
+            query=type_query,
+            parameters=type_params,
+            partition_key=tenant_id,
         ):
             identities_by_type[item.get("identity_type", "unknown")] = item.get("cnt", 0)
 
@@ -2353,7 +2502,9 @@ class CosmosRepo:
         risk_results: list[dict[str, Any]] = [
             item
             async for item in self._identity_profiles.query_items(
-                query=risk_query, parameters=risk_params, partition_key=tenant_id,
+                query=risk_query,
+                parameters=risk_params,
+                partition_key=tenant_id,
             )
         ]
         avg_risk = 0.0
@@ -2364,14 +2515,15 @@ class CosmosRepo:
 
         # Open drift alerts
         drift_open_query = (
-            "SELECT VALUE COUNT(1) FROM c "
-            "WHERE c.tenantId = @tenantId AND c.status = 'open'"
+            "SELECT VALUE COUNT(1) FROM c WHERE c.tenantId = @tenantId AND c.status = 'open'"
         )
         drift_params: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
         drift_open_results: list[int] = [
             item
             async for item in self._drift_alerts.query_items(
-                query=drift_open_query, parameters=drift_params, partition_key=tenant_id,
+                query=drift_open_query,
+                parameters=drift_params,
+                partition_key=tenant_id,
             )
         ]
         drift_alerts_open = drift_open_results[0] if drift_open_results else 0
@@ -2385,21 +2537,24 @@ class CosmosRepo:
         sev_params: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
         drift_alerts_by_severity: dict[str, int] = {}
         async for item in self._drift_alerts.query_items(
-            query=sev_query, parameters=sev_params, partition_key=tenant_id,
+            query=sev_query,
+            parameters=sev_params,
+            partition_key=tenant_id,
         ):
             drift_alerts_by_severity[item.get("severity", "unknown")] = item.get("cnt", 0)
 
         # Compliance score from best practice violations
         bp_total = await self.count_items(tenant_id, "best_practice_violations")
         bp_resolved_query = (
-            "SELECT VALUE COUNT(1) FROM c "
-            "WHERE c.tenantId = @tenantId AND c.resolved = true"
+            "SELECT VALUE COUNT(1) FROM c WHERE c.tenantId = @tenantId AND c.resolved = true"
         )
         bp_params: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
         bp_resolved_results: list[int] = [
             item
             async for item in self._best_practice_violations.query_items(
-                query=bp_resolved_query, parameters=bp_params, partition_key=tenant_id,
+                query=bp_resolved_query,
+                parameters=bp_params,
+                partition_key=tenant_id,
             )
         ]
         bp_resolved = bp_resolved_results[0] if bp_resolved_results else 0
@@ -2415,7 +2570,9 @@ class CosmosRepo:
         top_risky: list[dict[str, Any]] = [
             item
             async for item in self._identity_profiles.query_items(
-                query=top_query, parameters=top_params, partition_key=tenant_id,
+                query=top_query,
+                parameters=top_params,
+                partition_key=tenant_id,
             )
         ]
 
@@ -2430,7 +2587,9 @@ class CosmosRepo:
         rec_results: list[dict[str, Any]] = [
             item
             async for item in self._role_recommendations.query_items(
-                query=rec_query, parameters=rec_params, partition_key=tenant_id,
+                query=rec_query,
+                parameters=rec_params,
+                partition_key=tenant_id,
             )
         ]
         recommendations_count = 0
@@ -2471,12 +2630,16 @@ class CosmosRepo:
         ]
         actions_trend: list[dict[str, Any]] = []
         async for item in self._action_events.query_items(
-            query=actions_query, parameters=actions_params, partition_key=tenant_id,
+            query=actions_query,
+            parameters=actions_params,
+            partition_key=tenant_id,
         ):
-            actions_trend.append({
-                "date": item.get("date", ""),
-                "value": float(item.get("cnt", 0)),
-            })
+            actions_trend.append(
+                {
+                    "date": item.get("date", ""),
+                    "value": float(item.get("cnt", 0)),
+                }
+            )
 
         # Daily drift alert counts
         drift_query = (
@@ -2490,12 +2653,16 @@ class CosmosRepo:
         ]
         drift_alerts_trend: list[dict[str, Any]] = []
         async for item in self._drift_alerts.query_items(
-            query=drift_query, parameters=drift_params, partition_key=tenant_id,
+            query=drift_query,
+            parameters=drift_params,
+            partition_key=tenant_id,
         ):
-            drift_alerts_trend.append({
-                "date": item.get("date", ""),
-                "value": float(item.get("cnt", 0)),
-            })
+            drift_alerts_trend.append(
+                {
+                    "date": item.get("date", ""),
+                    "value": float(item.get("cnt", 0)),
+                }
+            )
 
         # Risk score trend — use an empty placeholder since risk is a snapshot, not time-series
         risk_score_trend: list[dict[str, Any]] = []
@@ -2529,8 +2696,11 @@ class CosmosRepo:
             "} FROM c WHERE c.tenantId = @tenantId AND c.timestamp >= @cutoff"
         )
         totals_results: list[dict[str, Any]] = [
-            item async for item in self._action_events.query_items(
-                query=totals_query, parameters=base_params, partition_key=tenant_id,
+            item
+            async for item in self._action_events.query_items(
+                query=totals_query,
+                parameters=base_params,
+                partition_key=tenant_id,
             )
         ]
         total_actions = totals_results[0].get("total", 0) if totals_results else 0
@@ -2544,8 +2714,11 @@ class CosmosRepo:
             "WHERE c.tenantId = @tenantId AND c.timestamp >= @cutoff)"
         )
         unique_results: list[int] = [
-            item async for item in self._action_events.query_items(
-                query=unique_query, parameters=base_params, partition_key=tenant_id,
+            item
+            async for item in self._action_events.query_items(
+                query=unique_query,
+                parameters=base_params,
+                partition_key=tenant_id,
             )
         ]
         unique_active = unique_results[0] if unique_results else 0
@@ -2559,12 +2732,16 @@ class CosmosRepo:
         )
         daily_action_counts: list[dict[str, Any]] = []
         async for item in self._action_events.query_items(
-            query=daily_query, parameters=base_params, partition_key=tenant_id,
+            query=daily_query,
+            parameters=base_params,
+            partition_key=tenant_id,
         ):
-            daily_action_counts.append({
-                "date": item.get("date", ""),
-                "value": float(item.get("cnt", 0)),
-            })
+            daily_action_counts.append(
+                {
+                    "date": item.get("date", ""),
+                    "value": float(item.get("cnt", 0)),
+                }
+            )
         daily_action_counts.sort(key=lambda x: x["date"])
 
         # --- action_events: top actions ---
@@ -2574,14 +2751,16 @@ class CosmosRepo:
             "GROUP BY c.action"
         )
         top_actions_raw: list[dict[str, Any]] = [
-            item async for item in self._action_events.query_items(
-                query=top_actions_query, parameters=base_params, partition_key=tenant_id,
+            item
+            async for item in self._action_events.query_items(
+                query=top_actions_query,
+                parameters=base_params,
+                partition_key=tenant_id,
             )
         ]
         top_actions_raw.sort(key=lambda x: x.get("cnt", 0), reverse=True)
         top_actions = [
-            {"action": r.get("action", ""), "count": r.get("cnt", 0)}
-            for r in top_actions_raw[:10]
+            {"action": r.get("action", ""), "count": r.get("cnt", 0)} for r in top_actions_raw[:10]
         ]
 
         # --- action_events: most active identities ---
@@ -2591,8 +2770,11 @@ class CosmosRepo:
             "GROUP BY c.identity_id, c.identity_display_name"
         )
         active_raw: list[dict[str, Any]] = [
-            item async for item in self._action_events.query_items(
-                query=active_query, parameters=base_params, partition_key=tenant_id,
+            item
+            async for item in self._action_events.query_items(
+                query=active_query,
+                parameters=base_params,
+                partition_key=tenant_id,
             )
         ]
         active_raw.sort(key=lambda x: x.get("cnt", 0), reverse=True)
@@ -2600,7 +2782,9 @@ class CosmosRepo:
             {
                 "identity_id": r.get("identity_id", ""),
                 "display_name": r.get("identity_display_name", ""),
-                "identity_type": r.get("identity_id", "").split("_")[0] if "_" in r.get("identity_id", "") else "User",
+                "identity_type": r.get("identity_id", "").split("_")[0]
+                if "_" in r.get("identity_id", "")
+                else "User",
                 "count": r.get("cnt", 0),
             }
             for r in active_raw[:10]
@@ -2614,7 +2798,9 @@ class CosmosRepo:
         )
         actions_by_source: dict[str, int] = {}
         async for item in self._action_events.query_items(
-            query=source_query, parameters=base_params, partition_key=tenant_id,
+            query=source_query,
+            parameters=base_params,
+            partition_key=tenant_id,
         ):
             actions_by_source[item.get("source", "unknown")] = item.get("cnt", 0)
 
@@ -2626,7 +2812,9 @@ class CosmosRepo:
         )
         success_vs_failure: dict[str, int] = {}
         async for item in self._action_events.query_items(
-            query=result_query, parameters=base_params, partition_key=tenant_id,
+            query=result_query,
+            parameters=base_params,
+            partition_key=tenant_id,
         ):
             success_vs_failure[item.get("result", "unknown")] = item.get("cnt", 0)
 
@@ -2638,8 +2826,11 @@ class CosmosRepo:
             "GROUP BY c.resource, c.resource_type"
         )
         resource_raw: list[dict[str, Any]] = [
-            item async for item in self._action_events.query_items(
-                query=resource_query, parameters=base_params, partition_key=tenant_id,
+            item
+            async for item in self._action_events.query_items(
+                query=resource_query,
+                parameters=base_params,
+                partition_key=tenant_id,
             )
         ]
         resource_raw.sort(key=lambda x: x.get("cnt", 0), reverse=True)
@@ -2653,15 +2844,15 @@ class CosmosRepo:
         ]
 
         # --- identity_profiles: roles (flatten in Python) ---
-        roles_query = (
-            "SELECT c.current_roles FROM c WHERE c.tenantId = @tenantId"
-        )
+        roles_query = "SELECT c.current_roles FROM c WHERE c.tenantId = @tenantId"
         roles_params: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
         role_counter: Counter[str] = Counter()
         permanent_count = 0
         pim_count = 0
         async for item in self._identity_profiles.query_items(
-            query=roles_query, parameters=roles_params, partition_key=tenant_id,
+            query=roles_query,
+            parameters=roles_params,
+            partition_key=tenant_id,
         ):
             for role in item.get("current_roles", []):
                 role_counter[role.get("role_name", "Unknown")] += 1
@@ -2670,8 +2861,7 @@ class CosmosRepo:
                 else:
                     pim_count += 1
         top_roles = [
-            {"role_name": name, "count": cnt}
-            for name, cnt in role_counter.most_common(10)
+            {"role_name": name, "count": cnt} for name, cnt in role_counter.most_common(10)
         ]
 
         # --- identity_profiles: stale identities ---
@@ -2688,33 +2878,38 @@ class CosmosRepo:
                 {"name": "@threshold", "value": threshold},
             ]
             results: list[int] = [
-                item async for item in self._identity_profiles.query_items(
-                    query=stale_query, parameters=stale_params, partition_key=tenant_id,
+                item
+                async for item in self._identity_profiles.query_items(
+                    query=stale_query,
+                    parameters=stale_params,
+                    partition_key=tenant_id,
                 )
             ]
             stale_counts[label] = results[0] if results else 0
 
         # --- identity_profiles: new identities ---
         new_query = (
-            "SELECT VALUE COUNT(1) FROM c "
-            "WHERE c.tenantId = @tenantId AND c.first_seen >= @cutoff"
+            "SELECT VALUE COUNT(1) FROM c WHERE c.tenantId = @tenantId AND c.first_seen >= @cutoff"
         )
         new_results: list[int] = [
-            item async for item in self._identity_profiles.query_items(
-                query=new_query, parameters=base_params, partition_key=tenant_id,
+            item
+            async for item in self._identity_profiles.query_items(
+                query=new_query,
+                parameters=base_params,
+                partition_key=tenant_id,
             )
         ]
         new_identities_count = new_results[0] if new_results else 0
 
         # --- role_recommendations: permission utilization ---
-        perm_query = (
-            "SELECT c.permission_gaps FROM c WHERE c.tenantId = @tenantId"
-        )
+        perm_query = "SELECT c.permission_gaps FROM c WHERE c.tenantId = @tenantId"
         perm_params: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
         used_count = 0
         unused_count = 0
         async for item in self._role_recommendations.query_items(
-            query=perm_query, parameters=perm_params, partition_key=tenant_id,
+            query=perm_query,
+            parameters=perm_params,
+            partition_key=tenant_id,
         ):
             for gap in item.get("permission_gaps", []):
                 if gap.get("is_used", False):
@@ -2724,12 +2919,14 @@ class CosmosRepo:
 
         # --- role_recommendations: overprivileged count ---
         overpriv_query = (
-            "SELECT VALUE COUNT(1) FROM c "
-            "WHERE c.tenantId = @tenantId AND c.reduction_score > 30"
+            "SELECT VALUE COUNT(1) FROM c WHERE c.tenantId = @tenantId AND c.reduction_score > 30"
         )
         overpriv_results: list[int] = [
-            item async for item in self._role_recommendations.query_items(
-                query=overpriv_query, parameters=perm_params, partition_key=tenant_id,
+            item
+            async for item in self._role_recommendations.query_items(
+                query=overpriv_query,
+                parameters=perm_params,
+                partition_key=tenant_id,
             )
         ]
         overprivileged_count = overpriv_results[0] if overpriv_results else 0
@@ -2743,7 +2940,9 @@ class CosmosRepo:
         vtype_params: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
         violations_by_type: dict[str, int] = {}
         async for item in self._best_practice_violations.query_items(
-            query=vtype_query, parameters=vtype_params, partition_key=tenant_id,
+            query=vtype_query,
+            parameters=vtype_params,
+            partition_key=tenant_id,
         ):
             violations_by_type[item.get("violation_type", "unknown")] = item.get("cnt", 0)
 
@@ -2761,7 +2960,9 @@ class CosmosRepo:
                 "detected_at": item.get("detected_at", ""),
             }
             async for item in self._best_practice_violations.query_items(
-                query=cred_query, parameters=vtype_params, partition_key=tenant_id,
+                query=cred_query,
+                parameters=vtype_params,
+                partition_key=tenant_id,
             )
         ]
 
@@ -2772,8 +2973,11 @@ class CosmosRepo:
         )
         drift_params: list[dict[str, str]] = [{"name": "@tenantId", "value": tenant_id}]
         recent_drift: list[dict[str, Any]] = [
-            item async for item in self._drift_alerts.query_items(
-                query=drift_query, parameters=drift_params, partition_key=tenant_id,
+            item
+            async for item in self._drift_alerts.query_items(
+                query=drift_query,
+                parameters=drift_params,
+                partition_key=tenant_id,
             )
         ]
 
@@ -2804,7 +3008,9 @@ class CosmosRepo:
     # ------------------------------------------------------------------
 
     async def upsert_access_path_analysis(
-        self, tenant_id: str, analysis: AccessPathAnalysis,
+        self,
+        tenant_id: str,
+        analysis: AccessPathAnalysis,
     ) -> AccessPathAnalysis:
         body = analysis.model_dump(mode="json")
         body["tenantId"] = tenant_id
@@ -2814,16 +3020,18 @@ class CosmosRepo:
         except CosmosHttpResponseError as exc:
             logger.error(
                 "Cosmos upsert_access_path_analysis failed for %s/%s: %s",
-                tenant_id, analysis.id, exc,
+                tenant_id,
+                analysis.id,
+                exc,
             )
             raise
 
     async def get_access_path_analysis_by_identity(
-        self, tenant_id: str, identity_id: str,
+        self,
+        tenant_id: str,
+        identity_id: str,
     ) -> AccessPathAnalysis | None:
-        query = (
-            "SELECT * FROM c WHERE c.tenantId = @tid AND c.identity_id = @iid"
-        )
+        query = "SELECT * FROM c WHERE c.tenantId = @tid AND c.identity_id = @iid"
         params: list[dict[str, str]] = [
             {"name": "@tid", "value": tenant_id},
             {"name": "@iid", "value": identity_id},
@@ -2831,14 +3039,19 @@ class CosmosRepo:
         items: list[AccessPathAnalysis] = [
             AccessPathAnalysis.model_validate(item)
             async for item in self._access_path_analyses.query_items(
-                query=query, parameters=params, partition_key=tenant_id,
+                query=query,
+                parameters=params,
+                partition_key=tenant_id,
             )
         ]
         return items[0] if items else None
 
     async def list_access_path_analyses(
-        self, tenant_id: str, min_risk: str | None = None,
-        offset: int = 0, limit: int = 50,
+        self,
+        tenant_id: str,
+        min_risk: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
     ) -> tuple[list[AccessPathAnalysis], int]:
         where = "c.tenantId = @tid AND c.total_paths > 0"
         params: list[dict[str, str]] = [{"name": "@tid", "value": tenant_id}]
@@ -2851,8 +3064,11 @@ class CosmosRepo:
 
         count_query = f"SELECT VALUE COUNT(1) FROM c WHERE {where}"
         count_results: list[int] = [
-            item async for item in self._access_path_analyses.query_items(
-                query=count_query, parameters=params, partition_key=tenant_id,
+            item
+            async for item in self._access_path_analyses.query_items(
+                query=count_query,
+                parameters=params,
+                partition_key=tenant_id,
             )
         ]
         total = count_results[0] if count_results else 0
@@ -2865,7 +3081,9 @@ class CosmosRepo:
         items: list[AccessPathAnalysis] = [
             AccessPathAnalysis.model_validate(item)
             async for item in self._access_path_analyses.query_items(
-                query=query, parameters=params, partition_key=tenant_id,
+                query=query,
+                parameters=params,
+                partition_key=tenant_id,
             )
         ]
         return items, total
@@ -2881,8 +3099,11 @@ class CosmosRepo:
         )
         params: list[dict[str, str]] = [{"name": "@tid", "value": tenant_id}]
         results: list[dict[str, Any]] = [
-            item async for item in self._access_path_analyses.query_items(
-                query=query, parameters=params, partition_key=tenant_id,
+            item
+            async for item in self._access_path_analyses.query_items(
+                query=query,
+                parameters=params,
+                partition_key=tenant_id,
             )
         ]
         row = results[0] if results else {}

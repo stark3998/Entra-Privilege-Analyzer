@@ -1,5 +1,6 @@
 # jobs/generate_narratives.py
 """Container Apps Job: generate AI narratives for all active tenants."""
+
 from __future__ import annotations
 
 import asyncio
@@ -8,7 +9,7 @@ import sys
 
 from app.config import get_settings
 from app.services.cosmos import CosmosRepo
-from app.services.foundry import FoundryClient, init_foundry_client
+from app.services.foundry import init_foundry_client
 from app.services.narrative_engine import NarrativeEngine
 
 logging.basicConfig(
@@ -59,7 +60,8 @@ async def main() -> None:
                 )
             except Exception:
                 logger.exception(
-                    "Narrative generation failed for tenant %s", tenant_id,
+                    "Narrative generation failed for tenant %s",
+                    tenant_id,
                 )
     finally:
         await repo.close()

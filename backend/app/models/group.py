@@ -1,5 +1,6 @@
 # backend/app/models/group.py
 """Pydantic v2 model for Entra ID group profiles."""
+
 from __future__ import annotations
 
 from datetime import datetime

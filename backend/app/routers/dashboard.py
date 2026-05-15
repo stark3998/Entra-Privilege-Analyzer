@@ -1,5 +1,6 @@
 # backend/app/routers/dashboard.py
 """API endpoints for the executive dashboard."""
+
 from __future__ import annotations
 
 import json

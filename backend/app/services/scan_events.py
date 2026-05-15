@@ -164,8 +164,7 @@ class ScanEventBroker:
         async with self._lock:
             self._subscribers[project_id].add(subscriber)
             should_start_listener = (
-                self._redis_cache is not None
-                and project_id not in self._project_listeners
+                self._redis_cache is not None and project_id not in self._project_listeners
             )
         if should_start_listener:
             await self._ensure_project_listener(project_id)

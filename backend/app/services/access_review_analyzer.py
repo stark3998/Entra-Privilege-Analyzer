@@ -1,5 +1,6 @@
 # backend/app/services/access_review_analyzer.py
 """Evaluates access review coverage gaps and produces best practice violations."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -29,7 +30,9 @@ class AccessReviewAnalyzer:
         violations: list[BestPracticeViolation] = []
 
         violations.extend(self._check_privileged_roles(tenant_id, reviews, privileged_role_ids))
-        violations.extend(self._check_role_assignable_groups(tenant_id, reviews, role_assignable_group_ids))
+        violations.extend(
+            self._check_role_assignable_groups(tenant_id, reviews, role_assignable_group_ids)
+        )
         violations.extend(self._check_stale_reviews(tenant_id, reviews))
         violations.extend(self._check_guest_review(tenant_id, reviews, has_guest_users))
 
@@ -61,21 +64,23 @@ class AccessReviewAnalyzer:
         if not uncovered:
             return []
 
-        return [self._build(
-            tenant_id=tenant_id,
-            priority=ViolationPriority.HIGH,
-            title=f"{len(uncovered)} privileged role(s) without access review",
-            description=(
-                f"No access review covers {len(uncovered)} privileged role assignment(s). "
-                "Periodic certification is required for privileged access."
-            ),
-            remediation_steps=[
-                "Create access reviews for all privileged Entra ID roles.",
-                "Set recurring quarterly cadence with auto-apply.",
-            ],
-            affected_roles=sorted(uncovered),
-            id_suffix="no_access_review_roles",
-        )]
+        return [
+            self._build(
+                tenant_id=tenant_id,
+                priority=ViolationPriority.HIGH,
+                title=f"{len(uncovered)} privileged role(s) without access review",
+                description=(
+                    f"No access review covers {len(uncovered)} privileged role assignment(s). "
+                    "Periodic certification is required for privileged access."
+                ),
+                remediation_steps=[
+                    "Create access reviews for all privileged Entra ID roles.",
+                    "Set recurring quarterly cadence with auto-apply.",
+                ],
+                affected_roles=sorted(uncovered),
+                id_suffix="no_access_review_roles",
+            )
+        ]
 
     def _check_role_assignable_groups(
         self,
@@ -98,21 +103,23 @@ class AccessReviewAnalyzer:
         if not uncovered:
             return []
 
-        return [self._build(
-            tenant_id=tenant_id,
-            priority=ViolationPriority.MEDIUM,
-            title=f"{len(uncovered)} role-assignable group(s) without access review",
-            description=(
-                f"{len(uncovered)} role-assignable group(s) lack access reviews. "
-                "Membership in these groups grants privileged roles."
-            ),
-            remediation_steps=[
-                "Create access reviews for each role-assignable group.",
-                "Ensure group owners or designated reviewers certify membership.",
-            ],
-            affected_roles=sorted(uncovered),
-            id_suffix="no_access_review_groups",
-        )]
+        return [
+            self._build(
+                tenant_id=tenant_id,
+                priority=ViolationPriority.MEDIUM,
+                title=f"{len(uncovered)} role-assignable group(s) without access review",
+                description=(
+                    f"{len(uncovered)} role-assignable group(s) lack access reviews. "
+                    "Membership in these groups grants privileged roles."
+                ),
+                remediation_steps=[
+                    "Create access reviews for each role-assignable group.",
+                    "Ensure group owners or designated reviewers certify membership.",
+                ],
+                affected_roles=sorted(uncovered),
+                id_suffix="no_access_review_groups",
+            )
+        ]
 
     def _check_stale_reviews(
         self,
@@ -138,21 +145,23 @@ class AccessReviewAnalyzer:
             if days_since <= _STALE_REVIEW_DAYS:
                 continue
 
-            violations.append(self._build(
-                tenant_id=tenant_id,
-                priority=ViolationPriority.MEDIUM,
-                title=f"Stale access review '{review.display_name}' ({days_since}d ago)",
-                description=(
-                    f"Access review '{review.display_name}' completed {days_since} days ago "
-                    "with no recurrence configured. Reviews should recur at least every 6 months."
-                ),
-                remediation_steps=[
-                    f"Edit review '{review.display_name}' and enable recurring schedule.",
-                    "Recommended cadence: quarterly for privileged roles, semi-annually for others.",
-                ],
-                affected_roles=[],
-                id_suffix=f"stale_review_{review.id}",
-            ))
+            violations.append(
+                self._build(
+                    tenant_id=tenant_id,
+                    priority=ViolationPriority.MEDIUM,
+                    title=f"Stale access review '{review.display_name}' ({days_since}d ago)",
+                    description=(
+                        f"Access review '{review.display_name}' completed {days_since} days ago "
+                        "with no recurrence configured. Reviews should recur at least every 6 months."
+                    ),
+                    remediation_steps=[
+                        f"Edit review '{review.display_name}' and enable recurring schedule.",
+                        "Recommended cadence: quarterly for privileged roles, semi-annually for others.",
+                    ],
+                    affected_roles=[],
+                    id_suffix=f"stale_review_{review.id}",
+                )
+            )
 
         return violations
 
@@ -172,21 +181,23 @@ class AccessReviewAnalyzer:
             if review.scope_type.lower() == "guest":
                 return []
 
-        return [self._build(
-            tenant_id=tenant_id,
-            priority=ViolationPriority.HIGH,
-            title="No access review for guest users",
-            description=(
-                "Tenant has guest users but no access review scoped to guests. "
-                "Guest access should be periodically certified."
-            ),
-            remediation_steps=[
-                "Create an access review scoped to guest/external users.",
-                "Set quarterly recurrence with auto-removal on denial.",
-            ],
-            affected_roles=[],
-            id_suffix="no_guest_review",
-        )]
+        return [
+            self._build(
+                tenant_id=tenant_id,
+                priority=ViolationPriority.HIGH,
+                title="No access review for guest users",
+                description=(
+                    "Tenant has guest users but no access review scoped to guests. "
+                    "Guest access should be periodically certified."
+                ),
+                remediation_steps=[
+                    "Create an access review scoped to guest/external users.",
+                    "Set quarterly recurrence with auto-removal on denial.",
+                ],
+                affected_roles=[],
+                id_suffix="no_guest_review",
+            )
+        ]
 
     # ------------------------------------------------------------------
     # Helper

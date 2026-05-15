@@ -1,5 +1,6 @@
 # backend/app/services/iac_exporter.py
 """Generates IaC (Terraform, Bicep, ARM) from role recommendations."""
+
 from __future__ import annotations
 
 import json
@@ -49,7 +50,11 @@ class IacExporter:
             content = self._terraform_entra(cr.name, cr.description, cr.permissions, safe_name)
         else:
             content = self._terraform_azure(
-                cr.name, cr.description, cr.permissions, cr.is_assignable_scopes, safe_name,
+                cr.name,
+                cr.description,
+                cr.permissions,
+                cr.is_assignable_scopes,
+                safe_name,
             )
 
         return ExportResult(
@@ -61,7 +66,10 @@ class IacExporter:
 
     @staticmethod
     def _terraform_entra(
-        name: str, description: str, permissions: list[str], safe_name: str,
+        name: str,
+        description: str,
+        permissions: list[str],
+        safe_name: str,
     ) -> str:
         perm_lines = "\n".join(f'      "{_sanitize_hcl(p)}",' for p in permissions)
         return textwrap.dedent(f"""\
@@ -120,7 +128,10 @@ class IacExporter:
             content = self._bicep_entra(cr.name, cr.description, cr.permissions)
         else:
             content = self._bicep_azure(
-                cr.name, cr.description, cr.permissions, cr.is_assignable_scopes,
+                cr.name,
+                cr.description,
+                cr.permissions,
+                cr.is_assignable_scopes,
             )
 
         return ExportResult(
@@ -156,7 +167,10 @@ class IacExporter:
 
     @staticmethod
     def _bicep_azure(
-        name: str, description: str, permissions: list[str], scopes: list[str],
+        name: str,
+        description: str,
+        permissions: list[str],
+        scopes: list[str],
     ) -> str:
         action_lines = "\n".join(f"        '{_sanitize_bicep(p)}'" for p in permissions)
         scope_lines = "\n".join(f"    '{_sanitize_bicep(s)}'" for s in scopes)

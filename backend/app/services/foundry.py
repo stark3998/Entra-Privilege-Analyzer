@@ -1,5 +1,6 @@
 # backend/app/services/foundry.py
 """FoundryClient wrapper for Microsoft Foundry AI inference."""
+
 from __future__ import annotations
 
 import logging
@@ -16,7 +17,9 @@ _foundry_client: FoundryClient | None = None
 class FoundryClient:
     """Async wrapper around Azure AI Foundry chat completions endpoint."""
 
-    def __init__(self, endpoint: str, key: str, model: str, api_version: str = "2024-02-01") -> None:
+    def __init__(
+        self, endpoint: str, key: str, model: str, api_version: str = "2024-02-01"
+    ) -> None:
         self._endpoint = endpoint.rstrip("/")
         self._key = key
         self._model = model
@@ -62,6 +65,7 @@ class FoundryClient:
                     usage.get("completion_tokens", 0),
                 )
                 import re as _re
+
                 raw = str(data["choices"][0]["message"]["content"])
                 clean = _re.sub(r"<[^>]+>", "", raw)
                 return clean[:5000]

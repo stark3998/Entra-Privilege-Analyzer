@@ -1,5 +1,6 @@
 # jobs/sync_tenant.py
 """Container Apps Job: sync a tenant's data from Graph API."""
+
 from __future__ import annotations
 
 import asyncio

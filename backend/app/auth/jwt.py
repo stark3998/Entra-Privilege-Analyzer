@@ -11,9 +11,7 @@ from jwt import PyJWKClient
 
 logger = logging.getLogger(__name__)
 
-_OIDC_CONFIG_URL = (
-    "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
-)
+_OIDC_CONFIG_URL = "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
 _KEY_CACHE_TTL_SECONDS = 3600  # 1 hour
 
 

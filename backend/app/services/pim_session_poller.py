@@ -6,10 +6,10 @@ from typing import Any
 
 from app.config import Settings
 from app.pipelines.pim_session_pipeline import PimSessionPipeline
+from app.services.azure_rm_pim import AzureRmPimService
 from app.services.cosmos import CosmosRepo
 from app.services.crypto import CryptoService
 from app.services.graph_ingest import GraphIngestService
-from app.services.azure_rm_pim import AzureRmPimService
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,8 @@ class PimSessionPoller:
         interval = self._settings.pim_session_poll_interval_minutes * 60
         logger.info(
             "Starting PIM session poller for project %s (interval=%ds)",
-            project_id, interval,
+            project_id,
+            interval,
         )
         while True:
             try:

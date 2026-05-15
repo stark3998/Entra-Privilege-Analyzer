@@ -82,7 +82,9 @@ class AccessPathAnalyzer:
     """Builds an in-memory directed graph and detects privilege escalation paths."""
 
     def __init__(
-        self, repo: CosmosRepo, graph: GraphIngestService,
+        self,
+        repo: CosmosRepo,
+        graph: GraphIngestService,
         progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> None:
         self._repo = repo
@@ -95,9 +97,23 @@ class AccessPathAnalyzer:
         await self._progress_callback(payload)
 
     async def analyze_tenant(self, tenant_id: str) -> list[AccessPathAnalysis]:
-        await self._emit_progress({"type": "scan.progress", "message": "Loading tenant graph for access path analysis.", "phase": "access_paths", "status": "running"})
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": "Loading tenant graph for access path analysis.",
+                "phase": "access_paths",
+                "status": "running",
+            }
+        )
         tg = await self._load_tenant_graph(tenant_id)
-        await self._emit_progress({"type": "scan.progress", "message": f"Loaded {len(tg.identity_lookup)} identities, {len(tg.app_by_app_id)} apps, {len(tg.sp_by_app_id)} service principals.", "phase": "access_paths", "status": "running"})
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Loaded {len(tg.identity_lookup)} identities, {len(tg.app_by_app_id)} apps, {len(tg.sp_by_app_id)} service principals.",
+                "phase": "access_paths",
+                "status": "running",
+            }
+        )
         now = datetime.now(UTC)
         results: list[AccessPathAnalysis] = []
 
@@ -145,10 +161,19 @@ class AccessPathAnalyzer:
             if deduped:
                 results.append(analysis)
 
-        await self._emit_progress({"type": "scan.progress", "message": f"Found {len(results)} identities with privilege escalation paths.", "phase": "access_paths", "status": "running", "items_processed": len(results)})
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Found {len(results)} identities with privilege escalation paths.",
+                "phase": "access_paths",
+                "status": "running",
+                "items_processed": len(results),
+            }
+        )
         logger.info(
             "Access path analysis for tenant %s: %d identities with paths",
-            tenant_id, len(results),
+            tenant_id,
+            len(results),
         )
         return results
 
@@ -160,7 +185,14 @@ class AccessPathAnalyzer:
         tg = _TenantGraph()
 
         identities = await self._load_all_identities(tenant_id)
-        await self._emit_progress({"type": "scan.progress", "message": f"Loaded {len(identities)} identities from database.", "phase": "access_paths", "status": "running"})
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Loaded {len(identities)} identities from database.",
+                "phase": "access_paths",
+                "status": "running",
+            }
+        )
         for ident in identities:
             tg.identity_lookup[ident.object_id] = ident
             role_names = [r.role_name.lower() for r in ident.current_roles]
@@ -168,23 +200,44 @@ class AccessPathAnalyzer:
             for gm in ident.group_memberships:
                 tg.identity_groups.setdefault(ident.object_id, []).append(gm.group_id)
             if ident.identity_type == IdentityType.SERVICE_PRINCIPAL:
-                sp_roles = [r.role_name for r in ident.current_roles
-                            if r.role_name.lower() in ADMIN_ROLE_NAMES]
+                sp_roles = [
+                    r.role_name
+                    for r in ident.current_roles
+                    if r.role_name.lower() in ADMIN_ROLE_NAMES
+                ]
                 if sp_roles:
                     tg.sp_directory_roles[ident.object_id] = sp_roles
                 tg.sp_display_names[ident.object_id] = ident.display_name
 
         apps, _ = await self._repo.list_app_registrations(tenant_id, offset=0, limit=5000)
-        await self._emit_progress({"type": "scan.progress", "message": f"Loaded {len(apps)} app registrations.", "phase": "access_paths", "status": "running"})
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Loaded {len(apps)} app registrations.",
+                "phase": "access_paths",
+                "status": "running",
+            }
+        )
         for app in apps:
-            tg.app_by_app_id[app.app_id] = {"id": app.id, "display_name": app.display_name, "app_id": app.app_id}
+            tg.app_by_app_id[app.app_id] = {
+                "id": app.id,
+                "display_name": app.display_name,
+                "app_id": app.app_id,
+            }
             tg.app_display_names[app.id] = app.display_name
             owner_ids = [o.id for o in app.owners]
             if owner_ids:
                 tg.app_owners[app.id] = owner_ids
 
         groups, _ = await self._repo.list_groups(tenant_id, offset=0, limit=5000)
-        await self._emit_progress({"type": "scan.progress", "message": f"Loaded {len(groups)} groups.", "phase": "access_paths", "status": "running"})
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Loaded {len(groups)} groups.",
+                "phase": "access_paths",
+                "status": "running",
+            }
+        )
         for grp in groups:
             tg.group_display_names[grp.id] = grp.display_name
             if grp.roles_assigned:
@@ -194,7 +247,14 @@ class AccessPathAnalyzer:
                 tg.group_owners[grp.id] = owner_ids
 
         sps_raw = await self._graph.fetch_service_principals(tenant_id)
-        await self._emit_progress({"type": "scan.progress", "message": f"Fetched {len(sps_raw)} service principals from Graph.", "phase": "access_paths", "status": "running"})
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Fetched {len(sps_raw)} service principals from Graph.",
+                "phase": "access_paths",
+                "status": "running",
+            }
+        )
         for sp in sps_raw:
             sp_id = sp.get("id", "")
             app_id = sp.get("appId", "")
@@ -202,7 +262,8 @@ class AccessPathAnalyzer:
             tg.sp_display_names.setdefault(sp_id, sp.get("displayName", ""))
 
         ms_graph_sp = await self._graph.fetch_service_principal_by_app_id(
-            tenant_id, _MS_GRAPH_APP_ID,
+            tenant_id,
+            _MS_GRAPH_APP_ID,
         )
         if ms_graph_sp:
             for role_def in ms_graph_sp.get("appRoles", []):
@@ -212,14 +273,30 @@ class AccessPathAnalyzer:
                     tg.app_role_id_to_name[role_id] = role_value
 
         relevant_sp_ids = self._get_relevant_sp_ids(tg, sps_raw)
-        await self._emit_progress({"type": "scan.progress", "message": f"Fetching metadata for {len(relevant_sp_ids)} service principals (owners + app roles).", "phase": "access_paths", "status": "running"})
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Fetching metadata for {len(relevant_sp_ids)} service principals (owners + app roles).",
+                "phase": "access_paths",
+                "status": "running",
+            }
+        )
         await self._fetch_sp_metadata(tenant_id, tg, relevant_sp_ids)
-        await self._emit_progress({"type": "scan.progress", "message": f"Completed SP metadata fetch. {len(tg.sp_owners)} SPs have owners, {len(tg.sp_app_roles)} have app role assignments.", "phase": "access_paths", "status": "running"})
+        await self._emit_progress(
+            {
+                "type": "scan.progress",
+                "message": f"Completed SP metadata fetch. {len(tg.sp_owners)} SPs have owners, {len(tg.sp_app_roles)} have app role assignments.",
+                "phase": "access_paths",
+                "status": "running",
+            }
+        )
 
         return tg
 
     def _get_relevant_sp_ids(
-        self, tg: _TenantGraph, sps_raw: list[dict[str, Any]],
+        self,
+        tg: _TenantGraph,
+        sps_raw: list[dict[str, Any]],
     ) -> list[str]:
         owned_app_ids = set()
         for app_id, app_info in tg.app_by_app_id.items():
@@ -241,7 +318,10 @@ class AccessPathAnalyzer:
         return list(relevant)
 
     async def _fetch_sp_metadata(
-        self, tenant_id: str, tg: _TenantGraph, sp_ids: list[str],
+        self,
+        tenant_id: str,
+        tg: _TenantGraph,
+        sp_ids: list[str],
     ) -> None:
         sem = asyncio.Semaphore(10)
 
@@ -257,7 +337,8 @@ class AccessPathAnalyzer:
 
                 try:
                     assignments = await self._graph.fetch_service_principal_app_role_assignments(
-                        tenant_id, sp_id,
+                        tenant_id,
+                        sp_id,
                     )
                     if assignments:
                         tg.sp_app_roles[sp_id] = assignments
@@ -271,7 +352,9 @@ class AccessPathAnalyzer:
         offset = 0
         page_size = 200
         while True:
-            items, total = await self._repo.list_identities(tenant_id, offset=offset, limit=page_size)
+            items, total = await self._repo.list_identities(
+                tenant_id, offset=offset, limit=page_size
+            )
             all_identities.extend(items)
             if offset + page_size >= total:
                 break
@@ -283,7 +366,10 @@ class AccessPathAnalyzer:
     # ------------------------------------------------------------------
 
     def _find_app_ownership_paths(
-        self, tg: _TenantGraph, identity: IdentityProfile, obj_id: str,
+        self,
+        tg: _TenantGraph,
+        identity: IdentityProfile,
+        obj_id: str,
     ) -> list[AccessPath]:
         paths: list[AccessPath] = []
         for app_obj_id, owner_ids in tg.app_owners.items():
@@ -329,24 +415,41 @@ class AccessPathAnalyzer:
                 )
                 steps = [
                     AccessPathStep(node=source_node),
-                    AccessPathStep(node=app_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.OWNS_APP, description="owns app registration")),
-                    AccessPathStep(node=sp_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.APP_HAS_SP, description="has service principal")),
-                    AccessPathStep(node=target_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.SP_HAS_APP_ROLE, description=f"has {perm_name}")),
+                    AccessPathStep(
+                        node=app_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.OWNS_APP,
+                            description="owns app registration",
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=sp_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.APP_HAS_SP,
+                            description="has service principal",
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=target_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.SP_HAS_APP_ROLE,
+                            description=f"has {perm_name}",
+                        ),
+                    ),
                 ]
                 risk = "critical" if role_id in CRITICAL_PERMISSION_GUIDS else "high"
                 path_id = AccessPath.compute_id(steps, "app_owner_to_app_perm")
-                paths.append(AccessPath(
-                    id=path_id,
-                    path_type="app_owner_to_app_perm",
-                    risk_level=risk,
-                    steps=steps,
-                    target_privilege=perm_name,
-                    description=f"{identity.display_name} owns '{app_info['display_name']}' whose SP has {perm_name}",
-                    exploitability="requires_credential_addition",
-                ))
+                paths.append(
+                    AccessPath(
+                        id=path_id,
+                        path_type="app_owner_to_app_perm",
+                        risk_level=risk,
+                        steps=steps,
+                        target_privilege=perm_name,
+                        description=f"{identity.display_name} owns '{app_info['display_name']}' whose SP has {perm_name}",
+                        exploitability="requires_credential_addition",
+                    )
+                )
 
             for role_name in tg.sp_directory_roles.get(sp_id, []):
                 target_node = AccessPathNode(
@@ -356,29 +459,49 @@ class AccessPathAnalyzer:
                 )
                 steps = [
                     AccessPathStep(node=source_node),
-                    AccessPathStep(node=app_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.OWNS_APP, description="owns app registration")),
-                    AccessPathStep(node=sp_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.APP_HAS_SP, description="has service principal")),
-                    AccessPathStep(node=target_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.SP_HAS_DIRECTORY_ROLE, description=f"has {role_name}")),
+                    AccessPathStep(
+                        node=app_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.OWNS_APP,
+                            description="owns app registration",
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=sp_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.APP_HAS_SP,
+                            description="has service principal",
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=target_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.SP_HAS_DIRECTORY_ROLE,
+                            description=f"has {role_name}",
+                        ),
+                    ),
                 ]
                 risk = "critical" if role_name.lower() in CRITICAL_ROLE_NAMES else "high"
                 path_id = AccessPath.compute_id(steps, "app_owner_to_dir_role")
-                paths.append(AccessPath(
-                    id=path_id,
-                    path_type="app_owner_to_dir_role",
-                    risk_level=risk,
-                    steps=steps,
-                    target_privilege=role_name,
-                    description=f"{identity.display_name} owns '{app_info['display_name']}' whose SP has {role_name}",
-                    exploitability="requires_credential_addition",
-                ))
+                paths.append(
+                    AccessPath(
+                        id=path_id,
+                        path_type="app_owner_to_dir_role",
+                        risk_level=risk,
+                        steps=steps,
+                        target_privilege=role_name,
+                        description=f"{identity.display_name} owns '{app_info['display_name']}' whose SP has {role_name}",
+                        exploitability="requires_credential_addition",
+                    )
+                )
 
         return paths
 
     def _find_group_paths(
-        self, tg: _TenantGraph, identity: IdentityProfile, obj_id: str,
+        self,
+        tg: _TenantGraph,
+        identity: IdentityProfile,
+        obj_id: str,
     ) -> list[AccessPath]:
         paths: list[AccessPath] = []
         source_node = self._identity_node(identity)
@@ -404,22 +527,33 @@ class AccessPathAnalyzer:
                 )
                 steps = [
                     AccessPathStep(node=source_node),
-                    AccessPathStep(node=group_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.OWNS_GROUP, description="owns group")),
-                    AccessPathStep(node=target_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.GROUP_HAS_ROLE, description=f"has {role_name}")),
+                    AccessPathStep(
+                        node=group_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.OWNS_GROUP, description="owns group"
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=target_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.GROUP_HAS_ROLE,
+                            description=f"has {role_name}",
+                        ),
+                    ),
                 ]
                 risk = "critical" if role_name.lower() in CRITICAL_ROLE_NAMES else "high"
                 path_id = AccessPath.compute_id(steps, "group_owner_to_role")
-                paths.append(AccessPath(
-                    id=path_id,
-                    path_type="group_owner_to_role",
-                    risk_level=risk,
-                    steps=steps,
-                    target_privilege=role_name,
-                    description=f"{identity.display_name} owns group '{tg.group_display_names.get(group_id, '')}' which has {role_name}",
-                    exploitability="requires_group_membership_change",
-                ))
+                paths.append(
+                    AccessPath(
+                        id=path_id,
+                        path_type="group_owner_to_role",
+                        risk_level=risk,
+                        steps=steps,
+                        target_privilege=role_name,
+                        description=f"{identity.display_name} owns group '{tg.group_display_names.get(group_id, '')}' which has {role_name}",
+                        exploitability="requires_group_membership_change",
+                    )
+                )
 
         for group_id in tg.identity_groups.get(obj_id, []):
             roles = tg.group_roles.get(group_id, [])
@@ -440,27 +574,42 @@ class AccessPathAnalyzer:
                 )
                 steps = [
                     AccessPathStep(node=source_node),
-                    AccessPathStep(node=group_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.MEMBER_OF_GROUP, description="member of group")),
-                    AccessPathStep(node=target_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.GROUP_HAS_ROLE, description=f"has {role_name}")),
+                    AccessPathStep(
+                        node=group_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.MEMBER_OF_GROUP,
+                            description="member of group",
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=target_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.GROUP_HAS_ROLE,
+                            description=f"has {role_name}",
+                        ),
+                    ),
                 ]
                 risk = "high"
                 path_id = AccessPath.compute_id(steps, "group_member_to_role")
-                paths.append(AccessPath(
-                    id=path_id,
-                    path_type="group_member_to_role",
-                    risk_level=risk,
-                    steps=steps,
-                    target_privilege=role_name,
-                    description=f"{identity.display_name} is member of group '{tg.group_display_names.get(group_id, '')}' which has {role_name}",
-                    exploitability="direct",
-                ))
+                paths.append(
+                    AccessPath(
+                        id=path_id,
+                        path_type="group_member_to_role",
+                        risk_level=risk,
+                        steps=steps,
+                        target_privilege=role_name,
+                        description=f"{identity.display_name} is member of group '{tg.group_display_names.get(group_id, '')}' which has {role_name}",
+                        exploitability="direct",
+                    )
+                )
 
         return paths
 
     def _find_sp_ownership_paths(
-        self, tg: _TenantGraph, identity: IdentityProfile, obj_id: str,
+        self,
+        tg: _TenantGraph,
+        identity: IdentityProfile,
+        obj_id: str,
     ) -> list[AccessPath]:
         paths: list[AccessPath] = []
         source_node = self._identity_node(identity)
@@ -488,19 +637,34 @@ class AccessPathAnalyzer:
                 )
                 steps = [
                     AccessPathStep(node=source_node),
-                    AccessPathStep(node=sp_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.OWNS_SP, description="owns service principal")),
-                    AccessPathStep(node=target_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.SP_HAS_APP_ROLE, description=f"has {perm_name}")),
+                    AccessPathStep(
+                        node=sp_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.OWNS_SP,
+                            description="owns service principal",
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=target_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.SP_HAS_APP_ROLE,
+                            description=f"has {perm_name}",
+                        ),
+                    ),
                 ]
                 risk = "critical" if role_id in CRITICAL_PERMISSION_GUIDS else "high"
                 path_id = AccessPath.compute_id(steps, "sp_owner_to_app_perm")
-                paths.append(AccessPath(
-                    id=path_id, path_type="sp_owner_to_app_perm", risk_level=risk,
-                    steps=steps, target_privilege=perm_name,
-                    description=f"{identity.display_name} owns SP '{tg.sp_display_names.get(sp_id, '')}' which has {perm_name}",
-                    exploitability="requires_credential_addition",
-                ))
+                paths.append(
+                    AccessPath(
+                        id=path_id,
+                        path_type="sp_owner_to_app_perm",
+                        risk_level=risk,
+                        steps=steps,
+                        target_privilege=perm_name,
+                        description=f"{identity.display_name} owns SP '{tg.sp_display_names.get(sp_id, '')}' which has {perm_name}",
+                        exploitability="requires_credential_addition",
+                    )
+                )
 
             for role_name in tg.sp_directory_roles.get(sp_id, []):
                 target_node = AccessPathNode(
@@ -510,24 +674,42 @@ class AccessPathAnalyzer:
                 )
                 steps = [
                     AccessPathStep(node=source_node),
-                    AccessPathStep(node=sp_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.OWNS_SP, description="owns service principal")),
-                    AccessPathStep(node=target_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.SP_HAS_DIRECTORY_ROLE, description=f"has {role_name}")),
+                    AccessPathStep(
+                        node=sp_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.OWNS_SP,
+                            description="owns service principal",
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=target_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.SP_HAS_DIRECTORY_ROLE,
+                            description=f"has {role_name}",
+                        ),
+                    ),
                 ]
                 risk = "critical" if role_name.lower() in CRITICAL_ROLE_NAMES else "high"
                 path_id = AccessPath.compute_id(steps, "sp_owner_to_dir_role")
-                paths.append(AccessPath(
-                    id=path_id, path_type="sp_owner_to_dir_role", risk_level=risk,
-                    steps=steps, target_privilege=role_name,
-                    description=f"{identity.display_name} owns SP '{tg.sp_display_names.get(sp_id, '')}' which has {role_name}",
-                    exploitability="requires_credential_addition",
-                ))
+                paths.append(
+                    AccessPath(
+                        id=path_id,
+                        path_type="sp_owner_to_dir_role",
+                        risk_level=risk,
+                        steps=steps,
+                        target_privilege=role_name,
+                        description=f"{identity.display_name} owns SP '{tg.sp_display_names.get(sp_id, '')}' which has {role_name}",
+                        exploitability="requires_credential_addition",
+                    )
+                )
 
         return paths
 
     def _find_implicit_role_paths(
-        self, tg: _TenantGraph, identity: IdentityProfile, obj_id: str,
+        self,
+        tg: _TenantGraph,
+        identity: IdentityProfile,
+        obj_id: str,
     ) -> list[AccessPath]:
         """P5: Application Administrator -> any app's SP permissions.
         P8: SP with Application.ReadWrite.All -> any app's SP permissions.
@@ -577,26 +759,47 @@ class AccessPathAnalyzer:
                 )
                 steps = [
                     AccessPathStep(node=source_node),
-                    AccessPathStep(node=role_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.HAS_DIRECTORY_ROLE,
-                        description=f"has {admin_role_name.title()}")),
-                    AccessPathStep(node=implicit_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.CAN_MODIFY_ANY_APP,
-                        description="can modify any app")),
-                    AccessPathStep(node=sp_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.APP_HAS_SP,
-                        description="has service principal")),
-                    AccessPathStep(node=target_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.SP_HAS_APP_ROLE,
-                        description=f"has {perm_name}")),
+                    AccessPathStep(
+                        node=role_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.HAS_DIRECTORY_ROLE,
+                            description=f"has {admin_role_name.title()}",
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=implicit_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.CAN_MODIFY_ANY_APP,
+                            description="can modify any app",
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=sp_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.APP_HAS_SP,
+                            description="has service principal",
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=target_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.SP_HAS_APP_ROLE,
+                            description=f"has {perm_name}",
+                        ),
+                    ),
                 ]
                 path_id = AccessPath.compute_id(steps, "app_admin_to_critical_perm")
-                paths.append(AccessPath(
-                    id=path_id, path_type="app_admin_to_critical_perm", risk_level="critical",
-                    steps=steps, target_privilege=perm_name,
-                    description=f"{identity.display_name} has {admin_role_name.title()} and can add credentials to any app, reaching {perm_name}",
-                    exploitability="requires_credential_addition",
-                ))
+                paths.append(
+                    AccessPath(
+                        id=path_id,
+                        path_type="app_admin_to_critical_perm",
+                        risk_level="critical",
+                        steps=steps,
+                        target_privilege=perm_name,
+                        description=f"{identity.display_name} has {admin_role_name.title()} and can add credentials to any app, reaching {perm_name}",
+                        exploitability="requires_credential_addition",
+                    )
+                )
 
             for role_name in tg.sp_directory_roles.get(sp_id, []):
                 if role_name.lower() not in CRITICAL_ROLE_NAMES:
@@ -613,26 +816,47 @@ class AccessPathAnalyzer:
                 )
                 steps = [
                     AccessPathStep(node=source_node),
-                    AccessPathStep(node=role_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.HAS_DIRECTORY_ROLE,
-                        description=f"has {admin_role_name.title()}")),
-                    AccessPathStep(node=implicit_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.CAN_MODIFY_ANY_APP,
-                        description="can modify any app")),
-                    AccessPathStep(node=sp_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.APP_HAS_SP,
-                        description="has service principal")),
-                    AccessPathStep(node=target_node, edge=AccessPathEdge(
-                        edge_type=AccessPathEdgeType.SP_HAS_DIRECTORY_ROLE,
-                        description=f"has {role_name}")),
+                    AccessPathStep(
+                        node=role_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.HAS_DIRECTORY_ROLE,
+                            description=f"has {admin_role_name.title()}",
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=implicit_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.CAN_MODIFY_ANY_APP,
+                            description="can modify any app",
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=sp_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.APP_HAS_SP,
+                            description="has service principal",
+                        ),
+                    ),
+                    AccessPathStep(
+                        node=target_node,
+                        edge=AccessPathEdge(
+                            edge_type=AccessPathEdgeType.SP_HAS_DIRECTORY_ROLE,
+                            description=f"has {role_name}",
+                        ),
+                    ),
                 ]
                 path_id = AccessPath.compute_id(steps, "app_admin_to_critical_role")
-                paths.append(AccessPath(
-                    id=path_id, path_type="app_admin_to_critical_role", risk_level="critical",
-                    steps=steps, target_privilege=role_name,
-                    description=f"{identity.display_name} has {admin_role_name.title()} and can add credentials to any app, reaching {role_name}",
-                    exploitability="requires_credential_addition",
-                ))
+                paths.append(
+                    AccessPath(
+                        id=path_id,
+                        path_type="app_admin_to_critical_role",
+                        risk_level="critical",
+                        steps=steps,
+                        target_privilege=role_name,
+                        description=f"{identity.display_name} has {admin_role_name.title()} and can add credentials to any app, reaching {role_name}",
+                        exploitability="requires_credential_addition",
+                    )
+                )
 
         return paths
 

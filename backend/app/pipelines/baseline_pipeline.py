@@ -1,5 +1,6 @@
 # backend/app/pipelines/baseline_pipeline.py
 """Computes rolling baseline statistics per identity per action from action events."""
+
 from __future__ import annotations
 
 import hashlib
@@ -39,7 +40,9 @@ class BaselinePipeline:
         page_size = 100
         while True:
             items, total = await self._repo.list_identities(
-                tenant_id=tenant_id, offset=offset, limit=page_size,
+                tenant_id=tenant_id,
+                offset=offset,
+                limit=page_size,
             )
             for identity in items:
                 all_identities_ids.append((identity.id, identity.display_name))
@@ -83,7 +86,7 @@ class BaselinePipeline:
 
                     mean = sum(counts) / sample_count
                     variance = sum((c - mean) ** 2 for c in counts) / max(sample_count, 1)
-                    stddev = variance ** 0.5
+                    stddev = variance**0.5
 
                     # Deterministic id for the baseline document
                     hash_input = f"{identity_id}|{action}|{resource or ''}"

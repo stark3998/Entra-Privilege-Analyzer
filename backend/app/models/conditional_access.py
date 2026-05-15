@@ -1,5 +1,6 @@
 # backend/app/models/conditional_access.py
 """Pydantic v2 models for Conditional Access policy data from Microsoft Graph API."""
+
 from __future__ import annotations
 
 from datetime import datetime

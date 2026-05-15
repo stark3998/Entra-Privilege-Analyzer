@@ -1,5 +1,6 @@
 # backend/app/routers/best_practices.py
 """API endpoints for best practice violation analysis and compliance scoring."""
+
 from __future__ import annotations
 
 import logging

@@ -1,12 +1,13 @@
 # backend/app/routers/settings_router.py
 """API endpoints for tenant settings management."""
+
 from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.auth.deps import CurrentUser, require_role, validate_tenant_access
@@ -31,7 +32,8 @@ class TenantSettingsUpdate(BaseModel):
 
 
 async def _get_or_create_config(
-    tenant_id: str, repo: CosmosRepo,
+    tenant_id: str,
+    repo: CosmosRepo,
 ) -> TenantConfig:
     """Return the tenant config, creating a default one if it doesn't exist."""
     config = await repo.get_tenant_config(tenant_id)
