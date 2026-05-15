@@ -165,7 +165,7 @@ jobs:
 
           # Wait for the new revision to become ready (up to 120s)
           for i in $(seq 1 12); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/health" || echo "000")
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/healthz" || echo "000")
             if [ "$STATUS" = "200" ]; then
               echo "Health check passed (HTTP 200)"
               exit 0
