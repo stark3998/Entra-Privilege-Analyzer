@@ -1,10 +1,11 @@
 # backend/app/routers/health.py
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 router = APIRouter(tags=["health"])
 logger = logging.getLogger(__name__)
@@ -14,6 +15,28 @@ logger = logging.getLogger(__name__)
 async def healthz() -> dict[str, str]:
     """Liveness probe — always returns OK if the process is running."""
     return {"status": "ok"}
+
+
+@router.get("/sse-test")
+async def sse_test() -> StreamingResponse:
+    """Minimal SSE test endpoint to diagnose streaming through Envoy."""
+
+    async def generate():
+        yield b"data: {\"msg\":\"hello\"}\n\n"
+        for i in range(10):
+            await asyncio.sleep(2)
+            yield f"data: {{\"msg\":\"tick {i}\"}}\n\n".encode()
+        yield b"data: {\"msg\":\"done\"}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/readyz")
