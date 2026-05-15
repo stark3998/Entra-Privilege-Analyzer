@@ -30,7 +30,7 @@ _SCAN_HEARTBEAT_INTERVAL_SECONDS = 30
 _SCAN_LEASE_SECONDS = 120
 _STALE_SCAN_MESSAGE = "Scan abandoned after backend restart or task loss."
 _CANCELLED_SCAN_MESSAGE = "Scan interrupted by backend shutdown or redeploy before completion."
-_STREAM_OPEN_FRAME = b": stream-open\n\n"
+_STREAM_OPEN_FRAME = b": stream-open" + b" " * 2048 + b"\n\n"
 
 router = APIRouter(
     prefix="/api/projects/{project_id}/scans",
@@ -575,7 +575,7 @@ async def stream_scan_events(
                     if event.get("type") == "stream.error":
                         break
                 except asyncio.TimeoutError:
-                    yield b": keepalive\n\n"
+                    yield b": keepalive" + b" " * 2048 + b"\n\n"
             await drain_queue(queue)
 
     headers = {
