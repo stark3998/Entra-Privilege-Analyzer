@@ -532,8 +532,8 @@ async def trigger_scan(
             settings=settings,
         )
     )
-    request.app.state.scan_tasks.add(task)
-    task.add_done_callback(request.app.state.scan_tasks.discard)
+    request.app.state.scan_tasks[scan.id] = task
+    task.add_done_callback(lambda t, sid=scan.id: request.app.state.scan_tasks.pop(sid, None))
 
     return {
         "scan_id": scan.id,
@@ -594,6 +594,58 @@ async def poll_scan_events(
         "scan_status": scan_status,
         "has_more": False,
     }
+
+
+@router.post("/{scan_id}/cancel", status_code=status.HTTP_200_OK)
+async def cancel_scan(
+    project_id: str,
+    scan_id: str,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Cancel a running scan."""
+    await validate_project_access(project_id, user, repo, settings, required_role="operator")
+    scan = await repo.get_scan(project_id, scan_id)
+    if scan is None:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.status not in {"queued", "running"}:
+        raise HTTPException(status_code=400, detail=f"Scan is already {scan.status}")
+
+    # Cancel the asyncio task if it's running on this instance
+    task = request.app.state.scan_tasks.get(scan_id)
+    if task is not None and not task.done():
+        task.cancel()
+
+    # Mark the scan as failed/cancelled in Cosmos
+    now = datetime.now(UTC)
+    scan.status = "failed"
+    scan.error_message = "Scan cancelled by user."
+    scan.completed_at = now
+    _clear_scan_lease(scan)
+    for phase in scan.phases:
+        if phase.status in {"pending", "running"}:
+            phase.status = "failed"
+            phase.completed_at = now
+    await repo.upsert_scan(scan)
+
+    # Release the project scan lease
+    instance_id = request.app.state.instance_id
+    await repo.release_project_scan_lease(
+        project_id, scan_id, instance_id, now, "failed",
+    )
+
+    # Publish cancellation event
+    broker: ScanEventBroker = request.app.state.scan_event_broker
+    if broker is not None:
+        await _publish_scan_event(
+            broker, project_id, scan_id=scan_id,
+            type="scan.cancelled", message="Scan cancelled by user.",
+            level="warning", status="failed",
+        )
+
+    return {"scan_id": scan_id, "status": "failed", "message": "Scan cancelled."}
 
 
 @router.get("/events")

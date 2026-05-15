@@ -4,6 +4,7 @@ import {
   useScanHistory,
   useLatestScan,
   useTriggerScan,
+  useCancelScan,
   useDelegatedPermissionsCheck,
   pollScanEvents,
 } from "@/api/projectHooks";
@@ -198,6 +199,7 @@ function buildSnapshotStreamEvent(scan: ScanRecord): ScanStreamEvent {
 export function ScanPage() {
   const { projectId, project } = useProjectContext();
   const triggerScan = useTriggerScan(projectId);
+  const cancelScan = useCancelScan(projectId);
   const { data: latestScan } = useLatestScan(projectId);
   const [page, setPage] = useState(1);
   const { data: history, isLoading: historyLoading } = useScanHistory(
@@ -399,6 +401,15 @@ export function ScanPage() {
                 "Run Scan"
               )}
             </button>
+            {isRunning && latestScan && (
+              <button
+                onClick={() => cancelScan.mutate(latestScan.id)}
+                disabled={cancelScan.isPending}
+                className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40"
+              >
+                {cancelScan.isPending ? "Cancelling..." : "Cancel Scan"}
+              </button>
+            )}
           </div>
         </div>
 

@@ -408,6 +408,7 @@ class IngestPipeline:
                     self._repo, self._graph,
                     business_hours_start=settings.pim_session_business_hours_start,
                     business_hours_end=settings.pim_session_business_hours_end,
+                    progress_callback=self._progress_callback,
                 )
                 pim_summary = await pim_pipeline.run(
                     tenant_id,
@@ -429,7 +430,7 @@ class IngestPipeline:
             try:
                 from app.services.access_path_analyzer import AccessPathAnalyzer
 
-                analyzer = AccessPathAnalyzer(self._repo, self._graph)
+                analyzer = AccessPathAnalyzer(self._repo, self._graph, progress_callback=self._progress_callback)
                 path_results = await analyzer.analyze_tenant(tenant_id)
                 for result in path_results:
                     await self._repo.upsert_access_path_analysis(tenant_id, result)

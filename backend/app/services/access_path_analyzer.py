@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -80,12 +81,23 @@ class _TenantGraph:
 class AccessPathAnalyzer:
     """Builds an in-memory directed graph and detects privilege escalation paths."""
 
-    def __init__(self, repo: CosmosRepo, graph: GraphIngestService) -> None:
+    def __init__(
+        self, repo: CosmosRepo, graph: GraphIngestService,
+        progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+    ) -> None:
         self._repo = repo
         self._graph = graph
+        self._progress_callback = progress_callback
+
+    async def _emit_progress(self, payload: dict[str, Any]) -> None:
+        if self._progress_callback is None:
+            return
+        await self._progress_callback(payload)
 
     async def analyze_tenant(self, tenant_id: str) -> list[AccessPathAnalysis]:
+        await self._emit_progress({"type": "scan.progress", "message": "Loading tenant graph for access path analysis.", "phase": "access_paths", "status": "running"})
         tg = await self._load_tenant_graph(tenant_id)
+        await self._emit_progress({"type": "scan.progress", "message": f"Loaded {len(tg.identity_lookup)} identities, {len(tg.app_by_app_id)} apps, {len(tg.sp_by_app_id)} service principals.", "phase": "access_paths", "status": "running"})
         now = datetime.now(UTC)
         results: list[AccessPathAnalysis] = []
 
@@ -133,6 +145,7 @@ class AccessPathAnalyzer:
             if deduped:
                 results.append(analysis)
 
+        await self._emit_progress({"type": "scan.progress", "message": f"Found {len(results)} identities with privilege escalation paths.", "phase": "access_paths", "status": "running", "items_processed": len(results)})
         logger.info(
             "Access path analysis for tenant %s: %d identities with paths",
             tenant_id, len(results),
@@ -147,6 +160,7 @@ class AccessPathAnalyzer:
         tg = _TenantGraph()
 
         identities = await self._load_all_identities(tenant_id)
+        await self._emit_progress({"type": "scan.progress", "message": f"Loaded {len(identities)} identities from database.", "phase": "access_paths", "status": "running"})
         for ident in identities:
             tg.identity_lookup[ident.object_id] = ident
             role_names = [r.role_name.lower() for r in ident.current_roles]
@@ -161,6 +175,7 @@ class AccessPathAnalyzer:
                 tg.sp_display_names[ident.object_id] = ident.display_name
 
         apps, _ = await self._repo.list_app_registrations(tenant_id, offset=0, limit=5000)
+        await self._emit_progress({"type": "scan.progress", "message": f"Loaded {len(apps)} app registrations.", "phase": "access_paths", "status": "running"})
         for app in apps:
             tg.app_by_app_id[app.app_id] = {"id": app.id, "display_name": app.display_name, "app_id": app.app_id}
             tg.app_display_names[app.id] = app.display_name
@@ -169,6 +184,7 @@ class AccessPathAnalyzer:
                 tg.app_owners[app.id] = owner_ids
 
         groups, _ = await self._repo.list_groups(tenant_id, offset=0, limit=5000)
+        await self._emit_progress({"type": "scan.progress", "message": f"Loaded {len(groups)} groups.", "phase": "access_paths", "status": "running"})
         for grp in groups:
             tg.group_display_names[grp.id] = grp.display_name
             if grp.roles_assigned:
@@ -178,6 +194,7 @@ class AccessPathAnalyzer:
                 tg.group_owners[grp.id] = owner_ids
 
         sps_raw = await self._graph.fetch_service_principals(tenant_id)
+        await self._emit_progress({"type": "scan.progress", "message": f"Fetched {len(sps_raw)} service principals from Graph.", "phase": "access_paths", "status": "running"})
         for sp in sps_raw:
             sp_id = sp.get("id", "")
             app_id = sp.get("appId", "")
@@ -195,7 +212,9 @@ class AccessPathAnalyzer:
                     tg.app_role_id_to_name[role_id] = role_value
 
         relevant_sp_ids = self._get_relevant_sp_ids(tg, sps_raw)
+        await self._emit_progress({"type": "scan.progress", "message": f"Fetching metadata for {len(relevant_sp_ids)} service principals (owners + app roles).", "phase": "access_paths", "status": "running"})
         await self._fetch_sp_metadata(tenant_id, tg, relevant_sp_ids)
+        await self._emit_progress({"type": "scan.progress", "message": f"Completed SP metadata fetch. {len(tg.sp_owners)} SPs have owners, {len(tg.sp_app_roles)} have app role assignments.", "phase": "access_paths", "status": "running"})
 
         return tg
 

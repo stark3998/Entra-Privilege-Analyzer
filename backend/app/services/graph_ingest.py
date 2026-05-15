@@ -344,7 +344,7 @@ class GraphIngestService:
         """Fetch all active role assignments including PIM-activated ones."""
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/roleManagement/directory/roleAssignmentScheduleInstances"
-        return await self._graph_get_all_pages(token, url)
+        return await self._graph_get_all_pages(token, url, phase_name="role_assignments")
 
     async def fetch_role_eligibility_schedule_instances(
         self, tenant_id: str,
@@ -352,7 +352,7 @@ class GraphIngestService:
         """Fetch all PIM-eligible role assignments."""
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/roleManagement/directory/roleEligibilityScheduleInstances"
-        return await self._graph_get_all_pages(token, url)
+        return await self._graph_get_all_pages(token, url, phase_name="role_assignments")
 
     # ------------------------------------------------------------------
     # App registration & credential APIs
@@ -369,7 +369,7 @@ class GraphIngestService:
                 "verifiedPublisher,disabledByMicrosoftStatus"
             ),
         }
-        return await self._graph_get_all_pages(token, url, params)
+        return await self._graph_get_all_pages(token, url, params, phase_name="identity_profiles")
 
     async def fetch_application_owners(
         self, tenant_id: str, app_object_id: str,
@@ -378,7 +378,7 @@ class GraphIngestService:
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/applications/{app_object_id}/owners"
         params = {"$select": "id,displayName,userPrincipalName"}
-        return await self._graph_get_all_pages(token, url, params)
+        return await self._graph_get_all_pages(token, url, params, phase_name="identity_profiles")
 
     async def fetch_oauth2_permission_grants(
         self, tenant_id: str,
@@ -386,7 +386,7 @@ class GraphIngestService:
         """Fetch delegated permission grants."""
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/oauth2PermissionGrants"
-        return await self._graph_get_all_pages(token, url)
+        return await self._graph_get_all_pages(token, url, phase_name="identity_profiles")
 
     # ------------------------------------------------------------------
     # MFA registration (bulk reporting API)
@@ -398,7 +398,7 @@ class GraphIngestService:
         """Fetch bulk MFA registration status for all users."""
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/reports/authenticationMethods/userRegistrationDetails"
-        return await self._graph_get_all_pages(token, url)
+        return await self._graph_get_all_pages(token, url, phase_name="identity_profiles")
 
     # ------------------------------------------------------------------
     # Conditional Access policies
@@ -410,7 +410,7 @@ class GraphIngestService:
         """Fetch all Conditional Access policies."""
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/identity/conditionalAccess/policies"
-        return await self._graph_get_all_pages(token, url)
+        return await self._graph_get_all_pages(token, url, phase_name="identity_profiles")
 
     # ------------------------------------------------------------------
     # Identity Protection
@@ -420,7 +420,7 @@ class GraphIngestService:
         """Fetch risky users from Identity Protection. Requires P2 license."""
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/identityProtection/riskyUsers"
-        return await self._graph_get_all_pages(token, url)
+        return await self._graph_get_all_pages(token, url, phase_name="identity_profiles")
 
     async def fetch_risk_detections(
         self, tenant_id: str, since: datetime | None = None,
@@ -432,7 +432,7 @@ class GraphIngestService:
         if since:
             cutoff = since.strftime("%Y-%m-%dT%H:%M:%SZ")
             params = {"$filter": f"detectedDateTime ge {cutoff}"}
-        return await self._graph_get_all_pages(token, url, params)
+        return await self._graph_get_all_pages(token, url, params, phase_name="identity_profiles")
 
     # ------------------------------------------------------------------
     # Groups
@@ -457,6 +457,7 @@ class GraphIngestService:
         all_items: list[dict[str, Any]] = []
         current_url: str | None = url
         current_params: dict[str, str] | None = params
+        page_count = 0
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             while current_url is not None:
@@ -465,7 +466,18 @@ class GraphIngestService:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                all_items.extend(data.get("value", []))
+                page_items = data.get("value", [])
+                all_items.extend(page_items)
+                page_count += 1
+                await self._emit_progress(
+                    {
+                        "type": "graph.page",
+                        "message": f"Fetched Graph page {page_count} for groups.",
+                        "phase": "identity_profiles",
+                        "items_processed": len(all_items),
+                        "details": {"page": page_count, "page_items": len(page_items)},
+                    }
+                )
                 current_url = data.get("@odata.nextLink")
                 current_params = None
         return all_items
@@ -477,7 +489,7 @@ class GraphIngestService:
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/groups/{group_id}/transitiveMembers"
         params = {"$select": "id,displayName,userPrincipalName,@odata.type"}
-        return await self._graph_get_all_pages(token, url, params)
+        return await self._graph_get_all_pages(token, url, params, phase_name="identity_profiles")
 
     async def fetch_group_owners(
         self, tenant_id: str, group_id: str,
@@ -486,7 +498,7 @@ class GraphIngestService:
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/groups/{group_id}/owners"
         params = {"$select": "id,displayName,userPrincipalName"}
-        return await self._graph_get_all_pages(token, url, params)
+        return await self._graph_get_all_pages(token, url, params, phase_name="identity_profiles")
 
     # ------------------------------------------------------------------
     # Access Reviews
@@ -498,7 +510,7 @@ class GraphIngestService:
         """Fetch access review definitions. Requires Entra ID Governance."""
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/identityGovernance/accessReviews/definitions"
-        return await self._graph_get_all_pages(token, url)
+        return await self._graph_get_all_pages(token, url, phase_name="identity_profiles")
 
     # ------------------------------------------------------------------
     # Cross-tenant access
@@ -510,7 +522,7 @@ class GraphIngestService:
         """Fetch cross-tenant access policy partner configurations."""
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/policies/crossTenantAccessPolicy/partners"
-        return await self._graph_get_all_pages(token, url)
+        return await self._graph_get_all_pages(token, url, phase_name="identity_profiles")
 
     # ------------------------------------------------------------------
     # Beta-only: Service Principal & App Credential sign-in reports
@@ -534,7 +546,7 @@ class GraphIngestService:
             "$filter": " and ".join(filter_parts),
             "$expand": "roleDefinition,principal,activatedUsing,targetSchedule",
         }
-        return await self._graph_get_all_pages(token, url, params)
+        return await self._graph_get_all_pages(token, url, params, phase_name="pim_sessions")
 
     async def fetch_pim_audit_events(
         self, tenant_id: str, since: datetime | None = None,
@@ -549,7 +561,7 @@ class GraphIngestService:
             "$filter": f"category eq 'RoleManagement' and activityDateTime ge {cutoff}",
             "$top": "999",
         }
-        return await self._graph_get_all_pages(token, url, params)
+        return await self._graph_get_all_pages(token, url, params, phase_name="pim_sessions")
 
     async def fetch_sign_ins_for_user(
         self, tenant_id: str, user_id: str, start: datetime, end: datetime,
@@ -567,7 +579,7 @@ class GraphIngestService:
             ),
             "$top": "999",
         }
-        return await self._graph_get_all_pages(token, url, params)
+        return await self._graph_get_all_pages(token, url, params, phase_name="pim_sessions")
 
     async def fetch_audit_events_for_user(
         self, tenant_id: str, user_id: str, start: datetime, end: datetime,
@@ -588,7 +600,7 @@ class GraphIngestService:
             ),
             "$top": "999",
         }
-        all_events = await self._graph_get_all_pages(token, url, params)
+        all_events = await self._graph_get_all_pages(token, url, params, phase_name="pim_sessions")
         return [
             e for e in all_events
             if (e.get("initiatedBy", {}).get("user") or {}).get("id") == user_id
@@ -605,7 +617,7 @@ class GraphIngestService:
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/servicePrincipals/{sp_id}/owners"
         params = {"$select": "id,displayName,userPrincipalName,@odata.type"}
-        return await self._graph_get_all_pages(token, url, params)
+        return await self._graph_get_all_pages(token, url, params, phase_name="access_paths")
 
     async def fetch_service_principal_app_role_assignments(
         self, tenant_id: str, sp_id: str,
@@ -613,7 +625,7 @@ class GraphIngestService:
         """Fetch granted application permission assignments for a service principal."""
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/servicePrincipals/{sp_id}/appRoleAssignments"
-        return await self._graph_get_all_pages(token, url)
+        return await self._graph_get_all_pages(token, url, phase_name="access_paths")
 
     async def fetch_service_principal_by_app_id(
         self, tenant_id: str, app_id: str,
@@ -625,7 +637,7 @@ class GraphIngestService:
             "$filter": f"appId eq '{app_id}'",
             "$select": "id,displayName,appId,appRoles",
         }
-        items = await self._graph_get_all_pages(token, url, params)
+        items = await self._graph_get_all_pages(token, url, params, phase_name="access_paths")
         return items[0] if items else None
 
     # ------------------------------------------------------------------
@@ -642,7 +654,7 @@ class GraphIngestService:
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/reports/servicePrincipalSignInActivities"
         try:
-            return await self._graph_get_all_pages(token, url)
+            return await self._graph_get_all_pages(token, url, phase_name="identity_profiles")
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (400, 404):
                 logger.debug("servicePrincipalSignInActivities not available (version=%s)", self._settings.graph_api_version)
@@ -659,7 +671,7 @@ class GraphIngestService:
         token = await self._get_token(tenant_id)
         url = f"{self._graph_base}/reports/appCredentialSignInActivities"
         try:
-            return await self._graph_get_all_pages(token, url)
+            return await self._graph_get_all_pages(token, url, phase_name="identity_profiles")
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (400, 404):
                 logger.debug("appCredentialSignInActivities not available (version=%s)", self._settings.graph_api_version)

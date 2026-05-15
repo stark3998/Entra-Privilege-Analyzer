@@ -205,6 +205,25 @@ export function useTriggerScan(projectId: string) {
   });
 }
 
+export function useCancelScan(projectId: string) {
+  const client = getApiClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (scanId: string) =>
+      client.post<{ scan_id: string; status: string; message: string }>(
+        `/api/projects/${projectId}/scans/${scanId}/cancel`,
+        {},
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["scanHistory", projectId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["latestScan", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+    },
+  });
+}
+
 export function useDelegatedPermissionsCheck(projectId: string, enabled = false) {
   const client = getApiClient();
   return useQuery({

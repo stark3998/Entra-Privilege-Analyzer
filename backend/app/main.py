@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     if settings.local_mode:
         logger.warning("LOCAL MODE ACTIVE — authentication disabled")
-    app.state.scan_tasks = set()
+    app.state.scan_tasks: dict[str, asyncio.Task] = {}
     app.state.instance_id = str(uuid.uuid4())
 
     # Observability
@@ -102,7 +102,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     # Shutdown
-    scan_tasks = list(app.state.scan_tasks)
+    scan_tasks = list(app.state.scan_tasks.values())
     for task in scan_tasks:
         task.cancel()
     if scan_tasks:
@@ -129,7 +129,7 @@ def create_app() -> FastAPI:
         version="0.7.0",
         lifespan=lifespan,
     )
-    app.state.scan_tasks = set()
+    app.state.scan_tasks: dict[str, asyncio.Task] = {}
     app.state.scan_event_broker = None
     app.state.cosmos_repo = None
     app.state.instance_id = str(uuid.uuid4())

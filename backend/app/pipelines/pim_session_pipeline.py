@@ -5,6 +5,7 @@ import logging
 import re
 import time
 from datetime import UTC, datetime, timedelta
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.models.action import ActionEvent, ActionSource
@@ -69,13 +70,20 @@ class PimSessionPipeline:
         arm_pim: AzureRmPimService | None = None,
         business_hours_start: int = 7,
         business_hours_end: int = 19,
+        progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> None:
         self._repo = repo
         self._graph = graph
         self._arm_pim = arm_pim
+        self._progress_callback = progress_callback
         self._detector = PimSessionAnomalyDetector(
             repo, business_hours_start, business_hours_end,
         )
+
+    async def _emit_progress(self, payload: dict[str, Any]) -> None:
+        if self._progress_callback is None:
+            return
+        await self._progress_callback(payload)
 
     async def _update_phase(
         self, scan: ScanRecord | None, status: str, items: int = 0,
@@ -116,12 +124,14 @@ class PimSessionPipeline:
         role_lookup: dict[str, str] = {
             d.get("id", ""): d.get("displayName", "Unknown Role") for d in role_defs
         }
+        await self._emit_progress({"type": "scan.progress", "message": f"Loaded {len(role_defs)} PIM role definitions.", "phase": "pim_sessions", "status": "running"})
 
         # 1. Fetch Entra ID PIM activation requests
         logger.info("Fetching Entra PIM activation requests for tenant %s", tenant_id)
         raw_requests = await self._graph.fetch_role_assignment_schedule_requests(
             tenant_id, since=since,
         )
+        await self._emit_progress({"type": "scan.progress", "message": f"Fetched {len(raw_requests)} PIM activation requests.", "phase": "pim_sessions", "status": "running", "items_processed": len(raw_requests)})
         entra_sessions = self._parse_entra_requests(
             tenant_id, raw_requests, role_lookup, now,
         )
@@ -200,6 +210,8 @@ class PimSessionPipeline:
 
             await self._repo.upsert_pim_session(tenant_id, session)
             sessions_processed += 1
+            if sessions_processed % 10 == 0 and sessions_processed > 0:
+                await self._emit_progress({"type": "scan.progress", "message": f"Processed {sessions_processed}/{len(all_sessions)} PIM sessions.", "phase": "pim_sessions", "status": "running", "items_processed": sessions_processed})
 
         # Update sync state
         await self._repo.upsert_sync_state(tenant_id, "pim_sessions", {
