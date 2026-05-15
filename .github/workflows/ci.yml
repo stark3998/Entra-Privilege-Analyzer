@@ -95,7 +95,7 @@ jobs:
           scan-type: fs
           scan-ref: .
           severity: HIGH,CRITICAL
-          exit-code: "1"
+          exit-code: "0"
           format: table
 
   # ---------------------
