@@ -39,6 +39,9 @@ dev = [
     "ruff>=0.6.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["app*", "jobs*"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
