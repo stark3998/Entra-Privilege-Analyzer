@@ -363,6 +363,13 @@ export interface ScanStreamEvent {
   details: Record<string, unknown>;
 }
 
+export interface PollScanEventsResponse {
+  events: ScanStreamEvent[];
+  cursor: string | null;
+  scan_status: ScanStatus | null;
+  has_more: boolean;
+}
+
 export interface DelegatedPermissionsCheck {
   sufficient: boolean;
   granted_scopes: string[];

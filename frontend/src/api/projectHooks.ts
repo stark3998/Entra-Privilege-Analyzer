@@ -12,6 +12,7 @@ import type {
   PaginatedResponse,
   DelegatedPermissionsCheck,
   ScanStreamEvent,
+  PollScanEventsResponse,
 } from "./types";
 
 export function useProjects() {
@@ -231,4 +232,18 @@ export function streamScanEvents(
     onMessage,
     signal,
   );
+}
+
+export async function pollScanEvents(
+  projectId: string,
+  scanId: string | null,
+  afterCursor: string | null,
+): Promise<PollScanEventsResponse> {
+  const client = getApiClient();
+  const params = new URLSearchParams();
+  if (scanId) params.set("scan_id", scanId);
+  if (afterCursor) params.set("after", afterCursor);
+  const qs = params.toString();
+  const path = `/api/projects/${projectId}/scans/events/poll${qs ? `?${qs}` : ""}`;
+  return client.get<PollScanEventsResponse>(path);
 }

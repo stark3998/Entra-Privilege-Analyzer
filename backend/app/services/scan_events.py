@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -14,6 +14,8 @@ from typing import Any
 from app.services.redis_cache import RedisCache
 
 logger = logging.getLogger(__name__)
+
+_RECENT_EVENTS_MAX = 200
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +38,9 @@ class ScanEventBroker:
         self._subscribers: dict[str, set[_Subscriber]] = defaultdict(set)
         self._project_listeners: dict[str, _ProjectListener] = {}
         self._lock = asyncio.Lock()
+        self._recent_events: dict[str, deque[dict[str, Any]]] = defaultdict(
+            lambda: deque(maxlen=_RECENT_EVENTS_MAX)
+        )
 
     @staticmethod
     def _channel_name(project_id: str) -> str:
@@ -85,6 +90,30 @@ class ScanEventBroker:
         with contextlib.suppress(asyncio.QueueFull):
             queue.put_nowait(event)
 
+    def _append_recent(self, project_id: str, event: dict[str, Any]) -> None:
+        """Append an event to the per-project ring buffer for poll access."""
+        self._recent_events[project_id].append(event)
+
+    def get_events_after(
+        self,
+        project_id: str,
+        scan_id: str | None = None,
+        after_timestamp: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return buffered events newer than *after_timestamp*, optionally filtered by scan_id."""
+        buf = self._recent_events.get(project_id)
+        if buf is None:
+            return []
+
+        results: list[dict[str, Any]] = []
+        for event in buf:
+            if after_timestamp is not None and event.get("timestamp", "") <= after_timestamp:
+                continue
+            if not self._matches_scan(event, scan_id):
+                continue
+            results.append(event)
+        return results
+
     async def _ensure_project_listener(self, project_id: str) -> None:
         if self._redis_cache is None or project_id in self._project_listeners:
             return
@@ -107,6 +136,8 @@ class ScanEventBroker:
             await listener.pubsub.aclose()
 
     async def _fan_out(self, project_id: str, event: dict[str, Any]) -> None:
+        self._append_recent(project_id, event)
+
         async with self._lock:
             subscribers = list(self._subscribers.get(project_id, set()))
 
@@ -228,6 +259,7 @@ class ScanEventBroker:
         )
 
         if self._redis_cache is not None:
+            self._append_recent(project_id, event)
             await self._redis_cache.publish(
                 self._channel_name(project_id),
                 json.dumps(event, separators=(",", ":")),

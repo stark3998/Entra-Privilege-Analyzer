@@ -542,6 +542,60 @@ async def trigger_scan(
     }
 
 
+@router.get("/events/poll")
+async def poll_scan_events(
+    project_id: str,
+    request: Request,
+    scan_id: str | None = Query(default=None),
+    after: str | None = Query(default=None, description="ISO timestamp cursor; only events newer than this are returned"),
+    user: CurrentUser = Depends(get_current_user),
+    repo: CosmosRepo = Depends(get_cosmos_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Poll for buffered scan events since a given cursor.
+
+    Drop-in replacement for the SSE ``/events`` endpoint when running behind
+    proxies (e.g. Azure Container Apps Envoy) that buffer streaming responses.
+    The frontend polls this every ~2 seconds instead of keeping an SSE
+    connection open.
+    """
+    await validate_project_access(project_id, user, repo, settings)
+    broker: ScanEventBroker = request.app.state.scan_event_broker
+    if broker is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Scan event streaming is not configured on this backend instance.",
+        )
+
+    events: list[dict[str, Any]] = []
+
+    # When no cursor is provided, lead with a snapshot of the latest scan so
+    # the client gets phase state without waiting for a live event.
+    latest_scan = await repo.get_latest_scan(project_id)
+    if after is None and latest_scan is not None and (scan_id is None or latest_scan.id == scan_id):
+        events.append(_build_scan_snapshot_event(project_id, latest_scan))
+
+    buffered = broker.get_events_after(project_id, scan_id=scan_id, after_timestamp=after)
+    events.extend(buffered)
+
+    # Determine the cursor for the next poll — the timestamp of the last event
+    cursor: str | None = None
+    if events:
+        cursor = events[-1].get("timestamp")
+
+    # Include the scan status so the frontend knows when to stop polling.
+    scan_status: str | None = None
+    if latest_scan is not None and (scan_id is None or latest_scan.id == scan_id):
+        scan_status = latest_scan.status
+
+    return {
+        "events": events,
+        "cursor": cursor,
+        "scan_status": scan_status,
+        "has_more": False,
+    }
+
+
 @router.get("/events")
 async def stream_scan_events(
     project_id: str,

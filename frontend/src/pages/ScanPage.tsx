@@ -1,28 +1,24 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   useScanHistory,
   useLatestScan,
   useTriggerScan,
   useDelegatedPermissionsCheck,
-  streamScanEvents,
+  pollScanEvents,
 } from "@/api/projectHooks";
 import { useProjectContext } from "@/store/projectContext";
 import type { ScanRecord, ScanPhase, ScanStreamEvent } from "@/api/types";
 
-interface ScanStreamDebugState {
-  path: string;
+const POLL_INTERVAL_MS = 2000;
+
+interface PollDebugState {
   startedAt: string;
-  responseStatus: number | null;
-  responseContentType: string | null;
-  chunkCount: number;
-  rawEventCount: number;
-  parsedEventCount: number;
-  lastEventId: string | null;
-  lastEventType: string | null;
-  lastMessage: string | null;
-  lastChunkPreview: string | null;
-  lastRawEventPreview: string | null;
+  pollCount: number;
+  eventCount: number;
+  lastPollAt: string | null;
+  lastCursor: string | null;
+  lastScanStatus: string | null;
   lastError: string | null;
   completed: boolean;
 }
@@ -211,7 +207,7 @@ export function ScanPage() {
   const [expandedScanId, setExpandedScanId] = useState<string | null>(null);
   const [streamEvents, setStreamEvents] = useState<ScanStreamEvent[]>([]);
   const [streamError, setStreamError] = useState<string | null>(null);
-  const [streamDebug, setStreamDebug] = useState<ScanStreamDebugState | null>(null);
+  const [pollDebug, setPollDebug] = useState<PollDebugState | null>(null);
   const [scanType, setScanType] = useState<"incremental" | "full">(
     "incremental",
   );
@@ -227,40 +223,80 @@ export function ScanPage() {
   const isRunning =
     latestScan?.status === "running" || latestScan?.status === "queued";
 
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setStreamDebug(window.__scanStreamDebug ? { ...window.__scanStreamDebug } : null);
-    }, 1000);
+  // Ref keeps the cursor across poll ticks without triggering re-renders.
+  const cursorRef = useRef<string | null>(null);
 
-    return () => window.clearInterval(interval);
-  }, []);
+  // Poll for scan events instead of SSE (Envoy buffers SSE in Container Apps).
+  const doPoll = useCallback(
+    async (scanId: string, debug: PollDebugState) => {
+      try {
+        const res = await pollScanEvents(projectId, scanId, cursorRef.current);
+        debug.pollCount += 1;
+        debug.lastPollAt = new Date().toISOString();
+        debug.lastScanStatus = res.scan_status;
+
+        if (res.events.length > 0) {
+          debug.eventCount += res.events.length;
+          setStreamEvents((prev) => [...prev, ...res.events].slice(-80));
+        }
+        if (res.cursor) {
+          cursorRef.current = res.cursor;
+          debug.lastCursor = res.cursor;
+        }
+        if (res.scan_status === "completed" || res.scan_status === "failed") {
+          debug.completed = true;
+        }
+        debug.lastError = null;
+        setPollDebug({ ...debug });
+      } catch (err: unknown) {
+        debug.lastError = err instanceof Error ? err.message : "Poll failed";
+        setPollDebug({ ...debug });
+      }
+    },
+    [projectId],
+  );
 
   useEffect(() => {
     if (!projectId || !latestScan?.id || !isRunning) {
       return;
     }
 
+    // Reset state for a fresh scan.
     setStreamEvents([buildSnapshotStreamEvent(latestScan)]);
     setStreamError(null);
-    setStreamDebug(null);
+    cursorRef.current = null;
 
-    const controller = new AbortController();
-    streamScanEvents(
-      projectId,
-      latestScan.id,
-      ({ data }) => {
-        setStreamEvents((current) => [...current, data].slice(-80));
-      },
-      controller.signal,
-    ).catch((error: unknown) => {
-      if (controller.signal.aborted) {
+    const debug: PollDebugState = {
+      startedAt: new Date().toISOString(),
+      pollCount: 0,
+      eventCount: 0,
+      lastPollAt: null,
+      lastCursor: null,
+      lastScanStatus: null,
+      lastError: null,
+      completed: false,
+    };
+    setPollDebug(debug);
+
+    let cancelled = false;
+
+    // Kick off the first poll immediately, then schedule at interval.
+    const scanId = latestScan.id;
+    doPoll(scanId, debug);
+
+    const interval = window.setInterval(() => {
+      if (cancelled || debug.completed) {
+        window.clearInterval(interval);
         return;
       }
-      setStreamError(error instanceof Error ? error.message : "Live activity stream failed.");
-    });
+      doPoll(scanId, debug);
+    }, POLL_INTERVAL_MS);
 
-    return () => controller.abort();
-  }, [projectId, latestScan?.id, isRunning]);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [projectId, latestScan?.id, isRunning, doPoll]);
 
   function handleTrigger() {
     triggerScan.mutate({ full: scanType === "full", authMode });
@@ -417,11 +453,11 @@ export function ScanPage() {
               <div>
                 <p className="text-sm font-semibold text-white">Live Activity</p>
                 <p className="text-xs text-slate-400">
-                  Streaming scan phases, Graph retries, and action ingest progress.
+                  Polling scan phases, Graph retries, and action ingest progress.
                 </p>
               </div>
               {isRunning && (
-                <span className="badge bg-emerald-500/10 text-emerald-300">Connected</span>
+                <span className="badge bg-emerald-500/10 text-emerald-300">Polling</span>
               )}
             </div>
 
@@ -471,19 +507,14 @@ export function ScanPage() {
             <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-xs text-slate-300">
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 md:grid-cols-4">
                 <span>ui events: {streamEvents.length}</span>
-                <span>http: {streamDebug?.responseStatus ?? "-"}</span>
-                <span>chunks: {streamDebug?.chunkCount ?? 0}</span>
-                <span>raw events: {streamDebug?.rawEventCount ?? 0}</span>
-                <span>parsed events: {streamDebug?.parsedEventCount ?? 0}</span>
-                <span>done: {streamDebug?.completed ? "yes" : "no"}</span>
-                <span>last event: {streamDebug?.lastEventType ?? "-"}</span>
-                <span>last error: {streamDebug?.lastError ?? "-"}</span>
+                <span>polls: {pollDebug?.pollCount ?? 0}</span>
+                <span>recv events: {pollDebug?.eventCount ?? 0}</span>
+                <span>scan status: {pollDebug?.lastScanStatus ?? "-"}</span>
+                <span>done: {pollDebug?.completed ? "yes" : "no"}</span>
+                <span>last poll: {pollDebug?.lastPollAt ? new Date(pollDebug.lastPollAt).toLocaleTimeString() : "-"}</span>
+                <span>cursor: {pollDebug?.lastCursor ? pollDebug.lastCursor.slice(11, 23) : "-"}</span>
+                <span>last error: {pollDebug?.lastError ?? "-"}</span>
               </div>
-              {streamDebug?.lastMessage && (
-                <p className="mt-2 text-slate-400">
-                  last message: {streamDebug.lastMessage}
-                </p>
-              )}
             </div>
           </div>
         )}
