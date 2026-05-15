@@ -34,11 +34,16 @@ class _ProjectListener:
 class ScanEventBroker:
     """Project-scoped live event broker with Redis pub/sub fan-out when available."""
 
-    def __init__(self, redis_cache: RedisCache | None = None, cosmos_repo: Any | None = None) -> None:
+    def __init__(
+        self,
+        redis_cache: RedisCache | None = None,
+        cosmos_repo: Any | None = None,
+    ) -> None:
         self._redis_cache = redis_cache
         self._cosmos_repo = cosmos_repo
         self._subscribers: dict[str, set[_Subscriber]] = defaultdict(set)
         self._project_listeners: dict[str, _ProjectListener] = {}
+        self._persist_tasks: set[asyncio.Task[None]] = set()
         self._lock = asyncio.Lock()
         self._recent_events: dict[str, deque[dict[str, Any]]] = defaultdict(
             lambda: deque(maxlen=_RECENT_EVENTS_MAX)
@@ -158,7 +163,10 @@ class ScanEventBroker:
         subscriber = _Subscriber(queue=queue, scan_id=scan_id)
         async with self._lock:
             self._subscribers[project_id].add(subscriber)
-            should_start_listener = self._redis_cache is not None and project_id not in self._project_listeners
+            should_start_listener = (
+                self._redis_cache is not None
+                and project_id not in self._project_listeners
+            )
         if should_start_listener:
             await self._ensure_project_listener(project_id)
         try:
@@ -229,7 +237,10 @@ class ScanEventBroker:
                 self._build_event(
                     project_id,
                     type="stream.error",
-                    message="Live scan streaming lost its Redis connection. Reconnect to continue receiving updates.",
+                    message=(
+                        "Live scan streaming lost its Redis connection. "
+                        "Reconnect to continue receiving updates."
+                    ),
                     level="error",
                     status="failed",
                 ),
@@ -261,7 +272,9 @@ class ScanEventBroker:
         )
 
         if self._cosmos_repo is not None and scan_id is not None:
-            asyncio.create_task(self._persist_log(event))
+            persist_task = asyncio.create_task(self._persist_log(event))
+            self._persist_tasks.add(persist_task)
+            persist_task.add_done_callback(self._persist_tasks.discard)
 
         if self._redis_cache is not None:
             self._append_recent(project_id, event)
@@ -303,7 +316,7 @@ def encode_sse(event: dict[str, Any]) -> bytes:
     payload = json.dumps(event, separators=(",", ":"))
     name = event.get("type", "message")
     event_id = event.get("id", "")
-    return f"id: {event_id}\nevent: {name}\ndata: {payload}\n\n".encode("utf-8")
+    return f"id: {event_id}\nevent: {name}\ndata: {payload}\n\n".encode()
 
 
 async def drain_queue(queue: asyncio.Queue[dict[str, Any]]) -> None:

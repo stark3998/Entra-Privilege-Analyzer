@@ -39,7 +39,9 @@ class ReportGenerator:
         data = await self._gather_report_data(tenant_id)
 
         try:
+            from reportlab.lib import colors  # type: ignore[import-untyped]
             from reportlab.lib.pagesizes import letter  # type: ignore[import-untyped]
+            from reportlab.lib.styles import getSampleStyleSheet  # type: ignore[import-untyped]
             from reportlab.lib.units import inch  # type: ignore[import-untyped]
             from reportlab.platypus import (  # type: ignore[import-untyped]
                 Paragraph,
@@ -48,8 +50,6 @@ class ReportGenerator:
                 Table,
                 TableStyle,
             )
-            from reportlab.lib.styles import getSampleStyleSheet  # type: ignore[import-untyped]
-            from reportlab.lib import colors  # type: ignore[import-untyped]
 
             buffer = io.BytesIO()
             doc = SimpleDocTemplate(buffer, pagesize=letter)
@@ -151,7 +151,6 @@ class ReportGenerator:
 
         try:
             from pptx import Presentation  # type: ignore[import-untyped]
-            from pptx.util import Inches, Pt  # type: ignore[import-untyped]
 
             prs = Presentation()
 
