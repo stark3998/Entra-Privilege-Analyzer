@@ -6,11 +6,7 @@
 name: Terraform Apply
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "infra/**"
-      - ".github/workflows/infra-apply.yml"
+  workflow_dispatch:
 
 permissions:
   id-token: write # OIDC

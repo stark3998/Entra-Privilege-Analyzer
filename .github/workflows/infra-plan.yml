@@ -6,11 +6,7 @@
 name: Terraform Plan
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "infra/**"
-      - ".github/workflows/infra-plan.yml"
+  workflow_dispatch:
 
 permissions:
   id-token: write   # OIDC

@@ -1,0 +1,342 @@
+# -----------------------------------------------------------------------------
+# Main CD Pipeline: deploy backend + frontend and run post-deploy verification.
+# This is the only workflow that runs automatically on push to main.
+# -----------------------------------------------------------------------------
+name: Deploy Main
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-main-prod
+  cancel-in-progress: false
+
+env:
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  ACR_NAME: ${{ vars.ACR_NAME }}
+  RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+  BACKEND_CONTAINER_APP_NAME: ${{ vars.BACKEND_CONTAINER_APP_NAME }}
+  FRONTEND_CONTAINER_APP_NAME: ${{ vars.FRONTEND_CONTAINER_APP_NAME }}
+  APP_CLIENT_ID: ${{ vars.APP_CLIENT_ID }}
+  BACKEND_IMAGE_NAME: entraperm-backend
+  FRONTEND_IMAGE_NAME: entraperm-frontend
+
+jobs:
+  deploy-backend:
+    name: Deploy Backend
+    runs-on: ubuntu-latest
+    environment: prod
+
+    outputs:
+      backend-image: ${{ steps.backend-image.outputs.value }}
+      backend-fqdn: ${{ steps.backend-fqdn.outputs.value }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR Login
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build and push backend image
+        run: |
+          IMAGE_TAG="${{ github.sha }}"
+          FULL_IMAGE="${{ env.ACR_NAME }}.azurecr.io/${{ env.BACKEND_IMAGE_NAME }}:${IMAGE_TAG}"
+
+          docker build \
+            --target prod \
+            --tag "${FULL_IMAGE}" \
+            ./backend
+
+          docker push "${FULL_IMAGE}"
+
+          echo "FULL_IMAGE=${FULL_IMAGE}" >> "$GITHUB_ENV"
+
+      - name: Deploy backend app
+        run: |
+          az containerapp update \
+            --name ${{ env.BACKEND_CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image "$FULL_IMAGE"
+
+      - name: Update scheduled jobs
+        shell: bash
+        run: |
+          declare -A JOBS=(
+            [sync-tenant]="sync-ten"
+            [compute-baselines]="comp-base"
+            [detect-drift]="det-drift"
+            [generate-recommendations]="gen-reco"
+            [generate-narratives]="gen-narr"
+          )
+
+          for JOB_SUFFIX in "${!JOBS[@]}"; do
+            JOB_NAME="job-entraperm-${JOBS[$JOB_SUFFIX]}-prod"
+            echo "Updating job: ${JOB_NAME}"
+            az containerapp job update \
+              --name "${JOB_NAME}" \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --image "$FULL_IMAGE"
+          done
+
+      - name: Verify scheduled jobs use deployed image
+        shell: bash
+        run: |
+          declare -A JOBS=(
+            [sync-tenant]="sync-ten"
+            [compute-baselines]="comp-base"
+            [detect-drift]="det-drift"
+            [generate-recommendations]="gen-reco"
+            [generate-narratives]="gen-narr"
+          )
+
+          EXPECTED_IMAGE="$FULL_IMAGE"
+          FAILED=0
+
+          for JOB_SUFFIX in "${!JOBS[@]}"; do
+            JOB_NAME="job-entraperm-${JOBS[$JOB_SUFFIX]}-prod"
+            echo "Verifying job: ${JOB_NAME}"
+
+            ACTUAL_IMAGE=""
+            for attempt in $(seq 1 6); do
+              ACTUAL_IMAGE=$(az containerapp job show \
+                --name "${JOB_NAME}" \
+                --resource-group ${{ env.RESOURCE_GROUP }} \
+                --query "properties.template.containers[0].image" \
+                -o tsv 2>/dev/null || true)
+
+              if [ "${ACTUAL_IMAGE}" = "${EXPECTED_IMAGE}" ]; then
+                echo "Verified ${JOB_NAME} -> ${ACTUAL_IMAGE}"
+                break
+              fi
+
+              echo "Attempt ${attempt}/6: ${JOB_NAME} reports '${ACTUAL_IMAGE:-<unavailable>}'"
+              sleep 10
+            done
+
+            if [ "${ACTUAL_IMAGE}" != "${EXPECTED_IMAGE}" ]; then
+              echo "::error::${JOB_NAME} image mismatch. expected='${EXPECTED_IMAGE}' actual='${ACTUAL_IMAGE:-<unavailable>}'"
+              FAILED=1
+            fi
+          done
+
+          exit "${FAILED}"
+
+      - name: Smoke test backend
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ env.BACKEND_CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" \
+            -o tsv)
+
+          echo "Backend FQDN: ${FQDN}"
+
+          for i in $(seq 1 12); do
+            HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/healthz" || echo "000")
+            READY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/readyz" || echo "000")
+            OPENAPI_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/openapi.json" || echo "000")
+
+            if [ "$HEALTH_STATUS" = "200" ] && [ "$READY_STATUS" = "200" ] && [ "$OPENAPI_STATUS" = "200" ]; then
+              echo "Backend smoke checks passed"
+              exit 0
+            fi
+
+            echo "Attempt ${i}/12: healthz=${HEALTH_STATUS}, readyz=${READY_STATUS}, openapi=${OPENAPI_STATUS}"
+            sleep 10
+          done
+
+          echo "Backend smoke checks failed"
+          exit 1
+
+      - name: Export backend image
+        id: backend-image
+        run: echo "value=$FULL_IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Export backend FQDN
+        id: backend-fqdn
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ env.BACKEND_CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" \
+            -o tsv)
+          echo "value=${FQDN}" >> "$GITHUB_OUTPUT"
+
+  deploy-frontend:
+    name: Deploy Frontend
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    environment: prod
+
+    outputs:
+      frontend-fqdn: ${{ steps.frontend-fqdn.outputs.value }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR Login
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build and push frontend image
+        run: |
+          BACKEND_URL="https://${{ needs.deploy-backend.outputs.backend-fqdn }}"
+          IMAGE_TAG="${{ github.sha }}"
+          FULL_IMAGE="${{ env.ACR_NAME }}.azurecr.io/${{ env.FRONTEND_IMAGE_NAME }}:${IMAGE_TAG}"
+
+          docker build \
+            --target prod \
+            --build-arg VITE_APP_CLIENT_ID="${{ env.APP_CLIENT_ID }}" \
+            --build-arg VITE_TENANT_ID="${{ env.AZURE_TENANT_ID }}" \
+            --build-arg VITE_API_BASE_URL="" \
+            --build-arg BACKEND_URL="${BACKEND_URL}" \
+            --tag "${FULL_IMAGE}" \
+            ./frontend
+
+          docker push "${FULL_IMAGE}"
+
+          echo "FULL_IMAGE=${FULL_IMAGE}" >> "$GITHUB_ENV"
+
+      - name: Deploy frontend app
+        run: |
+          az containerapp update \
+            --name ${{ env.FRONTEND_CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image "$FULL_IMAGE"
+
+      - name: Smoke test frontend
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ env.FRONTEND_CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" \
+            -o tsv)
+
+          echo "Frontend FQDN: ${FQDN}"
+
+          ROOT_STATUS="000"
+          API_STATUS="000"
+          for i in $(seq 1 12); do
+            ROOT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/" || echo "000")
+            API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/api/healthz" || echo "000")
+            if [ "$ROOT_STATUS" = "200" ] && [ "$API_STATUS" = "200" ]; then
+              echo "Frontend smoke checks passed"
+              exit 0
+            fi
+            echo "Attempt ${i}/12: root=${ROOT_STATUS}, api=${API_STATUS}"
+            sleep 10
+          done
+
+          echo "Frontend smoke checks failed"
+          exit 1
+
+      - name: Export frontend FQDN
+        id: frontend-fqdn
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ env.FRONTEND_CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" \
+            -o tsv)
+          echo "value=${FQDN}" >> "$GITHUB_OUTPUT"
+
+  post-deploy-validation:
+    name: Post-deploy Validation
+    runs-on: ubuntu-latest
+    needs: [deploy-backend, deploy-frontend]
+    environment: prod
+
+    steps:
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify public URLs and endpoint health
+        shell: bash
+        run: |
+          BACKEND_FQDN="${{ needs.deploy-backend.outputs.backend-fqdn }}"
+          FRONTEND_FQDN="${{ needs.deploy-frontend.outputs.frontend-fqdn }}"
+
+          echo "Backend URL: https://${BACKEND_FQDN}"
+          echo "Frontend URL: https://${FRONTEND_FQDN}"
+
+          check_url() {
+            local url="$1"
+            local expected="$2"
+            local status
+            status=$(curl -s -o /dev/null -w "%{http_code}" "$url" || echo "000")
+            echo "${url} -> ${status}"
+            [ "$status" = "$expected" ]
+          }
+
+          check_url "https://${FRONTEND_FQDN}/" "200"
+          check_url "https://${FRONTEND_FQDN}/api/healthz" "200"
+          check_url "https://${BACKEND_FQDN}/healthz" "200"
+          check_url "https://${BACKEND_FQDN}/readyz" "200"
+          check_url "https://${BACKEND_FQDN}/openapi.json" "200"
+
+      - name: Verify backend and job images are aligned
+        shell: bash
+        run: |
+          EXPECTED_BACKEND_IMAGE="${{ needs.deploy-backend.outputs.backend-image }}"
+          ACTUAL_BACKEND_IMAGE=$(az containerapp show \
+            --name ${{ env.BACKEND_CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.template.containers[0].image" \
+            -o tsv)
+
+          echo "Expected backend image: ${EXPECTED_BACKEND_IMAGE}"
+          echo "Actual backend image:   ${ACTUAL_BACKEND_IMAGE}"
+
+          if [ "${ACTUAL_BACKEND_IMAGE}" != "${EXPECTED_BACKEND_IMAGE}" ]; then
+            echo "::error::Backend image mismatch"
+            exit 1
+          fi
+
+          declare -A JOBS=(
+            [sync-tenant]="sync-ten"
+            [compute-baselines]="comp-base"
+            [detect-drift]="det-drift"
+            [generate-recommendations]="gen-reco"
+            [generate-narratives]="gen-narr"
+          )
+
+          for JOB_SUFFIX in "${!JOBS[@]}"; do
+            JOB_NAME="job-entraperm-${JOBS[$JOB_SUFFIX]}-prod"
+            JOB_IMAGE=$(az containerapp job show \
+              --name "${JOB_NAME}" \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --query "properties.template.containers[0].image" \
+              -o tsv)
+
+            echo "${JOB_NAME} -> ${JOB_IMAGE}"
+            if [ "${JOB_IMAGE}" != "${EXPECTED_BACKEND_IMAGE}" ]; then
+              echo "::error::${JOB_NAME} image mismatch"
+              exit 1
+            fi
+          done
