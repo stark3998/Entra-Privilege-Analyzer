@@ -11,8 +11,6 @@ from app.models.pim_session import (
     PimSessionAnomalyType,
     SessionLocationInfo,
 )
-from app.services.cosmos import CosmosRepo
-
 logger = logging.getLogger(__name__)
 
 _HIGH_PRIVILEGE_ROLES = {
@@ -48,7 +46,7 @@ class PimSessionAnomalyDetector:
 
     def __init__(
         self,
-        repo: CosmosRepo,
+        repo: Any,
         business_hours_start: int = 7,
         business_hours_end: int = 19,
     ) -> None:
@@ -161,7 +159,6 @@ class PimSessionAnomalyDetector:
         now: datetime,
     ) -> list[PimSessionAnomaly]:
         existing, _ = await self._repo.list_pim_sessions(
-            tenant_id,
             principal_id=session.principal_id,
             role_name=session.role_name,
             limit=1,
@@ -232,7 +229,6 @@ class PimSessionAnomalyDetector:
             return []
 
         historical, _ = await self._repo.list_pim_sessions(
-            tenant_id,
             principal_id=session.principal_id,
             limit=20,
         )

@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # Cosmos DB
     cosmos_endpoint: str = "https://localhost:8081"
     cosmos_key: str = ""
-    cosmos_database: str = "entra-analyzer"
+    cosmos_master_database: str = "entra-master"
 
     # Redis
     redis_host: str = "localhost"

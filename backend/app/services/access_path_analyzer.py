@@ -17,7 +17,6 @@ from app.models.access_path import (
 )
 from app.models.app_registration import HIGH_RISK_APP_PERMISSION_GUIDS
 from app.models.identity import IdentityProfile, IdentityType
-from app.services.cosmos import CosmosRepo
 from app.services.graph_ingest import GraphIngestService
 
 logger = logging.getLogger(__name__)
@@ -83,7 +82,7 @@ class AccessPathAnalyzer:
 
     def __init__(
         self,
-        repo: CosmosRepo,
+        repo: Any,
         graph: GraphIngestService,
         progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> None:
@@ -209,7 +208,7 @@ class AccessPathAnalyzer:
                     tg.sp_directory_roles[ident.object_id] = sp_roles
                 tg.sp_display_names[ident.object_id] = ident.display_name
 
-        apps, _ = await self._repo.list_app_registrations(tenant_id, offset=0, limit=5000)
+        apps, _ = await self._repo.list_app_registrations(offset=0, limit=5000)
         await self._emit_progress(
             {
                 "type": "scan.progress",
@@ -229,7 +228,7 @@ class AccessPathAnalyzer:
             if owner_ids:
                 tg.app_owners[app.id] = owner_ids
 
-        groups, _ = await self._repo.list_groups(tenant_id, offset=0, limit=5000)
+        groups, _ = await self._repo.list_groups(offset=0, limit=5000)
         await self._emit_progress(
             {
                 "type": "scan.progress",
@@ -353,7 +352,7 @@ class AccessPathAnalyzer:
         page_size = 200
         while True:
             items, total = await self._repo.list_identities(
-                tenant_id, offset=offset, limit=page_size
+                offset=offset, limit=page_size
             )
             all_identities.extend(items)
             if offset + page_size >= total:

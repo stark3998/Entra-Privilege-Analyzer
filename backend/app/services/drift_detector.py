@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import Any
 from datetime import UTC, datetime
 
 from app.data.permission_catalog import action_to_permission, get_risk_weight_numeric
@@ -16,7 +17,6 @@ from app.models.drift import (
     DriftType,
 )
 from app.models.identity import IdentityProfile
-from app.services.cosmos import CosmosRepo
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ def _severity_from_z_score(z: float) -> DriftSeverity:
 class DriftDetector:
     """Detects permission drift via first-seen actions and frequency anomalies."""
 
-    def __init__(self, repo: CosmosRepo) -> None:
+    def __init__(self, repo: Any) -> None:
         self._repo = repo
 
     async def detect_first_seen(
@@ -164,7 +164,7 @@ class DriftDetector:
     ) -> list[DriftAlert]:
         """Run both detection layers and return combined alerts."""
         # Load baselines for this identity
-        baselines = await self._repo.list_baselines(tenant_id, identity.id)
+        baselines = await self._repo.list_baselines(identity.id)
 
         # Build baseline action set for first-seen detection
         baseline_actions: set[str] = {b.action for b in baselines}

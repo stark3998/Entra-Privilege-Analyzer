@@ -8,7 +8,6 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from app.services.cosmos import CosmosRepo
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,7 @@ _TENANT_ID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 class WebhookHandler:
     """Processes incoming Graph API change notifications."""
 
-    def __init__(self, repo: CosmosRepo, expected_client_state: str = "") -> None:
+    def __init__(self, repo: Any, expected_client_state: str = "") -> None:
         self._repo = repo
         self._expected_client_state = expected_client_state
 
@@ -64,7 +63,6 @@ class WebhookHandler:
         )
 
         await self._repo.upsert_sync_state(
-            tenant_id,
             "webhook_last_notification",
             {
                 "resource": resource,
@@ -98,7 +96,6 @@ class WebhookHandler:
         )
 
         await self._repo.upsert_sync_state(
-            tenant_id,
             f"subscription_{subscription_id}",
             subscription,
         )
@@ -106,4 +103,4 @@ class WebhookHandler:
 
     async def list_subscriptions(self, tenant_id: str) -> list[dict[str, Any]]:
         """List active subscriptions for a tenant."""
-        return await self._repo.list_sync_states_by_prefix(tenant_id, "subscription_")
+        return await self._repo.list_sync_states_by_prefix("subscription_")

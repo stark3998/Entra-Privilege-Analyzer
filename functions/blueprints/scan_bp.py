@@ -11,6 +11,7 @@ import azure.functions as func
 
 from blueprints.shared import RETRY_OPTIONS, cosmos_config
 from utils.cosmos_writer import cleanup_scan_staging
+from utils.log_context import set_scan_context
 from utils.scan_state import finalize_scan, update_scan_phase
 
 logger = logging.getLogger(__name__)
@@ -232,6 +233,7 @@ def orchestrate_scan(context: df.DurableOrchestrationContext):
 @bp.activity_trigger(input_name="payload")
 def update_scan_phase_activity(payload: dict) -> None:
     """Update a scan phase in Cosmos DB."""
+    set_scan_context(payload)
     cfg = cosmos_config(payload)
     phase_name = payload["phase_name"]
     phase_status = payload["phase_status"]
@@ -251,6 +253,7 @@ def update_scan_phase_activity(payload: dict) -> None:
 @bp.activity_trigger(input_name="payload")
 def finalize_scan_activity(payload: dict) -> None:
     """Finalize a scan (completed or failed) and clean up staging."""
+    set_scan_context(payload)
     scan_id = payload.get("scan_id", "?")
     final_status = payload["status"]
     logger.info(
@@ -265,6 +268,7 @@ def finalize_scan_activity(payload: dict) -> None:
         summary=payload.get("summary"),
         error_message=payload.get("error_message"),
     )
+
     deleted = cleanup_scan_staging(
         cfg["endpoint"], cfg["key"], cfg["database"],
         scan_id,

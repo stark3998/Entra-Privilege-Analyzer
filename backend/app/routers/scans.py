@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
@@ -16,7 +17,9 @@ from app.auth.deps import CurrentUser, get_current_user, validate_project_access
 from app.auth.obo import OboTokenProvider
 from app.config import Settings, get_settings
 from app.models.project import ScanPhase, ScanRecord
-from app.services.cosmos import CosmosRepo, get_cosmos_repo
+from app.services.master_repo import MasterRepo, get_master_repo
+from app.services.project_repo import ProjectRepo
+from app.services.project_repo_cache import ProjectRepoCache
 from app.services.crypto import CryptoService
 from app.services.permission_validator import REQUIRED_PERMISSIONS
 from app.services.scan_events import ScanEventBroker, drain_queue, encode_sse
@@ -38,6 +41,51 @@ _DEFAULT_PHASES = [
     "identity_profiles",
     "action_events",
 ]
+
+
+# ------------------------------------------------------------------
+# Durable Functions history → phase mapping
+# ------------------------------------------------------------------
+
+_ACTIVITY_PHASE_MAP: dict[str, str] = {
+    "fetch_audit_log_page_activity": "audit_logs",
+    "fetch_sign_in_log_page_activity": "sign_in_logs",
+    "fetch_users_page_activity": "directory",
+    "fetch_sps_page_activity": "directory",
+    "fetch_role_assignments_activity": "directory",
+    "process_identity_batch_activity": "identity_profiles",
+}
+
+_SUB_ORCH_PHASE_MAP: dict[str, str] = {
+    "orchestrate_audit_logs": "audit_logs",
+    "orchestrate_sign_in_logs": "sign_in_logs",
+    "orchestrate_users": "directory",
+    "orchestrate_service_principals": "directory",
+    "orchestrate_role_assignments": "directory",
+}
+
+_SKIP_ACTIVITIES = {"update_scan_phase_activity", "finalize_scan_activity"}
+
+_RELEVANT_EVENT_TYPES = {
+    "TaskCompleted",
+    "SubOrchestrationInstanceCompleted",
+    "TaskFailed",
+    "SubOrchestrationInstanceFailed",
+}
+
+_FRIENDLY_NAMES: dict[str, str] = {
+    "fetch_audit_log_page_activity": "Audit logs page",
+    "fetch_sign_in_log_page_activity": "Sign-in logs page",
+    "fetch_users_page_activity": "Users page",
+    "fetch_sps_page_activity": "Service principals page",
+    "fetch_role_assignments_activity": "Role assignments",
+    "process_identity_batch_activity": "Identity batch",
+    "orchestrate_audit_logs": "Audit logs collection",
+    "orchestrate_sign_in_logs": "Sign-in logs collection",
+    "orchestrate_users": "Users collection",
+    "orchestrate_service_principals": "Service principals collection",
+    "orchestrate_role_assignments": "Role assignments collection",
+}
 
 
 # ------------------------------------------------------------------
@@ -73,16 +121,18 @@ async def _terminate_orchestration(settings: Settings, instance_id: str) -> None
 
 async def _poll_orchestration_status(
     app: Any,
-    repo: CosmosRepo,
+    repo: MasterRepo,
     project_id: str,
     scan_id: str,
     status_uri: str,
     function_key: str,
 ) -> None:
-    """Lightweight poller: checks orchestration status and relays progress to the event broker."""
+    """Poll orchestration status + history and relay per-activity events to the broker."""
     broker: ScanEventBroker = app.state.scan_event_broker
     headers = {"x-functions-key": function_key}
     last_message: str | None = None
+    last_history_index: int = 0
+    history_uri = status_uri + "&showHistory=true&showHistoryOutput=true"
 
     try:
         while True:
@@ -90,7 +140,7 @@ async def _poll_orchestration_status(
 
             try:
                 async with httpx.AsyncClient(timeout=15.0) as client:
-                    resp = await client.get(status_uri, headers=headers)
+                    resp = await client.get(history_uri, headers=headers)
                     if resp.status_code >= 400:
                         logger.warning("Status poll failed: %s", resp.status_code)
                         continue
@@ -102,6 +152,7 @@ async def _poll_orchestration_status(
             runtime_status = data.get("runtimeStatus", "")
             custom_status = data.get("customStatus") or {}
 
+            # Emit high-level orchestrator status changes
             message = custom_status.get("message", f"Orchestration {runtime_status}")
             if message != last_message and broker is not None:
                 step = custom_status.get("step", runtime_status.lower())
@@ -115,6 +166,15 @@ async def _poll_orchestration_status(
                     status="running" if runtime_status == "Running" else runtime_status.lower(),
                 )
                 last_message = message
+
+            # Parse per-activity events from orchestration history
+            if broker is not None:
+                history_events = data.get("historyEvents") or []
+                new_events = history_events[last_history_index:]
+                for idx, hist in enumerate(new_events):
+                    global_idx = last_history_index + idx
+                    await _emit_history_event(broker, project_id, scan_id, hist, global_idx)
+                last_history_index = len(history_events)
 
             if runtime_status in ("Completed", "Failed", "Terminated"):
                 scan = await repo.get_scan(project_id, scan_id)
@@ -152,6 +212,65 @@ async def _poll_orchestration_status(
         pass
     except Exception as exc:
         logger.error("Poll loop crashed for scan %s: %s", scan_id, exc)
+
+
+async def _emit_history_event(
+    broker: ScanEventBroker,
+    project_id: str,
+    scan_id: str,
+    hist: dict[str, Any],
+    index: int,
+) -> None:
+    """Parse a single Durable Functions history event and publish to the broker."""
+    event_type = hist.get("EventType", "")
+    if event_type not in _RELEVANT_EVENT_TYPES:
+        return
+
+    func_name = hist.get("FunctionName", "")
+    if func_name in _SKIP_ACTIVITIES or not func_name:
+        return
+
+    phase = _ACTIVITY_PHASE_MAP.get(func_name) or _SUB_ORCH_PHASE_MAP.get(func_name)
+    if not phase:
+        return
+
+    is_failure = event_type in ("TaskFailed", "SubOrchestrationInstanceFailed")
+    friendly = _FRIENDLY_NAMES.get(func_name, func_name)
+
+    result: dict[str, Any] = {}
+    if not is_failure:
+        raw = hist.get("Result", "")
+        try:
+            result = json.loads(raw) if raw else {}
+        except (json.JSONDecodeError, TypeError):
+            result = {}
+
+    has_error = is_failure or bool(result.get("error"))
+    level = "error" if has_error else "info"
+    items = result.get("count") or result.get("processed")
+    timestamp = hist.get("Timestamp", datetime.now(UTC).isoformat())
+
+    if is_failure:
+        reason = hist.get("Reason", "Unknown error")
+        msg = f"{friendly} failed: {reason}"
+    elif has_error:
+        msg = f"{friendly} error: {result['error']}"
+    elif items is not None:
+        msg = f"{friendly} completed: {items} items"
+    else:
+        msg = f"{friendly} completed"
+
+    await broker.publish(
+        project_id,
+        scan_id=scan_id,
+        type="scan.activity",
+        message=msg,
+        level=level,
+        phase=phase,
+        status="running",
+        items_processed=items,
+        details=result if result else None,
+    )
 
 
 # ------------------------------------------------------------------
@@ -217,6 +336,12 @@ def _build_scan_snapshot_event(project_id: str, scan: ScanRecord) -> dict[str, A
     }
 
 
+async def _get_project_repo(request: Request, project_id: str, user: CurrentUser, repo: MasterRepo, settings: Settings) -> ProjectRepo:
+    project = await validate_project_access(project_id, user, repo, settings)
+    cache: ProjectRepoCache = request.app.state.project_repo_cache
+    return await cache.get_repo(project.database_name)
+
+
 def _extract_bearer(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
@@ -237,7 +362,7 @@ async def trigger_scan(
     request: Request,
     full: bool = False,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Trigger a scan by dispatching to the Azure Durable Functions app."""
@@ -283,6 +408,7 @@ async def trigger_scan(
         started_at=now,
     )
 
+    cosmos_database = project.database_name
     function_payload = {
         "tenant_id": project.target_tenant_id,
         "client_id": project.client_id,
@@ -291,7 +417,7 @@ async def trigger_scan(
         "scan_id": scan.id,
         "cosmos_endpoint": settings.cosmos_endpoint,
         "cosmos_key": settings.cosmos_key,
-        "cosmos_database": settings.cosmos_database,
+        "cosmos_database": cosmos_database,
         "graph_api_version": settings.graph_api_version,
     }
 
@@ -349,7 +475,7 @@ async def poll_scan_events(
         default=None, description="ISO timestamp cursor; only events newer than this are returned"
     ),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Poll for buffered scan events since a given cursor."""
@@ -370,16 +496,28 @@ async def poll_scan_events(
     buffered = broker.get_events_after(project_id, scan_id=scan_id, after_timestamp=after)
     events.extend(buffered)
 
+    # Deduplicate by id and sort by timestamp
+    seen_ids: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for evt in events:
+        evt_id = evt.get("id")
+        if evt_id and evt_id in seen_ids:
+            continue
+        if evt_id:
+            seen_ids.add(evt_id)
+        deduped.append(evt)
+    deduped.sort(key=lambda e: e.get("timestamp", ""))
+
     cursor: str | None = None
-    if events:
-        cursor = events[-1].get("timestamp")
+    if deduped:
+        cursor = deduped[-1].get("timestamp")
 
     scan_status: str | None = None
     if latest_scan is not None and (scan_id is None or latest_scan.id == scan_id):
         scan_status = latest_scan.status
 
     return {
-        "events": events,
+        "events": deduped,
         "cursor": cursor,
         "scan_status": scan_status,
         "has_more": False,
@@ -392,7 +530,7 @@ async def cancel_scan(
     scan_id: str,
     request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Cancel a running scan by terminating its Durable Functions orchestration."""
@@ -444,7 +582,7 @@ async def resume_scan(
     scan_id: str,
     request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Resume a failed scan by starting a new function app orchestration."""
@@ -500,6 +638,7 @@ async def resume_scan(
         started_at=now,
     )
 
+    cosmos_database = project.database_name
     function_payload = {
         "tenant_id": project.target_tenant_id,
         "client_id": project.client_id,
@@ -508,7 +647,7 @@ async def resume_scan(
         "scan_id": scan.id,
         "cosmos_endpoint": settings.cosmos_endpoint,
         "cosmos_key": settings.cosmos_key,
-        "cosmos_database": settings.cosmos_database,
+        "cosmos_database": cosmos_database,
         "graph_api_version": settings.graph_api_version,
         "resume_from_scan_id": failed_scan.id,
     }
@@ -563,21 +702,22 @@ async def resume_scan(
 async def get_scan_logs(
     project_id: str,
     scan_id: str,
+    request: Request,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=100, ge=1, le=500),
     level: str | None = Query(default=None, pattern="^(info|warning|error)$"),
     phase: str | None = Query(default=None),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Get persisted scan log entries for a scan."""
-    await validate_project_access(project_id, user, repo, settings)
+    project_repo = await _get_project_repo(request, project_id, user, repo, settings)
     scan = await repo.get_scan(project_id, scan_id)
     if scan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
     offset = (page - 1) * size
-    items, total = await repo.get_scan_logs(
+    items, total = await project_repo.get_scan_logs(
         scan_id, offset=offset, limit=size, level=level, phase=phase
     )
     return {
@@ -594,7 +734,7 @@ async def stream_scan_events(
     request: Request,
     scan_id: str | None = Query(default=None),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> StreamingResponse:
     """Stream live scan and action-ingest events for a project as SSE."""
@@ -642,7 +782,7 @@ async def list_scans(
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """List scan history for a project."""
@@ -661,7 +801,7 @@ async def list_scans(
 async def get_latest_scan(
     project_id: str,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Get the most recent scan for a project."""
@@ -677,7 +817,7 @@ async def check_delegated_permissions(
     project_id: str,
     request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Check what Graph permissions the user would get via OBO delegated flow."""
@@ -724,7 +864,7 @@ async def get_scan(
     project_id: str,
     scan_id: str,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Get scan detail with phase breakdown."""

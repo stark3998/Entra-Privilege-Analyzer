@@ -1,8 +1,8 @@
 """Project-scoped wrappers for all tenant-scoped endpoints.
 
 Each endpoint validates project access, extracts the target_tenant_id,
-and delegates to the same CosmosRepo / service methods used by the
-original tenant-scoped routers.
+and delegates to the ProjectRepo (per-project database) for analysis data
+and MasterRepo for project-level metadata (schedules, alerts).
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import zipfile
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response, StreamingResponse
 
 from app.auth.deps import CurrentUser, get_current_user, validate_project_access
@@ -35,11 +35,13 @@ from app.models.narrative import (
 from app.pipelines.drift_pipeline import DriftPipeline
 from app.pipelines.recommendation_pipeline import RecommendationPipeline
 from app.services.best_practice_analyzer import BestPracticeAnalyzer
-from app.services.cosmos import CosmosRepo, get_cosmos_repo
 from app.services.drift_detector import DriftDetector
 from app.services.foundry import FoundryClient, get_foundry_client
 from app.services.iac_exporter import IacExporter
+from app.services.master_repo import MasterRepo, get_master_repo
 from app.services.narrative_engine import NarrativeEngine
+from app.services.project_repo import ProjectRepo
+from app.services.project_repo_cache import ProjectRepoCache
 from app.services.redis_cache import RedisCache, get_redis_cache
 from app.services.report_generator import ReportGenerator
 from app.services.risk_scorer import RiskScorer
@@ -59,14 +61,15 @@ _exporter = IacExporter()
 # ------------------------------------------------------------------
 
 
-async def _tenant_id(
+async def _get_project_context(
     project_id: str,
     user: CurrentUser,
-    repo: CosmosRepo,
+    repo: MasterRepo,
+    request: Request,
     settings: Settings,
     required_role: str | None = None,
-) -> str:
-    """Validate access and return the project's target tenant ID."""
+) -> tuple[str, ProjectRepo]:
+    """Validate access and return (target_tenant_id, ProjectRepo)."""
     project = await validate_project_access(
         project_id,
         user,
@@ -74,7 +77,9 @@ async def _tenant_id(
         settings,
         required_role=required_role,
     )
-    return project.target_tenant_id
+    cache: ProjectRepoCache = request.app.state.project_repo_cache
+    project_repo = await cache.get_repo(project.database_name)
+    return project.target_tenant_id, project_repo
 
 
 # ------------------------------------------------------------------
@@ -85,12 +90,13 @@ async def _tenant_id(
 @router.get("/dashboard")
 async def get_dashboard(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
     cache: RedisCache | None = Depends(get_redis_cache),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
 
     cache_key = f"dashboard:{project_id}"
     if cache is not None:
@@ -101,7 +107,7 @@ async def get_dashboard(
         except Exception:
             pass
 
-    data = await repo.get_dashboard_summary(tid)
+    data = await project_repo.get_dashboard_summary()
     summary = DashboardSummary(
         tenant_id=tid,
         total_identities=data.get("total_identities", 0),
@@ -131,12 +137,13 @@ async def get_dashboard(
 @router.get("/dashboard/trends")
 async def get_dashboard_trends(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    trends_data = await repo.get_trends(tid, days=30)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    trends_data = await project_repo.get_trends(days=30)
     trends = DashboardTrends(
         risk_score_trend=[TrendPoint(**d) for d in trends_data.get("risk_score_trend", [])],
         drift_alerts_trend=[TrendPoint(**d) for d in trends_data.get("drift_alerts_trend", [])],
@@ -153,13 +160,14 @@ async def get_dashboard_trends(
 @router.get("/analytics")
 async def get_analytics(
     project_id: str,
+    request: Request,
     days: int = Query(default=30, ge=7, le=90),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
     cache: RedisCache | None = Depends(get_redis_cache),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
 
     cache_key = f"analytics:{project_id}:{days}"
     if cache is not None:
@@ -170,7 +178,7 @@ async def get_analytics(
         except Exception:
             pass
 
-    data = await repo.get_analytics_data(tid, days)
+    data = await project_repo.get_analytics_data(days)
     result = AnalyticsData(
         tenant_id=tid,
         days=days,
@@ -213,17 +221,18 @@ async def get_analytics(
 @router.get("/identities")
 async def list_identities(
     project_id: str,
+    request: Request,
     type: str | None = None,
     search: str | None = None,
     page: int = 1,
     size: int = 50,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
     offset = (page - 1) * size
-    items, total = await repo.list_identities(tid, type, search, offset, size)
+    items, total = await project_repo.list_identities(type, search, offset, size)
     return {
         "items": [i.model_dump(mode="json") for i in items],
         "total": total,
@@ -236,12 +245,13 @@ async def list_identities(
 async def get_identity(
     project_id: str,
     identity_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    profile = await repo.get_identity(tid, identity_id)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    profile = await project_repo.get_identity(identity_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Identity not found")
     return profile.model_dump(mode="json")
@@ -251,17 +261,18 @@ async def get_identity(
 async def list_actions(
     project_id: str,
     identity_id: str,
+    request: Request,
     start: datetime | None = None,
     end: datetime | None = None,
     page: int = 1,
     size: int = 50,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
     offset = (page - 1) * size
-    items, total = await repo.list_actions(tid, identity_id, start, end, offset, size)
+    items, total = await project_repo.list_actions(identity_id, start, end, offset, size)
     return {
         "items": [i.model_dump(mode="json") for i in items],
         "total": total,
@@ -278,17 +289,17 @@ async def list_actions(
 @router.get("/recommendations")
 async def list_recommendations(
     project_id: str,
+    request: Request,
     identity_type: IdentityType | None = None,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=50, ge=1, le=200),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
     offset = (page - 1) * size
-    items, total = await repo.list_recommendations(
-        tid,
+    items, total = await project_repo.list_recommendations(
         identity_type.value if identity_type else None,
         offset,
         size,
@@ -305,12 +316,13 @@ async def list_recommendations(
 async def get_recommendation(
     project_id: str,
     identity_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    rec = await repo.get_recommendation(tid, identity_id)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    rec = await project_repo.get_recommendation(identity_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="Recommendation not found")
     return rec.model_dump(mode="json")
@@ -319,15 +331,18 @@ async def get_recommendation(
 @router.post("/recommendations/compute", status_code=status.HTTP_202_ACCEPTED)
 async def compute_recommendations(
     project_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    tid, project_repo = await _get_project_context(
+        project_id, user, repo, request, settings, required_role="operator"
+    )
     mapper = RoleMapper()
     recommender = RoleRecommender(mapper)
-    pipeline = RecommendationPipeline(repo, recommender)
+    pipeline = RecommendationPipeline(project_repo, recommender)
     background_tasks.add_task(pipeline.run, tid)
     return {"status": "accepted", "message": "Recommendation computation started"}
 
@@ -341,13 +356,16 @@ async def compute_recommendations(
 async def export_recommendation(
     project_id: str,
     identity_id: str,
+    request: Request,
     format: ExportFormat = Query(default=ExportFormat.TERRAFORM),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
-    rec = await repo.get_recommendation(tid, identity_id)
+    tid, project_repo = await _get_project_context(
+        project_id, user, repo, request, settings, required_role="operator"
+    )
+    rec = await project_repo.get_recommendation(identity_id)
     if rec is None:
         raise HTTPException(status_code=404, detail="Recommendation not found")
     result = _exporter.export(rec, format)
@@ -357,13 +375,16 @@ async def export_recommendation(
 @router.post("/exports/bulk")
 async def bulk_export(
     project_id: str,
+    request: Request,
     format: ExportFormat = Query(default=ExportFormat.TERRAFORM),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> StreamingResponse:
-    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
-    items, _ = await repo.list_recommendations(tid, offset=0, limit=500)
+    tid, project_repo = await _get_project_context(
+        project_id, user, repo, request, settings, required_role="operator"
+    )
+    items, _ = await project_repo.list_recommendations(offset=0, limit=500)
     if not items:
         raise HTTPException(status_code=404, detail="No recommendations found")
     buf = io.BytesIO()
@@ -388,19 +409,19 @@ async def bulk_export(
 @router.get("/drift-alerts")
 async def list_drift_alerts(
     project_id: str,
+    request: Request,
     severity: DriftSeverity | None = None,
     drift_status: DriftStatus | None = Query(default=None, alias="status"),
     identity_id: str | None = None,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=50, ge=1, le=200),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
     offset = (page - 1) * size
-    items, total = await repo.list_drift_alerts(
-        tid,
+    items, total = await project_repo.list_drift_alerts(
         severity.value if severity else None,
         drift_status.value if drift_status else None,
         identity_id,
@@ -419,12 +440,13 @@ async def list_drift_alerts(
 async def get_drift_alert(
     project_id: str,
     alert_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    alert = await repo.get_drift_alert(tid, alert_id)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    alert = await project_repo.get_drift_alert(alert_id)
     if alert is None:
         raise HTTPException(status_code=404, detail="Drift alert not found")
     return alert.model_dump(mode="json")
@@ -435,12 +457,15 @@ async def update_drift_alert(
     project_id: str,
     alert_id: str,
     body: DriftAlertUpdate,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
-    alert = await repo.get_drift_alert(tid, alert_id)
+    tid, project_repo = await _get_project_context(
+        project_id, user, repo, request, settings, required_role="operator"
+    )
+    alert = await project_repo.get_drift_alert(alert_id)
     if alert is None:
         raise HTTPException(status_code=404, detail="Drift alert not found")
     now = datetime.now(UTC)
@@ -450,22 +475,25 @@ async def update_drift_alert(
         alert.acknowledged_at = now
     elif body.status == DriftStatus.RESOLVED:
         alert.resolved_at = now
-    updated = await repo.upsert_drift_alert(tid, alert)
+    updated = await project_repo.upsert_drift_alert(alert)
     return updated.model_dump(mode="json")
 
 
 @router.post("/drift-alerts/detect", status_code=status.HTTP_202_ACCEPTED)
 async def trigger_drift_detection(
     project_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
-    detector = DriftDetector(repo)
+    tid, project_repo = await _get_project_context(
+        project_id, user, repo, request, settings, required_role="operator"
+    )
+    detector = DriftDetector(project_repo)
     scorer = RiskScorer()
-    pipeline = DriftPipeline(repo, detector, scorer)
+    pipeline = DriftPipeline(project_repo, detector, scorer)
     background_tasks.add_task(pipeline.run, tid)
     return {"status": "accepted", "message": "Drift detection started"}
 
@@ -474,12 +502,13 @@ async def trigger_drift_detection(
 async def get_baselines(
     project_id: str,
     identity_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    baselines = await repo.list_baselines(tid, identity_id)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    baselines = await project_repo.list_baselines(identity_id)
     return {
         "identity_id": identity_id,
         "baselines": [b.model_dump(mode="json") for b in baselines],
@@ -495,18 +524,18 @@ async def get_baselines(
 @router.get("/best-practices")
 async def list_violations(
     project_id: str,
+    request: Request,
     violation_type: ViolationType | None = Query(default=None, alias="type"),
     priority: ViolationPriority | None = None,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=50, ge=1, le=200),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
     offset = (page - 1) * size
-    items, total = await repo.list_violations(
-        tid,
+    items, total = await project_repo.list_violations(
         violation_type.value if violation_type else None,
         priority.value if priority else None,
         offset,
@@ -523,12 +552,13 @@ async def list_violations(
 @router.get("/best-practices/summary")
 async def get_compliance_summary(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    analyzer = BestPracticeAnalyzer(repo)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    analyzer = BestPracticeAnalyzer(project_repo)
     _violations, summary = await analyzer.evaluate_tenant(tid)
     return summary.model_dump(mode="json")
 
@@ -537,12 +567,13 @@ async def get_compliance_summary(
 async def get_violation(
     project_id: str,
     violation_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    violation = await repo.get_violation(tid, violation_id)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    violation = await project_repo.get_violation(violation_id)
     if violation is None:
         raise HTTPException(status_code=404, detail="Violation not found")
     return violation.model_dump(mode="json")
@@ -551,20 +582,23 @@ async def get_violation(
 @router.post("/best-practices/evaluate", status_code=status.HTTP_202_ACCEPTED)
 async def trigger_evaluation(
     project_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    tid, project_repo = await _get_project_context(
+        project_id, user, repo, request, settings, required_role="operator"
+    )
 
-    async def _run(t: str, r: CosmosRepo) -> None:
+    async def _run(t: str, r: ProjectRepo) -> None:
         analyzer = BestPracticeAnalyzer(r)
         violations, _ = await analyzer.evaluate_tenant(t)
         for v in violations:
-            await r.upsert_violation(t, v)
+            await r.upsert_violation(v)
 
-    background_tasks.add_task(_run, tid, repo)
+    background_tasks.add_task(_run, tid, project_repo)
     return {"status": "accepted", "message": "Best practice evaluation started"}
 
 
@@ -573,7 +607,7 @@ async def trigger_evaluation(
 # ------------------------------------------------------------------
 
 
-def _get_engine(repo: CosmosRepo, foundry: FoundryClient | None) -> NarrativeEngine:
+def _get_engine(repo: ProjectRepo, foundry: FoundryClient | None) -> NarrativeEngine:
     if foundry is None:
         raise HTTPException(status_code=503, detail="AI narrative generation is not configured")
     return NarrativeEngine(client=foundry, repo=repo)
@@ -582,13 +616,14 @@ def _get_engine(repo: CosmosRepo, foundry: FoundryClient | None) -> NarrativeEng
 @router.get("/narratives/executive")
 async def get_executive_narrative(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     foundry: FoundryClient | None = Depends(get_foundry_client),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    engine = _get_engine(repo, foundry)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    engine = _get_engine(project_repo, foundry)
     narrative = await engine.get_or_generate(tid, NarrativeScope.EXECUTIVE, "tenant")
     return narrative.model_dump(mode="json")
 
@@ -596,13 +631,16 @@ async def get_executive_narrative(
 @router.post("/narratives/refresh", status_code=status.HTTP_202_ACCEPTED)
 async def refresh_narratives(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     foundry: FoundryClient | None = Depends(get_foundry_client),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, str]:
-    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
-    engine = _get_engine(repo, foundry)
+    tid, project_repo = await _get_project_context(
+        project_id, user, repo, request, settings, required_role="operator"
+    )
+    engine = _get_engine(project_repo, foundry)
     await engine.generate_executive_digest(tid)
     return {"status": "accepted", "message": "Narrative regeneration started"}
 
@@ -615,13 +653,14 @@ async def refresh_narratives(
 @router.get("/reports/executive")
 async def download_executive_report(
     project_id: str,
+    request: Request,
     format: str = Query(default="pdf", pattern="^(pdf|pptx)$"),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> Response:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    generator = ReportGenerator(repo)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    generator = ReportGenerator(project_repo)
     if format == "pdf":
         content = await generator.generate_executive_pdf(tid)
         return Response(
@@ -645,15 +684,16 @@ async def download_executive_report(
 @router.get("/app-registrations")
 async def list_app_registrations(
     project_id: str,
+    request: Request,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=50, ge=1, le=200),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
     offset = (page - 1) * size
-    items, total = await repo.list_app_registrations(tid, offset, size)
+    items, total = await project_repo.list_app_registrations(offset, size)
     return {
         "items": [i.model_dump(mode="json") for i in items],
         "total": total,
@@ -666,12 +706,13 @@ async def list_app_registrations(
 async def get_app_registration(
     project_id: str,
     app_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    app = await repo.get_app_registration(tid, app_id)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    app = await project_repo.get_app_registration(app_id)
     if app is None:
         raise HTTPException(status_code=404, detail="App registration not found")
     return app.model_dump(mode="json")
@@ -685,34 +726,38 @@ async def get_app_registration(
 @router.get("/conditional-access")
 async def list_ca_policies(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    policies = await repo.list_ca_policies(tid)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    policies = await project_repo.list_ca_policies()
     return {"items": [p.model_dump(mode="json") for p in policies], "total": len(policies)}
 
 
 @router.post("/conditional-access/analyze", status_code=status.HTTP_202_ACCEPTED)
 async def analyze_ca_policies(
     project_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    tid, project_repo = await _get_project_context(
+        project_id, user, repo, request, settings, required_role="operator"
+    )
     from app.services.ca_analyzer import ConditionalAccessAnalyzer
 
-    async def _run(t: str, r: CosmosRepo) -> None:
-        policies = await r.list_ca_policies(t)
+    async def _run(t: str, r: ProjectRepo) -> None:
+        policies = await r.list_ca_policies()
         analyzer = ConditionalAccessAnalyzer()
         violations = analyzer.evaluate_policies(t, policies)
         for v in violations:
-            await r.upsert_violation(t, v)
+            await r.upsert_violation(v)
 
-    background_tasks.add_task(_run, tid, repo)
+    background_tasks.add_task(_run, tid, project_repo)
     return {"status": "accepted", "message": "CA policy analysis started"}
 
 
@@ -724,15 +769,16 @@ async def analyze_ca_policies(
 @router.get("/groups")
 async def list_groups(
     project_id: str,
+    request: Request,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=50, ge=1, le=200),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
     offset = (page - 1) * size
-    items, total = await repo.list_groups(tid, offset, size)
+    items, total = await project_repo.list_groups(offset, size)
     return {
         "items": [i.model_dump(mode="json") for i in items],
         "total": total,
@@ -745,12 +791,13 @@ async def list_groups(
 async def get_group(
     project_id: str,
     group_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    group = await repo.get_group(tid, group_id)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    group = await project_repo.get_group(group_id)
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
     return group.model_dump(mode="json")
@@ -764,12 +811,13 @@ async def get_group(
 @router.get("/custom-roles")
 async def list_custom_roles(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    items = await repo.list_custom_roles(tid)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    items = await project_repo.list_custom_roles()
     return {"items": [i.model_dump(mode="json") for i in items], "total": len(items)}
 
 
@@ -781,12 +829,13 @@ async def list_custom_roles(
 @router.get("/access-reviews")
 async def list_access_reviews(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    items = await repo.list_access_reviews(tid)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    items = await project_repo.list_access_reviews()
     return {"items": [i.model_dump(mode="json") for i in items], "total": len(items)}
 
 
@@ -798,12 +847,13 @@ async def list_access_reviews(
 @router.get("/settings/sod-rules")
 async def list_sod_rules(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    rules = await repo.get_sod_rules(tid)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    rules = await project_repo.get_sod_rules()
     return {"items": [r.model_dump(mode="json") for r in rules], "total": len(rules)}
 
 
@@ -811,11 +861,14 @@ async def list_sod_rules(
 async def create_sod_rule(
     project_id: str,
     body: dict[str, Any],
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    tid, project_repo = await _get_project_context(
+        project_id, user, repo, request, settings, required_role="operator"
+    )
     from app.models.sod_policy import SodConflictRule
 
     rule = SodConflictRule(
@@ -828,7 +881,7 @@ async def create_sod_rule(
         is_custom=True,
         enabled=True,
     )
-    saved = await repo.upsert_sod_rule(tid, rule)
+    saved = await project_repo.upsert_sod_rule(rule)
     return saved.model_dump(mode="json")
 
 
@@ -836,12 +889,15 @@ async def create_sod_rule(
 async def delete_sod_rule(
     project_id: str,
     rule_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> Response:
-    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
-    await repo.delete_sod_rule(tid, rule_id)
+    tid, project_repo = await _get_project_context(
+        project_id, user, repo, request, settings, required_role="operator"
+    )
+    await project_repo.delete_sod_rule(rule_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -853,15 +909,16 @@ async def delete_sod_rule(
 @router.get("/remediation")
 async def list_remediation_actions(
     project_id: str,
+    request: Request,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=50, ge=1, le=200),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
     offset = (page - 1) * size
-    items, total = await repo.list_remediation_actions(tid, offset, size)
+    items, total = await project_repo.list_remediation_actions(offset, size)
     return {
         "items": [i.model_dump(mode="json") for i in items],
         "total": total,
@@ -874,14 +931,17 @@ async def list_remediation_actions(
 async def request_remediation(
     project_id: str,
     body: dict[str, Any],
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    tid, project_repo = await _get_project_context(
+        project_id, user, repo, request, settings, required_role="operator"
+    )
     from app.services.remediation_engine import RemediationEngine
 
-    engine = RemediationEngine(repo)
+    engine = RemediationEngine(project_repo)
     action = await engine.request_action(
         tenant_id=tid,
         project_id=project_id,
@@ -898,14 +958,17 @@ async def request_remediation(
 async def approve_remediation(
     project_id: str,
     action_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    tid, project_repo = await _get_project_context(
+        project_id, user, repo, request, settings, required_role="operator"
+    )
     from app.services.remediation_engine import RemediationEngine
 
-    engine = RemediationEngine(repo)
+    engine = RemediationEngine(project_repo)
     action = await engine.approve_action(tid, action_id, user.email)
     return action.model_dump(mode="json")
 
@@ -914,15 +977,18 @@ async def approve_remediation(
 async def reject_remediation(
     project_id: str,
     action_id: str,
+    request: Request,
     body: dict[str, Any] | None = None,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    tid, project_repo = await _get_project_context(
+        project_id, user, repo, request, settings, required_role="operator"
+    )
     from app.services.remediation_engine import RemediationEngine
 
-    engine = RemediationEngine(repo)
+    engine = RemediationEngine(project_repo)
     reason = (body or {}).get("reason", "")
     action = await engine.reject_action(tid, action_id, user.email, reason)
     return action.model_dump(mode="json")
@@ -936,11 +1002,12 @@ async def reject_remediation(
 @router.get("/settings/scan-schedules")
 async def list_scan_schedules(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    await _tenant_id(project_id, user, repo, settings)
+    await _get_project_context(project_id, user, repo, request, settings)
     schedules = await repo.get_scan_schedules_for_project(project_id)
     return {"items": [s.model_dump(mode="json") for s in schedules], "total": len(schedules)}
 
@@ -949,11 +1016,12 @@ async def list_scan_schedules(
 async def create_scan_schedule(
     project_id: str,
     body: dict[str, Any],
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    await _get_project_context(project_id, user, repo, request, settings, required_role="operator")
     from app.models.alert_rules import ScanSchedule
 
     schedule = ScanSchedule(
@@ -971,11 +1039,12 @@ async def create_scan_schedule(
 async def delete_scan_schedule(
     project_id: str,
     schedule_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> Response:
-    await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    await _get_project_context(project_id, user, repo, request, settings, required_role="operator")
     await repo.delete_scan_schedule(project_id, schedule_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -988,11 +1057,12 @@ async def delete_scan_schedule(
 @router.get("/settings/alert-rules")
 async def list_alert_rules(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    await _tenant_id(project_id, user, repo, settings)
+    await _get_project_context(project_id, user, repo, request, settings)
     rules = await repo.get_alert_rules_for_project(project_id)
     return {"items": [r.model_dump(mode="json") for r in rules], "total": len(rules)}
 
@@ -1001,11 +1071,12 @@ async def list_alert_rules(
 async def create_alert_rule(
     project_id: str,
     body: dict[str, Any],
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    await _get_project_context(project_id, user, repo, request, settings, required_role="operator")
     from app.models.alert_rules import AlertChannel, AlertChannelType, AlertRule, AlertRuleType
 
     channel = AlertChannel(
@@ -1030,11 +1101,12 @@ async def create_alert_rule(
 async def delete_alert_rule(
     project_id: str,
     rule_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> Response:
-    await _tenant_id(project_id, user, repo, settings, required_role="operator")
+    await _get_project_context(project_id, user, repo, request, settings, required_role="operator")
     await repo.delete_alert_rule(project_id, rule_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -1047,15 +1119,16 @@ async def delete_alert_rule(
 @router.get("/reports/compliance")
 async def get_compliance_report(
     project_id: str,
+    request: Request,
     framework: str = Query(pattern="^(soc2|iso27001|nist80053)$"),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
     from app.data.compliance_mappings import get_compliance_controls
 
-    violations, _ = await repo.list_violations(tid, offset=0, limit=1000)
+    violations, _ = await project_repo.list_violations(offset=0, limit=1000)
     controls: list[dict[str, Any]] = []
     for v in violations:
         mapping = get_compliance_controls(v.violation_type, framework)
@@ -1085,8 +1158,9 @@ async def get_compliance_report(
 @router.get("/settings")
 async def get_project_settings(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     project = await validate_project_access(project_id, user, repo, settings)
@@ -1106,9 +1180,10 @@ async def get_project_settings(
 @router.post("/sync/trigger")
 async def trigger_sync(
     project_id: str,
+    request: Request,
     full: bool = False,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Trigger sync using the project's credentials."""
@@ -1120,6 +1195,9 @@ async def trigger_sync(
         required_role="operator",
     )
 
+    cache: ProjectRepoCache = request.app.state.project_repo_cache
+    project_repo = await cache.get_repo(project.database_name)
+
     from app.pipelines.ingest_pipeline import IngestPipeline
     from app.services.crypto import CryptoService
     from app.services.graph_ingest import GraphIngestService
@@ -1129,7 +1207,7 @@ async def trigger_sync(
     secret = crypto.decrypt(project.encrypted_client_secret)
     graph = GraphIngestService(settings, client_id=project.client_id, client_secret=secret)
     roles_svc = GraphRolesService(graph)
-    pipeline = IngestPipeline(repo, graph, roles_svc)
+    pipeline = IngestPipeline(project_repo, graph, roles_svc, scan_repo=repo)
     summary = await pipeline.run(project.target_tenant_id, full_sync=full)
     return summary
 
@@ -1137,13 +1215,14 @@ async def trigger_sync(
 @router.get("/sync/status")
 async def get_sync_status(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    audit_state = await repo.get_sync_state(tid, "audit_logs")
-    signin_state = await repo.get_sync_state(tid, "sign_in_logs")
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    audit_state = await project_repo.get_sync_state("audit_logs")
+    signin_state = await project_repo.get_sync_state("sign_in_logs")
     return {"tenant_id": tid, "audit_logs": audit_state, "sign_in_logs": signin_state}
 
 
@@ -1155,6 +1234,7 @@ async def get_sync_status(
 @router.get("/pim-sessions")
 async def list_pim_sessions(
     project_id: str,
+    request: Request,
     pim_status: str | None = Query(default=None, alias="status"),
     principal_id: str | None = None,
     role_name: str | None = None,
@@ -1162,13 +1242,12 @@ async def list_pim_sessions(
     page: int = Query(default=1, ge=1),
     size: int = Query(default=50, ge=1, le=200),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
     offset = (page - 1) * size
-    items, total = await repo.list_pim_sessions(
-        tid,
+    items, total = await project_repo.list_pim_sessions(
         status=pim_status,
         principal_id=principal_id,
         role_name=role_name,
@@ -1187,24 +1266,26 @@ async def list_pim_sessions(
 @router.get("/pim-sessions/analytics")
 async def get_pim_session_analytics(
     project_id: str,
+    request: Request,
     days: int = Query(default=30, ge=7, le=90),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    return await repo.get_pim_session_analytics(tid, days=days)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    return await project_repo.get_pim_session_analytics(days=days)
 
 
 @router.get("/pim-sessions/active")
 async def get_active_pim_sessions(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    items = await repo.get_active_pim_sessions(tid)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    items = await project_repo.get_active_pim_sessions()
     return {"items": [s.model_dump(mode="json") for s in items], "total": len(items)}
 
 
@@ -1212,12 +1293,13 @@ async def get_active_pim_sessions(
 async def get_pim_session_detail(
     project_id: str,
     session_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    session = await repo.get_pim_session(tid, session_id)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    session = await project_repo.get_pim_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="PIM session not found")
     return session.model_dump(mode="json")
@@ -1227,19 +1309,19 @@ async def get_pim_session_detail(
 async def get_pim_session_events(
     project_id: str,
     session_id: str,
+    request: Request,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=50, ge=1, le=200),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    session = await repo.get_pim_session(tid, session_id)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    session = await project_repo.get_pim_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="PIM session not found")
     offset = (page - 1) * size
-    items, total = await repo.get_session_action_events(
-        tid,
+    items, total = await project_repo.get_session_action_events(
         session.identity_id,
         session.activation_time,
         session.expiry_time,
@@ -1258,16 +1340,16 @@ async def get_pim_session_events(
 async def get_identity_pim_sessions(
     project_id: str,
     identity_id: str,
+    request: Request,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
     offset = (page - 1) * size
-    items, total = await repo.get_pim_sessions_for_identity(
-        tid,
+    items, total = await project_repo.get_pim_sessions_for_identity(
         identity_id,
         offset=offset,
         limit=size,
@@ -1283,9 +1365,10 @@ async def get_identity_pim_sessions(
 @router.post("/pim-sessions/sync", status_code=status.HTTP_202_ACCEPTED)
 async def trigger_pim_session_sync(
     project_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     from app.pipelines.pim_session_pipeline import PimSessionPipeline
@@ -1294,6 +1377,9 @@ async def trigger_pim_session_sync(
 
     project = await validate_project_access(project_id, user, repo, settings)
     tid = project.target_tenant_id
+
+    cache: ProjectRepoCache = request.app.state.project_repo_cache
+    project_repo = await cache.get_repo(project.database_name)
 
     crypto = CryptoService(settings)
     secret = (
@@ -1305,10 +1391,11 @@ async def trigger_pim_session_sync(
         client_secret=secret or None,
     )
     pipeline = PimSessionPipeline(
-        repo,
+        project_repo,
         graph,
         business_hours_start=settings.pim_session_business_hours_start,
         business_hours_end=settings.pim_session_business_hours_end,
+        scan_repo=repo,
     )
 
     async def _run() -> None:
@@ -1330,17 +1417,18 @@ async def trigger_pim_session_sync(
 @router.get("/access-paths")
 async def list_access_paths(
     project_id: str,
+    request: Request,
     min_risk: str | None = None,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
     offset = (page - 1) * size
-    items, total = await repo.list_access_path_analyses(
-        tid, min_risk=min_risk, offset=offset, limit=size
+    items, total = await project_repo.list_access_path_analyses(
+        min_risk=min_risk, offset=offset, limit=size
     )
     return {
         "items": [i.model_dump(mode="json") for i in items],
@@ -1353,12 +1441,13 @@ async def list_access_paths(
 @router.get("/access-paths/summary")
 async def get_access_paths_summary(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    summary = await repo.get_access_path_summary(tid)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    summary = await project_repo.get_access_path_summary()
     return summary.model_dump(mode="json")
 
 
@@ -1366,12 +1455,13 @@ async def get_access_paths_summary(
 async def get_identity_access_paths(
     project_id: str,
     identity_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    tid = await _tenant_id(project_id, user, repo, settings)
-    analysis = await repo.get_access_path_analysis_by_identity(tid, identity_id)
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    analysis = await project_repo.get_access_path_analysis_by_identity(identity_id)
     if analysis is None:
         return {"identity_id": identity_id, "paths": [], "total_paths": 0, "highest_risk": "none"}
     return analysis.model_dump(mode="json")

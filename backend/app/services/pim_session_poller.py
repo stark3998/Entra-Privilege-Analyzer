@@ -7,7 +7,6 @@ from typing import Any
 from app.config import Settings
 from app.pipelines.pim_session_pipeline import PimSessionPipeline
 from app.services.azure_rm_pim import AzureRmPimService
-from app.services.cosmos import CosmosRepo
 from app.services.crypto import CryptoService
 from app.services.graph_ingest import GraphIngestService
 
@@ -17,12 +16,12 @@ logger = logging.getLogger(__name__)
 class PimSessionPoller:
     """Background task that polls for new PIM activations at a configurable interval."""
 
-    def __init__(self, settings: Settings, repo: CosmosRepo) -> None:
+    def __init__(self, settings: Settings, repo: Any) -> None:
         self._settings = settings
         self._repo = repo
 
     async def poll_once(self, project_id: str) -> dict[str, Any]:
-        project = await self._repo.get_project_by_id(project_id)
+        project = await self._repo.get_project(project_id)
         if project is None:
             logger.warning("Poller: project %s not found", project_id)
             return {"error": "project_not_found"}

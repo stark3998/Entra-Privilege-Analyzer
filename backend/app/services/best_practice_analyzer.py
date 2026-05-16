@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 from app.models.app_registration import HIGH_RISK_APP_PERMISSION_GUIDS, AppRegistrationProfile
 from app.models.best_practice import (
@@ -20,8 +21,6 @@ from app.models.mfa_status import (
     MfaRegistrationRecord,
 )
 from app.models.sod_policy import DEFAULT_SOD_RULES
-from app.services.cosmos import CosmosRepo
-
 logger = logging.getLogger(__name__)
 
 # Role name pairs that violate separation of duties
@@ -45,7 +44,7 @@ _PRIORITY_WEIGHTS: dict[str, int] = {
 class BestPracticeAnalyzer:
     """Evaluates identities against best practice rules and generates violations."""
 
-    def __init__(self, repo: CosmosRepo) -> None:
+    def __init__(self, repo: Any) -> None:
         self._repo = repo
 
     async def evaluate_identity(
@@ -75,7 +74,7 @@ class BestPracticeAnalyzer:
         all_violations: list[BestPracticeViolation] = []
 
         # Load dynamic SoD rules (fall back to defaults if none stored)
-        sod_rules_raw = await self._repo.get_sod_rules(tenant_id)
+        sod_rules_raw = await self._repo.get_sod_rules()
         if sod_rules_raw:
             sod_pairs = [
                 (r.role_a_name, r.role_b_name, r.severity) for r in sod_rules_raw if r.enabled
@@ -88,7 +87,6 @@ class BestPracticeAnalyzer:
         page_size = 100
         while True:
             items, total = await self._repo.list_identities(
-                tenant_id=tenant_id,
                 offset=offset,
                 limit=page_size,
             )
@@ -115,7 +113,7 @@ class BestPracticeAnalyzer:
         try:
             from app.services.ca_analyzer import ConditionalAccessAnalyzer
 
-            ca_policies = await self._repo.list_ca_policies(tenant_id)
+            ca_policies = await self._repo.list_ca_policies()
             if ca_policies:
                 ca_analyzer = ConditionalAccessAnalyzer()
                 all_violations.extend(ca_analyzer.evaluate_policies(tenant_id, ca_policies))
@@ -125,7 +123,7 @@ class BestPracticeAnalyzer:
         try:
             from app.services.group_analyzer import GroupAnalyzer
 
-            groups_list, _ = await self._repo.list_groups(tenant_id, offset=0, limit=5000)
+            groups_list, _ = await self._repo.list_groups(offset=0, limit=5000)
             if groups_list:
                 ga = GroupAnalyzer()
                 all_violations.extend(ga.evaluate_groups(tenant_id, groups_list))
@@ -135,7 +133,7 @@ class BestPracticeAnalyzer:
         try:
             from app.services.custom_role_analyzer import CustomRoleAnalyzer
 
-            custom_roles = await self._repo.list_custom_roles(tenant_id)
+            custom_roles = await self._repo.list_custom_roles()
             if custom_roles:
                 cra = CustomRoleAnalyzer()
                 all_violations.extend(cra.evaluate_custom_roles(tenant_id, custom_roles))
@@ -145,12 +143,12 @@ class BestPracticeAnalyzer:
         try:
             from app.services.access_review_analyzer import AccessReviewAnalyzer
 
-            reviews = await self._repo.list_access_reviews(tenant_id)
+            reviews = await self._repo.list_access_reviews()
             if reviews:
                 identities_all, _ = await self._repo.list_identities(
-                    tenant_id, offset=0, limit=5000
+                    offset=0, limit=5000
                 )
-                groups_for_review, _ = await self._repo.list_groups(tenant_id, offset=0, limit=5000)
+                groups_for_review, _ = await self._repo.list_groups(offset=0, limit=5000)
                 privileged_role_ids = set()
                 role_assignable_group_ids = set()
                 for identity in identities_all:
@@ -360,7 +358,7 @@ class BestPracticeAnalyzer:
         identity: IdentityProfile,
     ) -> list[BestPracticeViolation]:
         """OverPrivileged: has recommendation with reduction_score > 30."""
-        rec = await self._repo.get_recommendation(tenant_id, identity.id)
+        rec = await self._repo.get_recommendation(identity.id)
         if rec is None:
             return []
 

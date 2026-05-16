@@ -15,7 +15,7 @@ output "cosmos_primary_key" {
 }
 
 output "cosmos_database_name" {
-  description = "Cosmos DB database name"
+  description = "Cosmos DB master database name (project databases are created dynamically)"
   value       = azurerm_cosmosdb_sql_database.main.name
 }
 

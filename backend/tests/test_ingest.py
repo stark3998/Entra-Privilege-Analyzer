@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -17,8 +17,8 @@ from app.models.action import ActionEvent, ActionSource
 from app.models.identity import IdentityProfile, IdentityType
 from app.models.project import Project, ScanRecord
 from app.pipelines.ingest_pipeline import IngestPipeline
-from app.services.cosmos import CosmosRepo, get_cosmos_repo
-from app.services.graph_ingest import GraphIngestService, GraphPermissionError, GraphThrottledError
+from app.services.graph_ingest import GraphIngestService, GraphPermissionError
+from app.services.master_repo import get_master_repo
 from app.services.scan_events import ScanEventBroker
 
 # ---------------------------------------------------------------------------
@@ -127,8 +127,8 @@ def _mock_user(tid: str = "local-dev-tenant") -> CurrentUser:
 
 
 def _make_mock_repo() -> AsyncMock:
-    """Create an AsyncMock that mimics CosmosRepo method signatures."""
-    repo = AsyncMock(spec=CosmosRepo)
+    """Create an AsyncMock that mimics MasterRepo method signatures."""
+    repo = AsyncMock()
     repo.try_acquire_project_scan_lease.return_value = None
     repo.renew_project_scan_lease.return_value = True
     repo.has_project_scan_lease.return_value = True
@@ -139,21 +139,6 @@ def _make_mock_repo() -> AsyncMock:
 @pytest.fixture()
 def mock_repo() -> AsyncMock:
     return _make_mock_repo()
-
-
-@pytest.fixture()
-async def client_with_mock_repo(mock_repo: AsyncMock) -> AsyncClient:
-    """AsyncClient with both settings and cosmos repo mocked."""
-    from app.main import create_app
-
-    test_app = create_app()
-    test_app.dependency_overrides[get_settings] = _test_settings
-    test_app.dependency_overrides[get_cosmos_repo] = lambda: mock_repo
-    test_app.dependency_overrides[get_current_user] = lambda: _mock_user()
-
-    transport = ASGITransport(app=test_app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        yield ac
 
 
 # ---------------------------------------------------------------------------
@@ -256,198 +241,8 @@ class TestParseSignInEvent:
 
 
 # ---------------------------------------------------------------------------
-# Identity list endpoint tests (mocked cosmos)
+# Graph ingest error handling tests
 # ---------------------------------------------------------------------------
-
-
-class TestListIdentitiesEndpoint:
-    """Tests for GET /api/tenants/{tid}/identities."""
-
-    @pytest.mark.asyncio
-    async def test_returns_paginated_results(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock
-    ) -> None:
-        """The endpoint should return items, total, page, size."""
-        now = datetime.now(UTC)
-        profiles = [
-            IdentityProfile(
-                id="User_abc",
-                tenant_id="local-dev-tenant",
-                identity_type=IdentityType.USER,
-                object_id="abc",
-                display_name="Alice",
-                upn="alice@contoso.com",
-                created_at=now,
-                updated_at=now,
-            ),
-            IdentityProfile(
-                id="ServicePrincipal_def",
-                tenant_id="local-dev-tenant",
-                identity_type=IdentityType.SERVICE_PRINCIPAL,
-                object_id="def",
-                display_name="My App SP",
-                app_id="app-def",
-                created_at=now,
-                updated_at=now,
-            ),
-        ]
-        mock_repo.list_identities.return_value = (profiles, 2)
-
-        resp = await client_with_mock_repo.get(
-            "/api/tenants/local-dev-tenant/identities?page=1&size=50"
-        )
-        assert resp.status_code == 200
-
-        body = resp.json()
-        assert body["total"] == 2
-        assert body["page"] == 1
-        assert body["size"] == 50
-        assert len(body["items"]) == 2
-        assert body["items"][0]["display_name"] == "Alice"
-        assert body["items"][1]["display_name"] == "My App SP"
-
-    @pytest.mark.asyncio
-    async def test_empty_results(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock
-    ) -> None:
-        """When no identities exist, return an empty list with total=0."""
-        mock_repo.list_identities.return_value = ([], 0)
-
-        resp = await client_with_mock_repo.get("/api/tenants/local-dev-tenant/identities")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["items"] == []
-        assert body["total"] == 0
-
-
-# ---------------------------------------------------------------------------
-# Tenant-ID validation tests
-# ---------------------------------------------------------------------------
-
-
-class TestTenantIdValidation:
-    """Ensure requests for a different tenant are rejected when not in local mode."""
-
-    @pytest.mark.asyncio
-    async def test_cross_tenant_rejected_in_prod_mode(self) -> None:
-        """A user from tenant A requesting tenant B data should get 403."""
-        from app.main import create_app
-
-        def _prod_settings() -> Settings:
-            return Settings(
-                local_mode=False,
-                cosmos_endpoint="",
-                cosmos_key="",
-            )
-
-        def _user_tenant_a() -> CurrentUser:
-            return CurrentUser(
-                oid="user-oid",
-                tid="tenant-A",
-                name="User A",
-                email="a@tenant-a.com",
-                roles=["IAMAdmin"],
-            )
-
-        repo_mock = _make_mock_repo()
-        repo_mock.list_identities.return_value = ([], 0)
-
-        test_app = create_app()
-        test_app.dependency_overrides[get_settings] = _prod_settings
-        test_app.dependency_overrides[get_cosmos_repo] = lambda: repo_mock
-        test_app.dependency_overrides[get_current_user] = _user_tenant_a
-
-        transport = ASGITransport(app=test_app)
-        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-            resp = await ac.get("/api/tenants/tenant-B/identities")
-            assert resp.status_code == 403
-            assert "Cross-tenant" in resp.json()["detail"]
-
-    @pytest.mark.asyncio
-    async def test_same_tenant_allowed_in_prod_mode(self) -> None:
-        """A user requesting their own tenant's data should succeed."""
-        from app.main import create_app
-
-        def _prod_settings() -> Settings:
-            return Settings(
-                local_mode=False,
-                cosmos_endpoint="",
-                cosmos_key="",
-            )
-
-        def _user_tenant_a() -> CurrentUser:
-            return CurrentUser(
-                oid="user-oid",
-                tid="tenant-A",
-                name="User A",
-                email="a@tenant-a.com",
-                roles=["IAMAdmin"],
-            )
-
-        repo_mock = _make_mock_repo()
-        repo_mock.list_identities.return_value = ([], 0)
-
-        test_app = create_app()
-        test_app.dependency_overrides[get_settings] = _prod_settings
-        test_app.dependency_overrides[get_cosmos_repo] = lambda: repo_mock
-        test_app.dependency_overrides[get_current_user] = _user_tenant_a
-
-        transport = ASGITransport(app=test_app)
-        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-            resp = await ac.get("/api/tenants/tenant-A/identities")
-            assert resp.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_local_mode_allows_any_tenant(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock
-    ) -> None:
-        """In LOCAL_MODE, any tenant_id should be allowed."""
-        mock_repo.list_identities.return_value = ([], 0)
-
-        resp = await client_with_mock_repo.get("/api/tenants/any-random-tenant/identities")
-        assert resp.status_code == 200
-
-
-# ---------------------------------------------------------------------------
-# Get identity endpoint tests
-# ---------------------------------------------------------------------------
-
-
-class TestGetIdentityEndpoint:
-    """Tests for GET /api/tenants/{tid}/identities/{id}."""
-
-    @pytest.mark.asyncio
-    async def test_returns_identity(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock
-    ) -> None:
-        """Should return the identity profile when found."""
-        now = datetime.now(UTC)
-        profile = IdentityProfile(
-            id="User_abc",
-            tenant_id="local-dev-tenant",
-            identity_type=IdentityType.USER,
-            object_id="abc",
-            display_name="Alice",
-            created_at=now,
-            updated_at=now,
-        )
-        mock_repo.get_identity.return_value = profile
-
-        resp = await client_with_mock_repo.get("/api/tenants/local-dev-tenant/identities/User_abc")
-        assert resp.status_code == 200
-        assert resp.json()["display_name"] == "Alice"
-
-    @pytest.mark.asyncio
-    async def test_returns_404_when_not_found(
-        self, client_with_mock_repo: AsyncClient, mock_repo: AsyncMock
-    ) -> None:
-        """Should return 404 when the identity does not exist."""
-        mock_repo.get_identity.return_value = None
-
-        resp = await client_with_mock_repo.get(
-            "/api/tenants/local-dev-tenant/identities/User_nonexistent"
-        )
-        assert resp.status_code == 404
 
 
 class TestGraphIngestErrors:
@@ -582,14 +377,21 @@ class TestIngestPipelineProgress:
 
     @pytest.mark.asyncio
     async def test_emits_detailed_progress_during_long_running_sections(self) -> None:
-        repo = AsyncMock(spec=CosmosRepo)
+        repo = AsyncMock()
         repo.get_sync_state.return_value = None
         repo.get_identity.return_value = None
         repo.append_action_events.return_value = 3
 
         graph = AsyncMock()
-        graph.fetch_audit_logs.return_value = ([SAMPLE_AUDIT_LOG], None)
-        graph.fetch_sign_in_logs.return_value = [SAMPLE_SIGN_IN_LOG, SAMPLE_SIGN_IN_LOG_FAILURE]
+
+        async def _stream_audit(*args: Any, **kwargs: Any):
+            yield [SAMPLE_AUDIT_LOG], None
+
+        async def _stream_signin(*args: Any, **kwargs: Any):
+            yield [SAMPLE_SIGN_IN_LOG, SAMPLE_SIGN_IN_LOG_FAILURE], None
+
+        graph.stream_audit_logs = _stream_audit
+        graph.stream_sign_in_logs = _stream_signin
         graph.fetch_users.return_value = [
             {
                 "id": "user-oid-123",
@@ -626,19 +428,25 @@ class TestIngestPipelineProgress:
         assert any("Fetched 2 users" in message for message in messages)
         assert any("Fetching service principals" in message for message in messages)
         assert any("Processed 2 identity profiles" in message for message in messages)
-        assert any("Persisting 3 action events" in message for message in messages)
+        assert any("action events already stored incrementally" in message for message in messages)
+
+
+def _scan_test_settings() -> Settings:
+    return Settings(
+        local_mode=True,
+        cosmos_endpoint="",
+        cosmos_key="",
+        redis_host="localhost",
+        redis_password="",
+        encryption_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        applicationinsights_connection_string="",
+        scan_function_app_url="https://func-test.azurewebsites.net",
+        scan_function_key="test-key",
+    )
 
 
 class TestTriggerScanErrorMapping:
-    """Focused tests for scan endpoint error translation."""
-
-    @staticmethod
-    async def _wait_for_background_scan_write(mock_repo: AsyncMock) -> None:
-        for _ in range(20):
-            if mock_repo.upsert_scan.await_count >= 2:
-                return
-            await asyncio.sleep(0)
-        raise AssertionError("background scan task did not persist final state")
+    """Focused tests for scan endpoint error translation (function app dispatch)."""
 
     @pytest.fixture()
     async def scan_client(
@@ -655,171 +463,77 @@ class TestTriggerScanErrorMapping:
             target_tenant_name="Tenant 001",
             client_id="client-id",
             encrypted_client_secret="encrypted",
+            database_name="project-project-001",
             status="active",
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         )
         mock_repo.list_projects_for_user.return_value = [project]
-        mock_repo.try_acquire_project_scan_lease.return_value = project
-        mock_repo.release_project_scan_lease.return_value = project
 
         monkeypatch.setattr("app.routers.scans.CryptoService.decrypt", lambda self, value: "secret")
 
         test_app = create_app()
-        test_app.dependency_overrides[get_settings] = _test_settings
-        test_app.dependency_overrides[get_cosmos_repo] = lambda: mock_repo
+        test_app.dependency_overrides[get_settings] = _scan_test_settings
+        test_app.dependency_overrides[get_master_repo] = lambda: mock_repo
         test_app.dependency_overrides[get_current_user] = lambda: _mock_user()
         test_app.state.scan_event_broker = ScanEventBroker()
+        test_app.state.scan_tasks = {}
 
         transport = ASGITransport(app=test_app)
         async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             yield ac
 
     @pytest.mark.asyncio
-    async def test_trigger_scan_returns_controlled_forbidden_error(
+    async def test_trigger_scan_returns_502_on_function_app_failure(
         self,
         scan_client: AsyncClient,
         mock_repo: AsyncMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """A delegated/app Graph permission failure should be persisted after the async 202 response."""
+        """When the function app call fails, the endpoint should return 502."""
 
-        async def _run(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            raise GraphPermissionError(
-                "Microsoft Graph denied access to https://graph.microsoft.com/beta/auditLogs/directoryAudits. Check that the configured identity has the required Graph permissions.",
-                status_code=403,
-                endpoint="https://graph.microsoft.com/beta/auditLogs/directoryAudits",
-                code="Authorization_RequestDenied",
-            )
+        async def _fail(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            raise RuntimeError("Function app unreachable")
 
-        monkeypatch.setattr("app.routers.scans.IngestPipeline.run", _run)
+        monkeypatch.setattr("app.routers.scans._start_function_app_scan", _fail)
+
+        resp = await scan_client.post("/api/projects/project-001/scans/trigger")
+
+        assert resp.status_code == 502
+        assert "Failed to start scan orchestration" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_trigger_scan_success_returns_202(
+        self,
+        scan_client: AsyncClient,
+        mock_repo: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Successful function app dispatch should return 202 with scan ID."""
+
+        async def _ok(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"id": "orch-123", "statusQueryGetUri": "https://func-test/status/orch-123"}
+
+        monkeypatch.setattr("app.routers.scans._start_function_app_scan", _ok)
 
         resp = await scan_client.post("/api/projects/project-001/scans/trigger")
 
         assert resp.status_code == 202
-        await self._wait_for_background_scan_write(mock_repo)
-        persisted_scan = mock_repo.upsert_scan.await_args_list[-1].args[0]
-        assert "required delegated or application permissions" in persisted_scan.error_message
+        body = resp.json()
+        assert body["status"] == "running"
+        assert "scan_id" in body
+        mock_repo.upsert_scan.assert_awaited()
 
     @pytest.mark.asyncio
-    async def test_trigger_scan_rejects_missing_bearer_before_persisting_scan(
+    async def test_trigger_scan_rejects_no_function_app_configured(
         self,
-        scan_client: AsyncClient,
-        mock_repo: AsyncMock,
-    ) -> None:
-        resp = await scan_client.post("/api/projects/project-001/scans/trigger?auth_mode=delegated")
-
-        assert resp.status_code == 401
-        assert resp.json()["detail"] == "Missing Bearer token"
-        mock_repo.upsert_scan.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_trigger_scan_returns_controlled_throttled_error(
-        self,
-        scan_client: AsyncClient,
         mock_repo: AsyncMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Graph throttling should be persisted after the async 202 response."""
+        """Without scan_function_app_url, the endpoint should return 503."""
+        from app.main import create_app
 
-        async def _run(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            raise GraphThrottledError(
-                "Microsoft Graph throttled requests to https://graph.microsoft.com/beta/auditLogs/directoryAudits after retrying.",
-                status_code=429,
-                endpoint="https://graph.microsoft.com/beta/auditLogs/directoryAudits",
-                code="TooManyRequests",
-            )
-
-        monkeypatch.setattr("app.routers.scans.IngestPipeline.run", _run)
-
-        resp = await scan_client.post("/api/projects/project-001/scans/trigger")
-
-        assert resp.status_code == 202
-        await self._wait_for_background_scan_write(mock_repo)
-        persisted_scan = mock_repo.upsert_scan.await_args_list[-1].args[0]
-        assert "Please wait and try again" in persisted_scan.error_message
-
-    @pytest.mark.asyncio
-    async def test_trigger_scan_fails_cleanly_when_queue_event_cannot_publish(
-        self,
-        scan_client: AsyncClient,
-        mock_repo: AsyncMock,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        async def _publish(*args: Any, **kwargs: Any) -> None:
-            raise RuntimeError("redis unavailable")
-
-        monkeypatch.setattr("app.routers.scans._publish_scan_event", _publish)
-
-        resp = await scan_client.post("/api/projects/project-001/scans/trigger")
-
-        assert resp.status_code == 503
-        assert (
-            resp.json()["detail"]
-            == "Scan event streaming is temporarily unavailable. Retry the scan."
-        )
-        assert mock_repo.upsert_scan.await_count >= 2
-        persisted_scan = mock_repo.upsert_scan.await_args_list[-1].args[0]
-        assert persisted_scan.status == "failed"
-        assert persisted_scan.error_message == resp.json()["detail"]
-
-    @pytest.mark.asyncio
-    async def test_trigger_scan_returns_sanitized_internal_error(
-        self,
-        scan_client: AsyncClient,
-        mock_repo: AsyncMock,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Unexpected failures should be sanitized in persisted state after the async 202 response."""
-
-        async def _run(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            raise RuntimeError("boom")
-
-        monkeypatch.setattr("app.routers.scans.IngestPipeline.run", _run)
-
-        resp = await scan_client.post("/api/projects/project-001/scans/trigger")
-
-        assert resp.status_code == 202
-        await self._wait_for_background_scan_write(mock_repo)
-        persisted_scan = mock_repo.upsert_scan.await_args_list[-1].args[0]
-        assert (
-            persisted_scan.error_message
-            == "Scan failed due to an internal server error. Check backend logs for details."
-        )
-
-    @pytest.mark.asyncio
-    async def test_trigger_scan_reclaims_expired_running_scan(
-        self,
-        scan_client: AsyncClient,
-        mock_repo: AsyncMock,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        persisted_scans: list[ScanRecord] = []
-
-        stale_started_at = datetime.now(UTC) - timedelta(minutes=10)
-        stale_scan = ScanRecord(
-            id="scan-stale",
-            project_id="project-001",
-            target_tenant_id="tenant-001",
-            scan_type="incremental",
-            status="running",
-            auth_mode="app",
-            phases=[],
-            started_at=stale_started_at,
-            owner_instance_id="other-instance",
-            heartbeat_at=stale_started_at,
-            lease_expires_at=stale_started_at + timedelta(seconds=30),
-        )
-
-        async def _run(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            return {"identities_processed": 1}
-
-        async def _upsert_scan(scan: ScanRecord) -> ScanRecord:
-            persisted_scans.append(scan.model_copy(deep=True))
-            return scan
-
-        mock_repo.get_latest_scan.return_value = stale_scan
-        mock_repo.try_acquire_project_scan_lease.return_value = Project(
+        project = Project(
             id="project-001",
             owner_id="local-dev-user",
             owner_email="dev@localhost",
@@ -828,33 +542,87 @@ class TestTriggerScanErrorMapping:
             target_tenant_name="Tenant 001",
             client_id="client-id",
             encrypted_client_secret="encrypted",
+            database_name="project-project-001",
             status="active",
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         )
-        mock_repo.upsert_scan.side_effect = _upsert_scan
-        monkeypatch.setattr("app.routers.scans.IngestPipeline.run", _run)
+        mock_repo.list_projects_for_user.return_value = [project]
+
+        test_app = create_app()
+        test_app.dependency_overrides[get_settings] = _test_settings
+        test_app.dependency_overrides[get_master_repo] = lambda: mock_repo
+        test_app.dependency_overrides[get_current_user] = lambda: _mock_user()
+        test_app.state.scan_event_broker = ScanEventBroker()
+
+        transport = ASGITransport(app=test_app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            resp = await ac.post("/api/projects/project-001/scans/trigger")
+
+        assert resp.status_code == 503
+        assert "not configured" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_trigger_scan_conflict_when_already_running(
+        self,
+        scan_client: AsyncClient,
+        mock_repo: AsyncMock,
+    ) -> None:
+        """If a scan is already running, the endpoint should return 409."""
+        running_scan = ScanRecord(
+            id="scan-active",
+            project_id="project-001",
+            target_tenant_id="tenant-001",
+            scan_type="incremental",
+            auth_mode="app",
+            status="running",
+            phases=[],
+            started_at=datetime.now(UTC),
+        )
+        mock_repo.get_latest_scan.return_value = running_scan
 
         resp = await scan_client.post("/api/projects/project-001/scans/trigger")
 
-        assert resp.status_code == 202
-        assert len(persisted_scans) >= 2
-        reclaimed_scan = persisted_scans[0]
-        assert reclaimed_scan.id == "scan-stale"
-        assert reclaimed_scan.status == "failed"
-        assert reclaimed_scan.error_message == "Scan abandoned after backend restart or task loss."
-        new_scan_writes = [scan for scan in persisted_scans[1:] if scan.id != "scan-stale"]
-        assert new_scan_writes
-        assert any(scan.status in {"running", "completed"} for scan in new_scan_writes)
-        running_writes = [scan for scan in new_scan_writes if scan.status == "running"]
-        completed_writes = [scan for scan in new_scan_writes if scan.status == "completed"]
-        assert running_writes
-        assert all(scan.owner_instance_id is not None for scan in running_writes)
-        assert all(scan.heartbeat_at is not None for scan in running_writes)
-        assert all(scan.lease_expires_at is not None for scan in running_writes)
-        assert all(scan.owner_instance_id is None for scan in completed_writes)
-        assert all(scan.heartbeat_at is None for scan in completed_writes)
-        assert all(scan.lease_expires_at is None for scan in completed_writes)
+        assert resp.status_code == 409
+        assert "already running" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_trigger_scan_rejects_missing_credentials(
+        self,
+        mock_repo: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Projects without credentials should get 400."""
+        from app.main import create_app
+
+        project = Project(
+            id="project-002",
+            owner_id="local-dev-user",
+            owner_email="dev@localhost",
+            name="No Creds",
+            target_tenant_id="tenant-001",
+            target_tenant_name="Tenant 001",
+            client_id="",
+            encrypted_client_secret="",
+            database_name="project-project-002",
+            status="setup",
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        mock_repo.list_projects_for_user.return_value = [project]
+
+        test_app = create_app()
+        test_app.dependency_overrides[get_settings] = _scan_test_settings
+        test_app.dependency_overrides[get_master_repo] = lambda: mock_repo
+        test_app.dependency_overrides[get_current_user] = lambda: _mock_user()
+        test_app.state.scan_event_broker = ScanEventBroker()
+
+        transport = ASGITransport(app=test_app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            resp = await ac.post("/api/projects/project-002/scans/trigger")
+
+        assert resp.status_code == 400
+        assert "credentials" in resp.json()["detail"].lower()
 
     @pytest.mark.asyncio
     async def test_stream_scan_events_emits_immediate_snapshot_for_active_scan(
@@ -910,93 +678,5 @@ class TestTriggerScanErrorMapping:
             assert response.status_code == 200
             first_chunk = await response.aiter_text().__anext__()
 
-        assert first_chunk == ": stream-open\n\n"
-
-    @pytest.mark.asyncio
-    async def test_run_scan_task_marks_scan_failed_after_lease_loss_cancellation(
-        self,
-        mock_repo: AsyncMock,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from app.routers.scans import _run_scan_task
-
-        persisted_scans: list[ScanRecord] = []
-        project = Project(
-            id="project-001",
-            owner_id="local-dev-user",
-            owner_email="dev@localhost",
-            name="Test Project",
-            target_tenant_id="tenant-001",
-            target_tenant_name="Tenant 001",
-            client_id="client-id",
-            encrypted_client_secret="encrypted",
-            status="active",
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
-        )
-        scan = ScanRecord(
-            id="scan-lease-loss",
-            project_id=project.id,
-            target_tenant_id=project.target_tenant_id,
-            scan_type="incremental",
-            auth_mode="app",
-            status="running",
-            phases=[],
-            started_at=datetime.now(UTC),
-            owner_instance_id="instance-1",
-            heartbeat_at=datetime.now(UTC),
-            lease_expires_at=datetime.now(UTC) + timedelta(seconds=1),
-        )
-
-        async def _upsert_scan(saved_scan: ScanRecord) -> ScanRecord:
-            persisted_scans.append(saved_scan.model_copy(deep=True))
-            return saved_scan
-
-        async def _run_pipeline(*args: Any, **kwargs: Any) -> dict[str, Any]:
-            await asyncio.sleep(3600)
-            return {"identities_processed": 1}
-
-        class _FakeGraphIngestService:
-            def __init__(self, *args: Any, **kwargs: Any) -> None:
-                pass
-
-        class _FakeGraphRolesService:
-            def __init__(self, graph: Any) -> None:
-                self.graph = graph
-
-        mock_repo.upsert_scan.side_effect = _upsert_scan
-        mock_repo.renew_project_scan_lease.return_value = False
-        mock_repo.release_project_scan_lease.return_value = None
-        monkeypatch.setattr("app.routers.scans._SCAN_HEARTBEAT_INTERVAL_SECONDS", 0.01)
-        monkeypatch.setattr("app.routers.scans.CryptoService.decrypt", lambda self, value: "secret")
-        monkeypatch.setattr("app.routers.scans.GraphIngestService", _FakeGraphIngestService)
-        monkeypatch.setattr("app.routers.scans.GraphRolesService", _FakeGraphRolesService)
-        monkeypatch.setattr("app.routers.scans.IngestPipeline.run", _run_pipeline)
-
-        app = SimpleNamespace(
-            state=SimpleNamespace(
-                scan_event_broker=ScanEventBroker(),
-                instance_id="instance-1",
-            )
-        )
-
-        await _run_scan_task(
-            app,
-            mock_repo,
-            project,
-            scan,
-            full=False,
-            auth_mode="app",
-            bearer_token=None,
-            settings=_test_settings(),
-        )
-
-        assert persisted_scans
-        final_scan = persisted_scans[-1]
-        assert final_scan.id == scan.id
-        assert final_scan.status == "failed"
-        assert final_scan.error_message == "Scan abandoned after backend restart or task loss."
-        assert final_scan.completed_at is not None
-        assert final_scan.owner_instance_id is None
-        assert final_scan.heartbeat_at is None
-        assert final_scan.lease_expires_at is None
+        assert ": stream-open\n\n" in first_chunk
+        assert "scan.snapshot" not in first_chunk

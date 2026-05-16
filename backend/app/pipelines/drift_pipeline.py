@@ -8,11 +8,14 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from app.services.cosmos import CosmosRepo
+from app.models.drift import DriftAlert
+from app.models.identity import IdentityProfile
 from app.services.drift_detector import DriftDetector
 from app.services.risk_scorer import RiskScorer
 
 logger = logging.getLogger(__name__)
+
+_ALERT_FLUSH_THRESHOLD = 500
 
 
 class DriftPipeline:
@@ -20,7 +23,7 @@ class DriftPipeline:
 
     def __init__(
         self,
-        repo: CosmosRepo,
+        repo: Any,
         detector: DriftDetector,
         scorer: RiskScorer,
     ) -> None:
@@ -41,7 +44,6 @@ class DriftPipeline:
         page_size = 100
         while True:
             items, total = await self._repo.list_identities(
-                tenant_id=tenant_id,
                 offset=offset,
                 limit=page_size,
             )
@@ -54,19 +56,27 @@ class DriftPipeline:
         identities_processed = 0
         errors = 0
 
+        all_alerts: list[DriftAlert] = []
+        updated_identities: list[IdentityProfile] = []
+
         for identity in all_identities:
             try:
                 # Run drift detection
-                alerts = await self._detector.detect_all(tenant_id, identity)
+                alerts = await self._detector.detect_all(identity)
 
-                # Persist new alerts
-                for alert in alerts:
-                    await self._repo.upsert_drift_alert(tenant_id, alert)
-                    alerts_created += 1
+                # Buffer alerts for batch write
+                all_alerts.extend(alerts)
+
+                # Flush alert buffer mid-loop to avoid unbounded memory
+                if len(all_alerts) >= _ALERT_FLUSH_THRESHOLD:
+                    alerts_created += await self._repo.batch_upsert_drift_alerts(
+                        all_alerts,
+                    )
+                    all_alerts = []
 
                 # Compute updated risk score
                 # Load permission gaps from recommendation (if exists)
-                rec = await self._repo.get_recommendation(tenant_id, identity.id)
+                rec = await self._repo.get_recommendation(identity.id)
                 permission_gaps = rec.permission_gaps if rec else []
 
                 risk_score = self._scorer.compute_risk_score(
@@ -75,10 +85,10 @@ class DriftPipeline:
                     permission_gaps,
                 )
 
-                # Update identity risk_score
+                # Buffer identity for batch write
                 identity.risk_score = risk_score
                 identity.updated_at = datetime.now(UTC)
-                await self._repo.upsert_identity(tenant_id, identity)
+                updated_identities.append(identity)
 
                 identities_processed += 1
 
@@ -89,6 +99,12 @@ class DriftPipeline:
                     identity.id,
                 )
                 errors += 1
+
+        # Flush remaining buffers
+        if all_alerts:
+            alerts_created += await self._repo.batch_upsert_drift_alerts(all_alerts)
+        if updated_identities:
+            await self._repo.batch_upsert_identities(updated_identities)
 
         duration_ms = int((time.monotonic() - start) * 1000)
 

@@ -11,7 +11,7 @@
 
 - **Backend**: Python 3.12, FastAPI, Pydantic v2, azure-cosmos (async), msal
 - **Frontend**: React 18, TypeScript, Vite 5, Tailwind CSS 3, @azure/msal-react, @tanstack/react-query
-- **Database**: Azure Cosmos DB (NoSQL API), partition key = `/tenantId` on all containers
+- **Database**: Azure Cosmos DB (NoSQL API), database-per-project architecture (master DB + one DB per project)
 - **Cache**: Azure Cache for Redis
 - **Auth**: Multi-tenant Entra ID (MSAL), OBO flow for Graph API calls
 - **AI**: Microsoft Foundry via FoundryClient wrapper
@@ -20,8 +20,12 @@
 
 ## Conventions
 
-- All Cosmos DB access goes through `CosmosRepo` in `backend/app/services/cosmos.py`
-- Every repo method requires `tenant_id` as first param (extracted from JWT `tid` claim)
+- Cosmos DB uses database-per-project isolation:
+  - `MasterRepo` in `backend/app/services/master_repo.py` — singleton for platform metadata (projects, members, scans, schedules, alerts) in `entra-master` database
+  - `ProjectRepo` in `backend/app/services/project_repo.py` — one instance per project database (`project-{project_id}`), cached via `ProjectRepoCache`
+  - `ProjectDatabaseManager` in `backend/app/services/project_db_manager.py` — provisions/deletes project databases
+  - `BatchWriter` in `backend/app/services/batch_writer.py` — Cosmos transactional batch writes with fallback
+- Repo methods do NOT take `tenant_id` as first param — the database IS the isolation boundary
 - Auth: `backend/app/auth/deps.py` provides `CurrentUser` and `require_role()` dependencies
 - LOCAL_MODE=true skips auth and returns a mock user
 - FoundryClient in `backend/app/services/foundry.py` — never call SDK from routes directly
@@ -66,7 +70,12 @@
 
 #### Services (`services/`)
 
-- `cosmos.py` — `CosmosRepo` class — all Cosmos DB access (queries, upserts, aggregations)
+- `master_repo.py` — `MasterRepo` class — platform metadata (projects, members, scans, schedules, alerts) in `entra-master` database
+- `project_repo.py` — `ProjectRepo` class — per-project analysis data with RU tracking and batch operations
+- `project_repo_cache.py` — `ProjectRepoCache` — caches ProjectRepo instances by database name
+- `project_db_manager.py` — `ProjectDatabaseManager` — provisions/deletes project databases
+- `batch_writer.py` — `BatchWriter` — Cosmos transactional batch writes with concurrent flush
+- `cosmos_schema.py` — Container definitions (MASTER_CONTAINERS + PROJECT_CONTAINERS)
 - `redis_cache.py` — Redis cache wrapper
 - `graph_ingest.py` — Microsoft Graph API data ingestion
 - `graph_roles.py` — Graph API role/directory role queries
@@ -86,22 +95,9 @@
 #### Routers (`routers/`)
 
 - `project_api.py` — Project-scoped API: dashboard, analytics, identities, recommendations, drift, best practices, settings, reports
-- `projects.py` — Project CRUD and membership management
-- `scans.py` — Scan trigger and status endpoints
-- `health.py` — Health check endpoint
-- `identities.py` — Legacy identity endpoints (tenant-scoped)
-- `actions.py` — Legacy action event endpoints
-- `sync.py` — Manual sync trigger
-- `tenants.py` — Tenant registration
-- `recommendations.py` — Legacy recommendation endpoints
-- `drift.py` — Legacy drift alert endpoints
-- `best_practices.py` — Legacy best practice endpoints
-- `dashboard.py` — Legacy dashboard endpoint
-- `narratives.py` — AI narrative generation endpoint
-- `reports.py` — Report download endpoints
-- `exports.py` — IaC export endpoints
-- `webhooks.py` — Webhook config endpoints
-- `settings_router.py` — Tenant settings endpoints
+- `projects.py` — Project CRUD, membership management, and `/me` endpoint
+- `scans.py` — Scan trigger, status, and SSE event streaming
+- `health.py` — Health check endpoint (liveness + readiness via MasterRepo)
 
 #### Pipelines (`pipelines/`)
 

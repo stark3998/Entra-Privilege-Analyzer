@@ -21,6 +21,7 @@ import { ReportsPage } from "@/pages/ReportsPage";
 import { ProjectsHomePage } from "@/pages/ProjectsHomePage";
 import { ProjectCreatePage } from "@/pages/ProjectCreatePage";
 import { ScanPage } from "@/pages/ScanPage";
+import { ScanLogsPage } from "@/pages/ScanLogsPage";
 import { ProjectMembersPage } from "@/pages/ProjectMembersPage";
 import { AppRegistrationsPage } from "@/pages/AppRegistrationsPage";
 import { ConditionalAccessPage } from "@/pages/ConditionalAccessPage";
@@ -77,6 +78,7 @@ function AuthenticatedApp() {
         <Route path="remediation" element={<RemediationHistoryPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="scan" element={<ScanPage />} />
+        <Route path="scan/:scanId/logs" element={<ScanLogsPage />} />
         <Route path="members" element={<ProjectMembersPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route index element={<Navigate to="dashboard" replace />} />

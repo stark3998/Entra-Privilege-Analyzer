@@ -6,21 +6,20 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from app.models.remediation import (
     RemediationAction,
     RemediationActionType,
     RemediationStatus,
 )
-from app.services.cosmos import CosmosRepo
-
 logger = logging.getLogger(__name__)
 
 
 class RemediationEngine:
     """Manages remediation action lifecycle: request -> approve -> execute."""
 
-    def __init__(self, repo: CosmosRepo) -> None:
+    def __init__(self, repo: Any) -> None:
         self._repo = repo
 
     async def request_action(
@@ -72,7 +71,7 @@ class RemediationEngine:
         approved_by: str,
     ) -> RemediationAction:
         """Approve a pending remediation action."""
-        action = await self._repo.get_remediation_action(tenant_id, action_id)
+        action = await self._repo.get_remediation_action(action_id)
         if action is None:
             raise ValueError(f"Remediation action {action_id} not found")
         if action.status != RemediationStatus.PENDING:
@@ -103,7 +102,7 @@ class RemediationEngine:
         reason: str,
     ) -> RemediationAction:
         """Reject a pending remediation action."""
-        action = await self._repo.get_remediation_action(tenant_id, action_id)
+        action = await self._repo.get_remediation_action(action_id)
         if action is None:
             raise ValueError(f"Remediation action {action_id} not found")
         if action.status != RemediationStatus.PENDING:
@@ -142,7 +141,7 @@ class RemediationEngine:
         Currently a placeholder -- logs the operation and marks completed
         without calling Graph API.
         """
-        action = await self._repo.get_remediation_action(tenant_id, action_id)
+        action = await self._repo.get_remediation_action(action_id)
         if action is None:
             raise ValueError(f"Remediation action {action_id} not found")
         if action.status != RemediationStatus.APPROVED:

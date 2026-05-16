@@ -21,10 +21,12 @@ from blueprints import (
     directory_data_blueprint,
     identity_profiles_blueprint,
 )
+from utils.log_context import ScanContextFilter
 
 # Configure root logger — the Azure Functions host attaches an App Insights
 # handler automatically; we just need to ensure our loggers emit at INFO.
 logging.basicConfig(level=logging.INFO)
+logging.getLogger().addFilter(ScanContextFilter())
 
 # Reduce noise from chatty libraries
 logging.getLogger("azure.core").setLevel(logging.WARNING)

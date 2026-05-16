@@ -11,17 +11,17 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.models.drift import BaselineStats
-from app.services.cosmos import CosmosRepo
 
 logger = logging.getLogger(__name__)
 
 _WINDOW_DAYS = 30
+_BATCH_SIZE = 500
 
 
 class BaselinePipeline:
     """Compute rolling baseline statistics for each identity's actions."""
 
-    def __init__(self, repo: CosmosRepo) -> None:
+    def __init__(self, repo: Any) -> None:
         self._repo = repo
 
     async def run(self, tenant_id: str) -> dict[str, Any]:
@@ -40,7 +40,6 @@ class BaselinePipeline:
         page_size = 100
         while True:
             items, total = await self._repo.list_identities(
-                tenant_id=tenant_id,
                 offset=offset,
                 limit=page_size,
             )
@@ -52,12 +51,12 @@ class BaselinePipeline:
 
         baselines_computed = 0
         errors = 0
+        pending_baselines: list[BaselineStats] = []
 
         for identity_id, _ in all_identities_ids:
             try:
                 # Fetch action events in the window
                 events, _total = await self._repo.list_actions(
-                    tenant_id=tenant_id,
                     identity_id=identity_id,
                     start=window_start,
                     end=now,
@@ -73,6 +72,7 @@ class BaselinePipeline:
                     action_dates[key].append(day_str)
 
                 # Compute daily counts, then mean/stddev
+                identity_baselines: list[BaselineStats] = []
                 for (action, resource), dates in action_dates.items():
                     daily_counts: dict[str, int] = defaultdict(int)
                     for d in dates:
@@ -106,8 +106,14 @@ class BaselinePipeline:
                         updated_at=now,
                     )
 
-                    await self._repo.upsert_baseline(tenant_id, baseline)
-                    baselines_computed += 1
+                    identity_baselines.append(baseline)
+
+                pending_baselines.extend(identity_baselines)
+
+                # Flush when buffer reaches batch size
+                if len(pending_baselines) >= _BATCH_SIZE:
+                    baselines_computed += await self._flush_baselines(pending_baselines, tenant_id)
+                    pending_baselines = []
 
             except Exception:
                 logger.exception(
@@ -116,6 +122,10 @@ class BaselinePipeline:
                     identity_id,
                 )
                 errors += 1
+
+        # Flush any remaining baselines after the loop
+        if pending_baselines:
+            baselines_computed += await self._flush_baselines(pending_baselines, tenant_id)
 
         duration_ms = int((time.monotonic() - start) * 1000)
 
@@ -128,3 +138,26 @@ class BaselinePipeline:
         }
         logger.info("Baseline pipeline complete: %s", summary)
         return summary
+
+    async def _flush_baselines(self, baselines: list[BaselineStats], tenant_id: str) -> int:
+        """Flush a batch of baselines via batch_upsert, falling back to individual upserts."""
+        try:
+            return await self._repo.batch_upsert_baselines(baselines)
+        except Exception:
+            logger.warning(
+                "Batch upsert failed for %d baselines in tenant %s, falling back to individual upserts",
+                len(baselines),
+                tenant_id,
+                exc_info=True,
+            )
+            count = 0
+            for baseline in baselines:
+                try:
+                    await self._repo.upsert_baseline(baseline)
+                    count += 1
+                except Exception:
+                    logger.exception(
+                        "Individual upsert fallback failed for baseline %s",
+                        baseline.id,
+                    )
+            return count

@@ -36,6 +36,8 @@ import type {
   PimSessionAnalytics,
   AccessPathAnalysis,
   AccessPathSummary,
+  ScanRecord,
+  ScanStreamEvent,
 } from "./types";
 
 /**
@@ -967,5 +969,52 @@ export function useIdentityAccessPaths(identityId: string) {
         `/api/projects/${projectId}/identities/${identityId}/access-paths`,
       ),
     enabled: !!projectId && !!identityId,
+  });
+}
+
+// ------------------------------------------------------------------
+// Scan Detail & Logs
+// ------------------------------------------------------------------
+
+export function useScanDetail(scanId: string) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["scanDetail", projectId, scanId],
+    queryFn: () =>
+      client.get<ScanRecord>(
+        `/api/projects/${projectId}/scans/${scanId}`,
+      ),
+    enabled: !!projectId && !!scanId,
+  });
+}
+
+export function useScanLogs(
+  scanId: string,
+  params: { page?: number; size?: number; level?: string; phase?: string } = {},
+) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+  const { page = 1, size = 100, level, phase } = params;
+
+  const qs = new URLSearchParams();
+  qs.set("page", String(page));
+  qs.set("size", String(size));
+  if (level) qs.set("level", level);
+  if (phase) qs.set("phase", phase);
+
+  return useQuery({
+    queryKey: ["scanLogs", projectId, scanId, page, size, level, phase],
+    queryFn: () =>
+      client.get<{
+        items: ScanStreamEvent[];
+        total: number;
+        page: number;
+        size: number;
+      }>(
+        `/api/projects/${projectId}/scans/${scanId}/logs?${qs.toString()}`,
+      ),
+    enabled: !!projectId && !!scanId,
   });
 }

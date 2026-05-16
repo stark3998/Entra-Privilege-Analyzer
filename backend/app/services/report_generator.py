@@ -7,9 +7,8 @@ import io
 import json
 import logging
 from datetime import UTC, datetime
+from typing import Any
 from xml.sax.saxutils import escape as xml_escape
-
-from app.services.cosmos import CosmosRepo
 
 logger = logging.getLogger(__name__)
 
@@ -17,13 +16,13 @@ logger = logging.getLogger(__name__)
 class ReportGenerator:
     """Generates executive reports in PDF and PPTX formats."""
 
-    def __init__(self, repo: CosmosRepo) -> None:
+    def __init__(self, repo: Any) -> None:
         self._repo = repo
 
     async def _gather_report_data(self, tenant_id: str) -> dict[str, object]:
         """Gather all data needed for executive reports."""
-        summary = await self._repo.get_dashboard_summary(tenant_id)
-        config = await self._repo.get_tenant_config(tenant_id)
+        summary = await self._repo.get_dashboard_summary()
+        config = await self._repo.get_tenant_config()
         tenant_name = config.display_name if config else tenant_id
         return {
             "tenant_id": tenant_id,

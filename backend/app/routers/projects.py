@@ -5,7 +5,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -16,9 +16,10 @@ from app.auth.deps import (
 )
 from app.config import Settings, get_settings
 from app.models.project import Project, ProjectMember
-from app.services.cosmos import CosmosRepo, get_cosmos_repo
+from app.services.master_repo import MasterRepo, get_master_repo
 from app.services.crypto import CryptoService
 from app.services.permission_validator import PermissionValidator
+from app.services.project_db_manager import ProjectDatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -110,15 +111,22 @@ def _project_response(p: Project) -> dict[str, Any]:
 @router.get("/me")
 async def whoami(
     user: CurrentUser = Depends(get_current_user),
-) -> dict[str, str]:
-    """Return the authenticated user's claims (debug helper)."""
-    return {"oid": user.oid, "tid": user.tid, "name": user.name, "email": user.email}
+) -> dict[str, Any]:
+    """Return the authenticated user's claims."""
+    return {
+        "oid": user.oid,
+        "tid": user.tid,
+        "tenant_id": user.tid,
+        "name": user.name,
+        "email": user.email,
+        "roles": user.roles,
+    }
 
 
 @router.get("")
 async def list_projects(
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
 ) -> list[dict[str, Any]]:
     """List all projects the user owns or is a member of."""
     projects = await repo.list_projects_for_user(user.oid, user.email)
@@ -128,8 +136,9 @@ async def list_projects(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_project(
     payload: CreateProjectPayload,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Create a new project. Validates Graph API permissions when credentials are provided."""
@@ -147,9 +156,17 @@ async def create_project(
         crypto = CryptoService(settings)
         encrypted_secret = crypto.encrypt(payload.client_secret)
 
+    project_id = str(uuid.uuid4())
+
+    cosmos_client = request.app.state.cosmos_client
+    database_name = ""
+    if cosmos_client is not None:
+        db_manager = ProjectDatabaseManager(cosmos_client)
+        database_name = await db_manager.provision_project_database(project_id)
+
     now = datetime.now(UTC)
     project = Project(
-        id=str(uuid.uuid4()),
+        id=project_id,
         owner_id=user.oid,
         owner_email=user.email,
         name=payload.name,
@@ -157,13 +174,14 @@ async def create_project(
         target_tenant_name=payload.target_tenant_name,
         client_id=payload.client_id,
         encrypted_client_secret=encrypted_secret,
+        database_name=database_name,
         status="active" if (perm_result and perm_result["valid"]) else "setup",
         permission_status=perm_result,
         created_at=now,
         updated_at=now,
     )
     saved = await repo.upsert_project(project)
-    logger.info("Project created: %s by user %s", saved.id, user.oid)
+    logger.info("Project created: %s (db=%s) by user %s", saved.id, database_name, user.oid)
     return _project_response(saved)
 
 
@@ -171,7 +189,7 @@ async def create_project(
 async def get_project(
     project_id: str,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Get project details."""
@@ -184,7 +202,7 @@ async def update_project(
     project_id: str,
     payload: UpdateProjectPayload,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Update project settings. Requires admin role."""
@@ -209,8 +227,9 @@ async def update_project(
 @router.delete("/{project_id}")
 async def delete_project(
     project_id: str,
+    request: Request,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> Response:
     """Delete a project. Owner only."""
@@ -220,8 +239,18 @@ async def delete_project(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the project owner can delete a project",
         )
+
+    if project.database_name:
+        cosmos_client = request.app.state.cosmos_client
+        if cosmos_client is not None:
+            db_manager = ProjectDatabaseManager(cosmos_client)
+            await db_manager.delete_project_database(project.database_name)
+        repo_cache = request.app.state.project_repo_cache
+        if repo_cache is not None:
+            repo_cache.evict(project.database_name)
+
     await repo.delete_project(project.owner_id, project_id)
-    logger.info("Project deleted: %s by user %s", project_id, user.oid)
+    logger.info("Project deleted: %s (db=%s) by user %s", project_id, project.database_name, user.oid)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -229,7 +258,7 @@ async def delete_project(
 async def validate_permissions(
     project_id: str,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Re-validate Graph API permissions for a project's credentials."""
@@ -267,7 +296,7 @@ async def update_credentials(
     project_id: str,
     payload: UpdateCredentialsPayload,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Update project credentials and re-validate permissions. Admin only."""
@@ -305,7 +334,7 @@ async def update_credentials(
 async def list_members(
     project_id: str,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """List project members and the caller's effective role."""
@@ -339,7 +368,7 @@ async def invite_member(
     project_id: str,
     payload: InviteMemberPayload,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Invite a member to a project. Admin only."""
@@ -391,7 +420,7 @@ async def update_member(
     member_id: str,
     payload: UpdateMemberPayload,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Update a member's role. Admin only."""
@@ -424,7 +453,7 @@ async def remove_member(
     project_id: str,
     member_id: str,
     user: CurrentUser = Depends(get_current_user),
-    repo: CosmosRepo = Depends(get_cosmos_repo),
+    repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
 ) -> Response:
     """Remove a member from a project. Admin only."""

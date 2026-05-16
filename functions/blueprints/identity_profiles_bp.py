@@ -20,6 +20,7 @@ from utils.cosmos_writer import (
     read_scan_staging,
     upsert_identity_profile,
 )
+from utils.log_context import set_scan_context
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ def process_identity_batch_activity(payload: dict) -> dict:
     - actor_entries: list of [identity_id, display_name] pairs
     - scan_id, tenant_id, cosmos_endpoint, cosmos_key, cosmos_database
     """
+    set_scan_context(payload)
     actor_entries: list[list[str]] = payload["actor_entries"]
     tenant_id = payload["tenant_id"]
     scan_id = payload["scan_id"]
@@ -97,6 +99,7 @@ def process_identity_batch_activity(payload: dict) -> dict:
         "process_identity_batch DONE | scan=%s | processed=%d | errors=%d | elapsed=%.0fms",
         scan_id, processed, errors, elapsed_ms,
     )
+
     return {"processed": processed, "errors": errors}
 
 

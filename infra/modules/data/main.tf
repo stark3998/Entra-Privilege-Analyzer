@@ -40,25 +40,28 @@ resource "azurerm_cosmosdb_account" "main" {
 }
 
 # ---------------------
-# Cosmos DB SQL Database
+# Cosmos DB SQL Database — Master
+# Per-project databases (e.g., "project-<uuid>") are provisioned dynamically
+# by the backend's ProjectDatabaseManager at project creation time.
+# Terraform only manages the master database and its containers.
 # ---------------------
 
 resource "azurerm_cosmosdb_sql_database" "main" {
-  name                = "entra-analyzer"
+  name                = "entra-master"
   resource_group_name = var.resource_group_name
   account_name        = azurerm_cosmosdb_account.main.name
 }
 
 # ---------------------
-# Cosmos DB Containers (all partitioned by /tenantId)
+# Master Containers
 # ---------------------
 
-resource "azurerm_cosmosdb_sql_container" "tenant_configs" {
-  name                = "tenant_configs"
+resource "azurerm_cosmosdb_sql_container" "projects" {
+  name                = "projects"
   resource_group_name = var.resource_group_name
   account_name        = azurerm_cosmosdb_account.main.name
   database_name       = azurerm_cosmosdb_sql_database.main.name
-  partition_key_paths = ["/tenantId"]
+  partition_key_paths = ["/ownerId"]
 
   indexing_policy {
     indexing_mode = "consistent"
@@ -69,12 +72,12 @@ resource "azurerm_cosmosdb_sql_container" "tenant_configs" {
   }
 }
 
-resource "azurerm_cosmosdb_sql_container" "identity_profiles" {
-  name                = "identity_profiles"
+resource "azurerm_cosmosdb_sql_container" "project_members" {
+  name                = "project_members"
   resource_group_name = var.resource_group_name
   account_name        = azurerm_cosmosdb_account.main.name
   database_name       = azurerm_cosmosdb_sql_database.main.name
-  partition_key_paths = ["/tenantId"]
+  partition_key_paths = ["/projectId"]
 
   indexing_policy {
     indexing_mode = "consistent"
@@ -85,13 +88,12 @@ resource "azurerm_cosmosdb_sql_container" "identity_profiles" {
   }
 }
 
-resource "azurerm_cosmosdb_sql_container" "action_events" {
-  name                = "action_events"
+resource "azurerm_cosmosdb_sql_container" "scan_history" {
+  name                = "scan_history"
   resource_group_name = var.resource_group_name
   account_name        = azurerm_cosmosdb_account.main.name
   database_name       = azurerm_cosmosdb_sql_database.main.name
-  partition_key_paths = ["/tenantId"]
-  default_ttl         = 7776000 # 90 days
+  partition_key_paths = ["/projectId"]
 
   indexing_policy {
     indexing_mode = "consistent"
@@ -102,12 +104,12 @@ resource "azurerm_cosmosdb_sql_container" "action_events" {
   }
 }
 
-resource "azurerm_cosmosdb_sql_container" "sync_state" {
-  name                = "sync_state"
+resource "azurerm_cosmosdb_sql_container" "scan_schedules" {
+  name                = "scan_schedules"
   resource_group_name = var.resource_group_name
   account_name        = azurerm_cosmosdb_account.main.name
   database_name       = azurerm_cosmosdb_sql_database.main.name
-  partition_key_paths = ["/tenantId"]
+  partition_key_paths = ["/projectId"]
 
   indexing_policy {
     indexing_mode = "consistent"
@@ -118,111 +120,12 @@ resource "azurerm_cosmosdb_sql_container" "sync_state" {
   }
 }
 
-resource "azurerm_cosmosdb_sql_container" "role_recommendations" {
-  name                = "role_recommendations"
+resource "azurerm_cosmosdb_sql_container" "alert_rules" {
+  name                = "alert_rules"
   resource_group_name = var.resource_group_name
   account_name        = azurerm_cosmosdb_account.main.name
   database_name       = azurerm_cosmosdb_sql_database.main.name
-  partition_key_paths = ["/tenantId"]
-
-  indexing_policy {
-    indexing_mode = "consistent"
-
-    included_path {
-      path = "/*"
-    }
-  }
-}
-
-resource "azurerm_cosmosdb_sql_container" "drift_alerts" {
-  name                = "drift_alerts"
-  resource_group_name = var.resource_group_name
-  account_name        = azurerm_cosmosdb_account.main.name
-  database_name       = azurerm_cosmosdb_sql_database.main.name
-  partition_key_paths = ["/tenantId"]
-
-  indexing_policy {
-    indexing_mode = "consistent"
-
-    included_path {
-      path = "/*"
-    }
-  }
-}
-
-resource "azurerm_cosmosdb_sql_container" "baselines" {
-  name                = "baselines"
-  resource_group_name = var.resource_group_name
-  account_name        = azurerm_cosmosdb_account.main.name
-  database_name       = azurerm_cosmosdb_sql_database.main.name
-  partition_key_paths = ["/tenantId"]
-
-  indexing_policy {
-    indexing_mode = "consistent"
-
-    included_path {
-      path = "/*"
-    }
-  }
-}
-
-resource "azurerm_cosmosdb_sql_container" "best_practice_violations" {
-  name                = "best_practice_violations"
-  resource_group_name = var.resource_group_name
-  account_name        = azurerm_cosmosdb_account.main.name
-  database_name       = azurerm_cosmosdb_sql_database.main.name
-  partition_key_paths = ["/tenantId"]
-
-  indexing_policy {
-    indexing_mode = "consistent"
-
-    included_path {
-      path = "/*"
-    }
-  }
-}
-
-resource "azurerm_cosmosdb_sql_container" "narratives" {
-  name                = "narratives"
-  resource_group_name = var.resource_group_name
-  account_name        = azurerm_cosmosdb_account.main.name
-  database_name       = azurerm_cosmosdb_sql_database.main.name
-  partition_key_paths = ["/tenantId"]
-  default_ttl         = 86400 # 24 hours
-
-  indexing_policy {
-    indexing_mode = "consistent"
-
-    included_path {
-      path = "/*"
-    }
-  }
-}
-
-resource "azurerm_cosmosdb_sql_container" "scan_staging" {
-  name                = "scan_staging"
-  resource_group_name = var.resource_group_name
-  account_name        = azurerm_cosmosdb_account.main.name
-  database_name       = azurerm_cosmosdb_sql_database.main.name
-  partition_key_paths = ["/scanId"]
-  default_ttl         = 86400 # 24 hours — auto-cleanup of temporary staging data
-
-  indexing_policy {
-    indexing_mode = "consistent"
-
-    included_path {
-      path = "/*"
-    }
-  }
-}
-
-resource "azurerm_cosmosdb_sql_container" "scan_events" {
-  name                = "scan_events"
-  resource_group_name = var.resource_group_name
-  account_name        = azurerm_cosmosdb_account.main.name
-  database_name       = azurerm_cosmosdb_sql_database.main.name
-  partition_key_paths = ["/scanId"]
-  default_ttl         = 7776000 # 90 days
+  partition_key_paths = ["/projectId"]
 
   indexing_policy {
     indexing_mode = "consistent"

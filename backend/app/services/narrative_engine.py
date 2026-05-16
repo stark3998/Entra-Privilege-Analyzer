@@ -6,9 +6,9 @@ from __future__ import annotations
 import logging
 import re
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from app.models.narrative import Narrative, NarrativeScope
-from app.services.cosmos import CosmosRepo
 from app.services.foundry import FoundryClient
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ def _sanitize_for_prompt(value: str, max_len: int = 200) -> str:
 class NarrativeEngine:
     """Generates and caches AI-powered narratives for various scopes."""
 
-    def __init__(self, client: FoundryClient, repo: CosmosRepo) -> None:
+    def __init__(self, client: FoundryClient, repo: Any) -> None:
         self._client = client
         self._repo = repo
 
@@ -35,7 +35,7 @@ class NarrativeEngine:
 
         Aggregates dashboard data, sends it to Foundry, and caches the result.
         """
-        summary = await self._repo.get_dashboard_summary(tenant_id)
+        summary = await self._repo.get_dashboard_summary()
 
         system_prompt = (
             "You are a concise security analyst writing for C-level executives. "
@@ -67,7 +67,7 @@ class NarrativeEngine:
             generated_at=now,
             expires_at=now + timedelta(hours=_NARRATIVE_TTL_HOURS),
         )
-        await self._repo.upsert_narrative(tenant_id, narrative)
+        await self._repo.upsert_narrative(narrative)
         return narrative
 
     async def generate_identity_summary(
@@ -76,7 +76,7 @@ class NarrativeEngine:
         identity_id: str,
     ) -> Narrative:
         """Generate a narrative summary for a specific identity."""
-        identity = await self._repo.get_identity(tenant_id, identity_id)
+        identity = await self._repo.get_identity(identity_id)
         if identity is None:
             now = datetime.now(UTC)
             return Narrative(
@@ -91,12 +91,11 @@ class NarrativeEngine:
 
         # Gather related data
         drift_alerts, _ = await self._repo.list_drift_alerts(
-            tenant_id=tenant_id,
             identity_id=identity_id,
             offset=0,
             limit=10,
         )
-        recommendation = await self._repo.get_recommendation(tenant_id, identity_id)
+        recommendation = await self._repo.get_recommendation(identity_id)
 
         system_prompt = (
             "You are a security analyst writing a brief identity risk summary. "
@@ -133,7 +132,7 @@ class NarrativeEngine:
             generated_at=now,
             expires_at=now + timedelta(hours=_NARRATIVE_TTL_HOURS),
         )
-        await self._repo.upsert_narrative(tenant_id, narrative)
+        await self._repo.upsert_narrative(narrative)
         return narrative
 
     async def get_or_generate(
@@ -144,7 +143,7 @@ class NarrativeEngine:
     ) -> Narrative:
         """Return a cached narrative if still valid, otherwise generate a new one."""
         narrative_id = f"{scope}_{scope_id}"
-        existing = await self._repo.get_narrative(tenant_id, narrative_id)
+        existing = await self._repo.get_narrative(narrative_id)
 
         if existing is not None and existing.expires_at > datetime.now(UTC):
             return existing

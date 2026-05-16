@@ -1,20 +1,42 @@
 """Synchronous Cosmos DB writer for Azure Functions activities.
 
-Uses module-level client caching and concurrent upserts via ThreadPoolExecutor,
-following the pattern from Entra-Migration-Functions/utils/cosmos.py.
+Uses module-level client caching and transactional batch upserts via
+Cosmos DB's execute_item_batch API, with automatic fallback to individual
+upserts when a batch fails.
 """
 
 from __future__ import annotations
 
-import concurrent.futures
 import logging
+import uuid
+from collections import defaultdict
+from datetime import UTC, datetime
 from typing import Any
 
 from azure.cosmos import CosmosClient, PartitionKey
 
 logger = logging.getLogger(__name__)
 
-_MAX_CONCURRENT_WRITES = 25
+_BATCH_SIZE_LIMIT = 100
+
+# Maps container name -> Python dict key used as the partition key value.
+# Cosmos partition key paths are /<field>, but we need the dict key to
+# extract the value from each item for grouping and batch calls.
+_CONTAINER_PK_FIELD: dict[str, str] = {
+    "identity_profiles": "id",
+    "action_events": "identity_id",
+    "role_recommendations": "identity_id",
+    "drift_alerts": "identity_id",
+    "baselines": "identity_id",
+    "best_practice_violations": "id",
+    "app_registrations": "id",
+    "mfa_records": "id",
+    "ca_policies": "id",
+    "risk_detections": "id",
+    "groups": "id",
+    "scan_events": "scanId",
+    "scan_staging": "scanId",
+}
 
 _client_cache: dict[str, CosmosClient] = {}
 _container_cache: dict[str, Any] = {}
@@ -42,24 +64,68 @@ def _get_container(
     return _container_cache[cache_key]
 
 
-def _concurrent_upsert(container: Any, items: list[dict]) -> int:
+def _get_pk_field(container_name: str) -> str:
+    """Return the Python dict key for the partition key of a given container."""
+    return _CONTAINER_PK_FIELD.get(container_name, "id")
+
+
+def _batch_upsert(container: Any, items: list[dict], pk_field: str) -> int:
+    """Upsert items using Cosmos DB transactional batch API.
+
+    Groups items by partition key value, splits each group into chunks of
+    up to 100 operations (the transactional batch limit), and executes
+    each chunk as a single batch. Falls back to individual upserts if a
+    batch call fails.
+
+    Returns the total count of successfully written items.
+    """
     if not items:
         return 0
-    count = 0
 
-    def _upsert_one(item: dict) -> None:
-        container.upsert_item(item)
+    # Group items by their partition key value
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for item in items:
+        pk_value = str(item.get(pk_field, item.get("id")))
+        groups[pk_value].append(item)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=_MAX_CONCURRENT_WRITES) as pool:
-        futures = {pool.submit(_upsert_one, item): item for item in items}
-        for future in concurrent.futures.as_completed(futures):
+    total_written = 0
+
+    for pk_value, group_items in groups.items():
+        # Split into chunks of _BATCH_SIZE_LIMIT
+        for chunk_start in range(0, len(group_items), _BATCH_SIZE_LIMIT):
+            chunk = group_items[chunk_start : chunk_start + _BATCH_SIZE_LIMIT]
+            batch_operations = [("upsert", (doc,), {}) for doc in chunk]
+
             try:
-                future.result()
-                count += 1
-            except Exception as exc:
-                item = futures[future]
-                logger.error("Cosmos upsert failed for %s: %s", item.get("id", "?"), exc)
-    return count
+                container.execute_item_batch(
+                    batch_operations=batch_operations,
+                    partition_key=pk_value,
+                )
+                total_written += len(chunk)
+                logger.debug(
+                    "Batch upsert succeeded: pk=%s, count=%d", pk_value, len(chunk),
+                )
+            except Exception as batch_exc:
+                logger.warning(
+                    "Batch upsert failed for pk=%s (%d items), falling back to "
+                    "individual upserts: %s",
+                    pk_value,
+                    len(chunk),
+                    batch_exc,
+                )
+                # Fallback: upsert items individually
+                for doc in chunk:
+                    try:
+                        container.upsert_item(doc)
+                        total_written += 1
+                    except Exception as exc:
+                        logger.error(
+                            "Individual upsert failed for %s: %s",
+                            doc.get("id", "?"),
+                            exc,
+                        )
+
+    return total_written
 
 
 def upsert_action_events(
@@ -70,9 +136,10 @@ def upsert_action_events(
     events: list[dict[str, Any]],
 ) -> int:
     container = _get_container(endpoint, key, database, "action_events")
+    pk_field = _get_pk_field("action_events")
     for e in events:
         e["tenantId"] = tenant_id
-    return _concurrent_upsert(container, events)
+    return _batch_upsert(container, events, pk_field)
 
 
 def upsert_identity_profile(
@@ -156,6 +223,49 @@ def cleanup_scan_staging(
         except Exception as exc:
             logger.warning("Failed to delete staging doc %s: %s", doc["id"], exc)
     return deleted
+
+
+def write_scan_event(
+    endpoint: str,
+    key: str,
+    database: str,
+    *,
+    scan_id: str,
+    project_id: str,
+    event_type: str,
+    message: str,
+    level: str = "info",
+    phase: str | None = None,
+    status: str | None = None,
+    items_processed: int | None = None,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Write a structured milestone event to the scan_events container.
+
+    Never raises — logs a warning on failure so activity execution is unaffected.
+    """
+    try:
+        container = _get_container(
+            endpoint, key, database, "scan_events", partition_key="/scanId",
+        )
+        doc = {
+            "id": f"{scan_id}:{event_type}:{uuid.uuid4().hex[:8]}",
+            "scanId": scan_id,
+            "scan_id": scan_id,
+            "project_id": project_id,
+            "type": event_type,
+            "message": message,
+            "level": level,
+            "phase": phase,
+            "status": status,
+            "items_processed": items_processed,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "details": details or {},
+            "ttl": 7776000,
+        }
+        container.upsert_item(doc)
+    except Exception as exc:
+        logger.warning("Failed to write scan event %s for scan %s: %s", event_type, scan_id, exc)
 
 
 def query_action_events_for_identity(

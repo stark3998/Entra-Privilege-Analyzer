@@ -14,23 +14,10 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from app.config import Settings, get_settings
 from app.observability import setup_observability
 from app.routers import (
-    actions,
-    best_practices,
-    dashboard,
-    drift,
-    exports,
     health,
-    identities,
-    narratives,
     project_api,
     projects,
-    recommendations,
-    reports,
     scans,
-    settings_router,
-    sync,
-    tenants,
-    webhooks,
 )
 from app.services.scan_events import ScanEventBroker
 
@@ -57,15 +44,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Observability
     setup_observability(settings)
 
-    # Cosmos DB
-    from app.services.cosmos import init_cosmos_repo
+    # Cosmos DB — master repo + project repo cache
+    from azure.cosmos.aio import CosmosClient
 
-    repo = None
+    from app.services.master_repo import init_master_repo
+    from app.services.project_repo_cache import ProjectRepoCache
+
+    master_repo = None
+    project_repo_cache = None
+    cosmos_client = None
     if settings.cosmos_endpoint and settings.cosmos_key:
         try:
-            repo = await init_cosmos_repo(settings)
-            app.state.cosmos_repo = repo
-            logger.info("Cosmos DB connection established")
+            cosmos_client = CosmosClient(
+                url=settings.cosmos_endpoint, credential=settings.cosmos_key,
+            )
+            master_repo = await init_master_repo(settings)
+            project_repo_cache = ProjectRepoCache(cosmos_client)
+            app.state.cosmos_client = cosmos_client
+            app.state.master_repo = master_repo
+            app.state.project_repo_cache = project_repo_cache
+            logger.info("Cosmos DB initialised — master repo + project repo cache ready")
         except Exception as exc:
             logger.error("Failed to initialise Cosmos DB: %s", exc)
             logger.warning("App starting WITHOUT Cosmos DB — /readyz will report not_ready")
@@ -86,7 +84,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if redis_cache is None:
         logger.warning("Redis unavailable — scan events limited to local in-memory streaming")
 
-    app.state.scan_event_broker = ScanEventBroker(redis_cache=redis_cache, cosmos_repo=repo)
+    app.state.scan_event_broker = ScanEventBroker(
+        redis_cache=redis_cache, cosmos_repo=master_repo,
+    )
 
     # Foundry AI (optional)
     from app.services.foundry import init_foundry_client
@@ -113,9 +113,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if redis_cache is not None:
         await redis_cache.close()
         logger.info("Redis connection closed")
-    if repo is not None:
-        await repo.close()
-        logger.info("Cosmos DB connection closed")
+    if cosmos_client is not None:
+        await cosmos_client.close()
+        logger.info("Cosmos client closed")
 
 
 def create_app() -> FastAPI:
@@ -124,12 +124,14 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Entra Permissions Analyzer",
-        version="0.7.0",
+        version="0.8.0",
         lifespan=lifespan,
     )
     app.state.scan_tasks: dict[str, asyncio.Task] = {}
     app.state.scan_event_broker = None
-    app.state.cosmos_repo = None
+    app.state.master_repo = None
+    app.state.project_repo_cache = None
+    app.state.cosmos_client = None
     app.state.instance_id = str(uuid.uuid4())
 
     class SecurityHeadersMiddleware:
@@ -177,19 +179,6 @@ def create_app() -> FastAPI:
 
     # Routers
     app.include_router(health.router)
-    app.include_router(tenants.router)
-    app.include_router(identities.router)
-    app.include_router(actions.router)
-    app.include_router(sync.router)
-    app.include_router(recommendations.router)
-    app.include_router(exports.router)
-    app.include_router(drift.router)
-    app.include_router(best_practices.router)
-    app.include_router(dashboard.router)
-    app.include_router(narratives.router)
-    app.include_router(webhooks.router)
-    app.include_router(reports.router)
-    app.include_router(settings_router.router)
     app.include_router(projects.router)
     app.include_router(project_api.router)
     app.include_router(scans.router)

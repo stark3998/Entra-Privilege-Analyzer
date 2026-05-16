@@ -19,19 +19,15 @@ async def healthz() -> dict[str, str]:
 @router.get("/readyz")
 async def readyz(request: Request) -> JSONResponse:
     """Readiness probe — verifies Cosmos DB connectivity."""
-    from app.services.cosmos import get_cosmos_repo
-
-    try:
-        repo = get_cosmos_repo()
-        # Attempt a lightweight read — a missing doc is fine, a connection error is not
-        await repo.get_tenant_config("__readyz_probe__")
-        return JSONResponse(content={"status": "ready"})
-    except RuntimeError:
-        # Repo not initialised yet
+    master_repo = getattr(request.app.state, "master_repo", None)
+    if master_repo is None:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"status": "not_ready", "detail": "Cosmos repo not initialised"},
+            content={"status": "not_ready", "detail": "Master repo not initialised"},
         )
+    try:
+        await master_repo.list_projects_for_user("__readyz_probe__")
+        return JSONResponse(content={"status": "ready"})
     except Exception as exc:
         logger.warning("Readiness check failed: %s", exc)
         return JSONResponse(

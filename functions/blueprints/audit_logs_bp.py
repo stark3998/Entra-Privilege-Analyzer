@@ -14,6 +14,7 @@ from utils.event_parser import parse_audit_event
 from utils.graph_auth import acquire_graph_token
 from utils.graph_client import graph_get
 from utils.cosmos_writer import upsert_action_events
+from utils.log_context import set_scan_context
 from utils.scan_state import update_scan_phase
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,7 @@ def orchestrate_audit_logs(context: df.DurableOrchestrationContext):
 @bp.activity_trigger(input_name="payload")
 def fetch_audit_log_page_activity(payload: dict) -> dict:
     """Fetch one page of audit logs, parse events, store to Cosmos."""
+    set_scan_context(payload)
     scan_id = payload.get("scan_id", "?")
     page_num = payload.get("page_number", 0)
     tenant_id = payload["tenant_id"]

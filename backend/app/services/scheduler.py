@@ -11,14 +11,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import Any
 
 from croniter import croniter
 
 from app.models.alert_rules import ScanSchedule
-
-if TYPE_CHECKING:
-    from app.services.cosmos import CosmosRepo
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +25,7 @@ _CHECK_INTERVAL_SECONDS = 60
 class ScanScheduler:
     """Manages scheduled scan execution based on cron configs stored in Cosmos."""
 
-    def __init__(self, repo: CosmosRepo) -> None:
+    def __init__(self, repo: Any) -> None:
         self._repo = repo
         self._running = False
         self._task: asyncio.Task[None] | None = None

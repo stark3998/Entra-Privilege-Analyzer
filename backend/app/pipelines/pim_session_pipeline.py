@@ -18,7 +18,6 @@ from app.models.pim_session import (
 )
 from app.models.project import ScanRecord
 from app.services.azure_rm_pim import AzureRmPimService
-from app.services.cosmos import CosmosRepo
 from app.services.graph_ingest import GraphIngestService
 from app.services.pim_session_anomaly_detector import (
     PimSessionAnomalyDetector,
@@ -65,17 +64,19 @@ class PimSessionPipeline:
 
     def __init__(
         self,
-        repo: CosmosRepo,
+        repo: Any,
         graph: GraphIngestService,
         arm_pim: AzureRmPimService | None = None,
         business_hours_start: int = 7,
         business_hours_end: int = 19,
         progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        scan_repo: Any | None = None,
     ) -> None:
         self._repo = repo
         self._graph = graph
         self._arm_pim = arm_pim
         self._progress_callback = progress_callback
+        self._scan_repo = scan_repo or repo
         self._detector = PimSessionAnomalyDetector(
             repo,
             business_hours_start,
@@ -104,7 +105,7 @@ class PimSessionPipeline:
                     phase.completed_at = datetime.now(UTC)
                     phase.items_processed = items
                 break
-        await self._repo.upsert_scan(scan)
+        await self._scan_repo.upsert_scan(scan)
 
     async def run(
         self,
@@ -116,7 +117,7 @@ class PimSessionPipeline:
         start_time = time.monotonic()
         now = datetime.now(UTC)
 
-        sync_state = await self._repo.get_sync_state(tenant_id, "pim_sessions")
+        sync_state = await self._repo.get_sync_state("pim_sessions")
         since: datetime | None = None
         if sync_state:
             last_ts = sync_state.get("last_sync")
@@ -192,13 +193,13 @@ class PimSessionPipeline:
 
         # 3. For each session: backfill events, detect anomalies, upsert
         for session in all_sessions:
-            existing = await self._repo.get_pim_session(tenant_id, session.id)
+            existing = await self._repo.get_pim_session(session.id)
             if existing and existing.last_event_sync_at:
                 session.created_at = existing.created_at
 
             end_time = min(session.expiry_time, now)
             if session.activation_time > now:
-                await self._repo.upsert_pim_session(tenant_id, session)
+                await self._repo.upsert_pim_session(session)
                 sessions_processed += 1
                 continue
 
@@ -247,7 +248,7 @@ class PimSessionPipeline:
             session.anomalies = anomalies
             session.risk_score = compute_risk_score(anomalies)
 
-            await self._repo.upsert_pim_session(tenant_id, session)
+            await self._repo.upsert_pim_session(session)
             sessions_processed += 1
             if sessions_processed % 10 == 0 and sessions_processed > 0:
                 await self._emit_progress(
@@ -262,7 +263,6 @@ class PimSessionPipeline:
 
         # Update sync state
         await self._repo.upsert_sync_state(
-            tenant_id,
             "pim_sessions",
             {
                 "last_sync": now.isoformat(),

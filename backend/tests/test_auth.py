@@ -36,20 +36,20 @@ async def test_healthz_returns_ok(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_tenants_me_local_mode(client: AsyncClient) -> None:
     """In LOCAL_MODE, GET /api/tenants/me should return the mock user."""
-    resp = await client.get("/api/tenants/me")
+    resp = await client.get("/api/projects/me")
     assert resp.status_code == 200
 
     body = resp.json()
-    assert body["tenant_id"] == "local-dev-tenant"
-    assert body["name"] == "Dev User"
-    assert body["email"] == "dev@localhost"
+    assert body["tenant_id"] == "c8a8cdf0-9270-446b-9930-3d017bf24220"
+    assert body["name"] == "Jatin Madan"
+    assert body["email"] == "jatmadan@deloitte.com"
     assert set(body["roles"]) == {"SecurityEngineer", "IAMAdmin", "Executive"}
 
 
 @pytest.mark.asyncio
 async def test_tenants_me_has_all_three_roles(client: AsyncClient) -> None:
     """The mock user in LOCAL_MODE must carry all three app roles."""
-    resp = await client.get("/api/tenants/me")
+    resp = await client.get("/api/projects/me")
     roles = resp.json()["roles"]
     assert len(roles) == 3
     for role in ("SecurityEngineer", "IAMAdmin", "Executive"):
@@ -61,7 +61,7 @@ async def test_validate_project_access_local_mode_returns_real_project(settings)
     """In LOCAL_MODE, a real stored project should win over the mock project."""
     project = Project(
         id="real-project",
-        owner_id="local-dev-user",
+        owner_id=_MOCK_USER.oid,
         name="Real Project",
         target_tenant_id="c8a8cdf0-9270-446b-9930-3d017bf24220",
         target_tenant_name="Advisory Cloud Cyber Risk Lab",

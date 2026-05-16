@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import clsx from "clsx";
 import {
   useScanHistory,
@@ -12,6 +13,17 @@ import {
 } from "@/api/projectHooks";
 import { useProjectContext } from "@/store/projectContext";
 import type { ScanRecord, ScanPhase, ScanStreamEvent } from "@/api/types";
+
+const PHASE_TABS = [
+  { id: "all", label: "All" },
+  { id: "audit_logs", label: "Audit Logs" },
+  { id: "sign_in_logs", label: "Sign-In Logs" },
+  { id: "directory", label: "Directory" },
+  { id: "identity_profiles", label: "Identities" },
+  { id: "errors", label: "Errors" },
+] as const;
+
+type PhaseTabId = (typeof PHASE_TABS)[number]["id"];
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -310,8 +322,17 @@ function ScanHistoryRow({
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              {showLogs ? "Hide Logs" : "View Logs"}
+              {showLogs ? "Hide Inline Logs" : "Inline Logs"}
             </button>
+            <Link
+              to={`/projects/${projectId}/scan/${scan.id}/logs`}
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              Full Logs
+            </Link>
             {scan.status === "failed" && (
               <button
                 type="button"
@@ -386,6 +407,21 @@ export function ScanPage() {
   const [scanType, setScanType] = useState<"incremental" | "full">(
     "incremental",
   );
+  const [activeTab, setActiveTab] = useState<PhaseTabId>("all");
+  const liveScrollRef = useRef<HTMLDivElement>(null);
+  const [liveAutoScroll, setLiveAutoScroll] = useState(true);
+
+  const phaseProgress = useMemo(() => {
+    const map: Record<string, { activities: number; items: number; errors: number }> = {};
+    for (const e of streamEvents) {
+      if (e.type !== "scan.activity" || !e.phase) continue;
+      const p = (map[e.phase] ??= { activities: 0, items: 0, errors: 0 });
+      p.activities++;
+      if (typeof e.items_processed === "number") p.items += e.items_processed;
+      if (e.level === "error") p.errors++;
+    }
+    return map;
+  }, [streamEvents]);
 
   const hasAppCredentials = !!(project.client_id);
   const [authMode, setAuthMode] = useState<"app" | "delegated">(
@@ -412,7 +448,7 @@ export function ScanPage() {
 
         if (res.events.length > 0) {
           debug.eventCount += res.events.length;
-          setStreamEvents((prev) => [...prev, ...res.events].slice(-80));
+          setStreamEvents((prev) => [...prev, ...res.events].slice(-200));
         }
         if (res.cursor) {
           cursorRef.current = res.cursor;
@@ -472,6 +508,12 @@ export function ScanPage() {
       window.clearInterval(interval);
     };
   }, [projectId, latestScan?.id, isRunning, doPoll]);
+
+  useEffect(() => {
+    if (liveAutoScroll && liveScrollRef.current) {
+      liveScrollRef.current.scrollTop = liveScrollRef.current.scrollHeight;
+    }
+  }, [streamEvents, liveAutoScroll]);
 
   function handleTrigger() {
     triggerScan.mutate({ full: scanType === "full", authMode });
@@ -651,16 +693,83 @@ export function ScanPage() {
               </div>
             )}
 
-            <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
-              {streamEvents.length === 0 ? (
-                <div className="rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-400">
-                  Waiting for live events...
-                </div>
-              ) : (
-                streamEvents.map((event) => (
+            {/* Phase Tabs */}
+            <div className="mt-3 flex gap-1 overflow-x-auto border-b border-slate-800 pb-2">
+              {PHASE_TABS.map((tab) => {
+                const errorCount = tab.id === "errors"
+                  ? streamEvents.filter((e) => e.level === "error").length
+                  : 0;
+                const progress = tab.id !== "all" && tab.id !== "errors"
+                  ? phaseProgress[tab.id]
+                  : undefined;
+                return (
+                  <button
+                    type="button"
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={clsx(
+                      "whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                      activeTab === tab.id
+                        ? "bg-brand-600 text-white"
+                        : "text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+                    )}
+                  >
+                    {tab.label}
+                    {progress && progress.activities > 0 && (
+                      <span className={clsx(
+                        "ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold",
+                        progress.errors > 0
+                          ? "bg-red-500/20 text-red-300"
+                          : "bg-slate-700 text-slate-300",
+                      )}>
+                        {progress.items > 0
+                          ? progress.items.toLocaleString()
+                          : progress.activities}
+                      </span>
+                    )}
+                    {tab.id === "errors" && errorCount > 0 && (
+                      <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                        {errorCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div
+              className="relative mt-3 max-h-80 space-y-2 overflow-y-auto pr-1"
+              ref={liveScrollRef}
+              onScroll={() => {
+                const el = liveScrollRef.current;
+                if (el) {
+                  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+                  setLiveAutoScroll(atBottom);
+                }
+              }}
+            >
+              {(() => {
+                const filtered = activeTab === "all"
+                  ? streamEvents
+                  : activeTab === "errors"
+                    ? streamEvents.filter((e) => e.level === "error")
+                    : streamEvents.filter((e) => e.phase === activeTab);
+                if (filtered.length === 0) {
+                  return (
+                    <div className="rounded-lg bg-slate-900 px-3 py-2 text-xs text-slate-400">
+                      {activeTab === "all" ? "Waiting for live events..." : `No ${activeTab === "errors" ? "error" : activeTab.replace(/_/g, " ")} events yet.`}
+                    </div>
+                  );
+                }
+                return filtered.map((event) => (
                   <div
                     key={event.id}
-                    className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2"
+                    className={clsx(
+                      "rounded-lg border px-3 py-2",
+                      event.level === "error"
+                        ? "border-red-800/60 bg-red-950/40"
+                        : "border-slate-800 bg-slate-900",
+                    )}
                   >
                     <div className="flex items-center justify-between gap-3 text-xs">
                       <span
@@ -678,13 +787,36 @@ export function ScanPage() {
                       </span>
                     </div>
                     <p className="mt-1 text-sm text-slate-100">{event.message}</p>
-                    {typeof event.items_processed === "number" && event.items_processed > 0 && (
-                      <p className="mt-1 text-xs text-slate-400">
-                        {event.items_processed.toLocaleString()} items processed
-                      </p>
-                    )}
+                    <div className="mt-1 flex items-center gap-3 text-xs text-slate-400">
+                      {typeof event.items_processed === "number" && event.items_processed > 0 && (
+                        <span>{event.items_processed.toLocaleString()} items</span>
+                      )}
+                      {event.details?.page != null && (
+                        <span>page {String(event.details.page)}</span>
+                      )}
+                      {event.details?.elapsed_ms != null && (
+                        <span>{String(event.details.elapsed_ms)}ms</span>
+                      )}
+                    </div>
                   </div>
-                ))
+                ));
+              })()}
+
+              {/* Jump to latest button */}
+              {!liveAutoScroll && streamEvents.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = liveScrollRef.current;
+                    if (el) {
+                      el.scrollTop = el.scrollHeight;
+                      setLiveAutoScroll(true);
+                    }
+                  }}
+                  className="sticky bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-brand-600 px-3 py-1 text-xs font-medium text-white shadow-lg transition-opacity hover:bg-brand-500"
+                >
+                  Jump to latest
+                </button>
               )}
             </div>
 

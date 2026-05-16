@@ -11,7 +11,6 @@ from app.config import get_settings
 from app.models.action import ActionEvent
 from app.models.identity import IdentityProfile, IdentityType, ObservedAction
 from app.models.project import ScanRecord
-from app.services.cosmos import CosmosRepo
 from app.services.graph_ingest import GraphIngestService
 from app.services.graph_roles import GraphRolesService
 
@@ -25,15 +24,17 @@ class IngestPipeline:
 
     def __init__(
         self,
-        repo: CosmosRepo,
+        repo: Any,
         graph: GraphIngestService,
         roles_svc: GraphRolesService,
         progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        scan_repo: Any | None = None,
     ) -> None:
         self._repo = repo
         self._graph = graph
         self._roles = roles_svc
         self._progress_callback = progress_callback
+        self._scan_repo = scan_repo or repo
 
     async def _emit_progress(self, payload: dict[str, Any]) -> None:
         if self._progress_callback is None:
@@ -58,7 +59,7 @@ class IngestPipeline:
                     phase.completed_at = datetime.now(UTC)
                     phase.items_processed = items
                 break
-        await self._repo.upsert_scan(scan)
+        await self._scan_repo.upsert_scan(scan)
         await self._emit_progress(
             {
                 "type": "scan.phase",
@@ -83,7 +84,7 @@ class IngestPipeline:
                 phase.checkpoint_next_link = next_link
                 phase.items_processed = items
                 break
-        await self._repo.upsert_scan(scan)
+        await self._scan_repo.upsert_scan(scan)
 
     def _get_phase_status(self, scan: ScanRecord | None, phase_name: str) -> str | None:
         """Get the status of a phase from a scan record."""
@@ -137,7 +138,7 @@ class IngestPipeline:
                 if actor_id != "unknown":
                     actor_registry[event.identity_id] = (actor_name, event.identity_id)
 
-            await self._repo.append_action_events(tenant_id, page_events)
+            await self._repo.append_action_events(page_events)
             total += len(page_items)
             await self._save_checkpoint(scan_record, "audit_logs", next_link, total)
 
@@ -168,7 +169,7 @@ class IngestPipeline:
                 if actor_id != "unknown":
                     actor_registry[event.identity_id] = (actor_name, event.identity_id)
 
-            await self._repo.append_action_events(tenant_id, page_events)
+            await self._repo.append_action_events(page_events)
             total += len(page_items)
             await self._save_checkpoint(scan_record, "sign_in_logs", next_link, total)
 
@@ -182,7 +183,7 @@ class IngestPipeline:
         since: datetime | None = None,
     ) -> None:
         """Reload previously stored events into memory for resume processing."""
-        stored = await self._repo.load_all_action_events(tenant_id, since=since)
+        stored = await self._repo.load_all_action_events(since=since)
         for event in stored:
             all_events.append(event)
             if event.identity_id and event.identity_id != "unknown":
@@ -239,8 +240,8 @@ class IngestPipeline:
             await self._update_phase(scan_record, "sign_in_logs", "skipped")
         else:
             # 1. Load sync state (only for non-resume fresh scans)
-            audit_state = await self._repo.get_sync_state(tenant_id, "audit_logs")
-            signin_state = await self._repo.get_sync_state(tenant_id, "sign_in_logs")
+            audit_state = await self._repo.get_sync_state("audit_logs")
+            signin_state = await self._repo.get_sync_state("sign_in_logs")
 
             delta_link: str | None = None
             signin_since: datetime | None = None
@@ -287,7 +288,7 @@ class IngestPipeline:
                     delta_events.append(event)
                     if actor_id != "unknown":
                         actor_registry[event.identity_id] = (actor_name, event.identity_id)
-                await self._repo.append_action_events(tenant_id, delta_events)
+                await self._repo.append_action_events(delta_events)
                 await self._update_phase(
                     scan_record, "audit_logs", "completed", len(raw_audit_events)
                 )
@@ -444,6 +445,7 @@ class IngestPipeline:
         # 6. For each identity, create/update profile
         await self._update_phase(scan_record, "identity_profiles", "running")
         identities_processed = 0
+        identity_batch: list[IdentityProfile] = []
         for identity_id, (display_name, _) in actor_registry.items():
             parts = identity_id.split("_", 1)
             identity_type_str = parts[0] if len(parts) == 2 else "User"
@@ -454,7 +456,7 @@ class IngestPipeline:
             except ValueError:
                 identity_type = IdentityType.USER
 
-            existing = await self._repo.get_identity(tenant_id, identity_id)
+            existing = await self._repo.get_identity(identity_id)
 
             identity_events = [e for e in all_events if e.identity_id == identity_id]
 
@@ -570,9 +572,16 @@ class IngestPipeline:
                 last_sign_in_at=last_sign_in_at,
                 last_non_interactive_sign_in_at=last_non_interactive_sign_in_at,
             )
-            await self._repo.upsert_identity(tenant_id, profile)
+            identity_batch.append(profile)
             identities_processed += 1
-            if identities_processed % _IDENTITY_PROGRESS_INTERVAL == 0:
+
+            if len(identity_batch) >= _IDENTITY_PROGRESS_INTERVAL:
+                if hasattr(self._repo, "batch_upsert_identities"):
+                    await self._repo.batch_upsert_identities(identity_batch)
+                else:
+                    for p in identity_batch:
+                        await self._repo.upsert_identity(p)
+                identity_batch = []
                 await self._emit_progress(
                     {
                         "type": "scan.progress",
@@ -583,7 +592,12 @@ class IngestPipeline:
                     }
                 )
 
-        if identities_processed and identities_processed % _IDENTITY_PROGRESS_INTERVAL != 0:
+        if identity_batch:
+            if hasattr(self._repo, "batch_upsert_identities"):
+                await self._repo.batch_upsert_identities(identity_batch)
+            else:
+                for p in identity_batch:
+                    await self._repo.upsert_identity(p)
             await self._emit_progress(
                 {
                     "type": "scan.progress",
@@ -613,7 +627,6 @@ class IngestPipeline:
         # 8. Update sync state
         if not audit_phase_done:
             await self._repo.upsert_sync_state(
-                tenant_id,
                 "audit_logs",
                 {
                     "delta_link": new_delta_link,
@@ -622,7 +635,6 @@ class IngestPipeline:
             )
         if not signin_phase_done:
             await self._repo.upsert_sync_state(
-                tenant_id,
                 "sign_in_logs",
                 {
                     "last_sync": now.isoformat(),
@@ -643,6 +655,7 @@ class IngestPipeline:
                     business_hours_start=settings.pim_session_business_hours_start,
                     business_hours_end=settings.pim_session_business_hours_end,
                     progress_callback=self._progress_callback,
+                    scan_repo=self._scan_repo,
                 )
                 pim_summary = await pim_pipeline.run(
                     tenant_id,
@@ -672,7 +685,7 @@ class IngestPipeline:
                 )
                 path_results = await analyzer.analyze_tenant(tenant_id)
                 for result in path_results:
-                    await self._repo.upsert_access_path_analysis(tenant_id, result)
+                    await self._repo.upsert_access_path_analysis(result)
                 access_paths_processed = len(path_results)
                 await self._update_phase(
                     scan_record,

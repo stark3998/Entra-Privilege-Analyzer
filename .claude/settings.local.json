@@ -3,7 +3,13 @@
     "allow": [
       "Bash(npx tsc *)",
       "Bash(python -c ' *)",
-      "Bash(python -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in ['app/main.py', 'app/services/scan_events.py', 'app/observability.py', 'app/routers/scans.py']]; print\\('All files OK'\\)\")"
+      "Bash(python -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in ['app/main.py', 'app/services/scan_events.py', 'app/observability.py', 'app/routers/scans.py']]; print\\('All files OK'\\)\")",
+      "Bash(python -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in ['functions/utils/cosmos_writer.py', 'functions/blueprints/audit_logs_bp.py', 'functions/blueprints/sign_in_logs_bp.py', 'functions/blueprints/directory_data_bp.py', 'functions/blueprints/identity_profiles_bp.py', 'functions/blueprints/scan_bp.py']] and print\\('All files parse OK'\\)\")",
+      "Bash(python -m py_compile functions/blueprints/audit_logs_bp.py)",
+      "Bash(python -m py_compile functions/blueprints/sign_in_logs_bp.py)",
+      "Bash(python -m py_compile functions/blueprints/directory_data_bp.py)",
+      "Bash(python -m py_compile functions/blueprints/identity_profiles_bp.py)",
+      "Bash(python -m py_compile functions/blueprints/scan_bp.py)"
     ]
   }
 }

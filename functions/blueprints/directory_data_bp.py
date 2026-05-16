@@ -17,6 +17,7 @@ from blueprints.shared import RETRY_OPTIONS, cosmos_config
 from utils.graph_auth import acquire_graph_token
 from utils.graph_client import graph_get
 from utils.cosmos_writer import write_scan_staging
+from utils.log_context import set_scan_context
 from utils.scan_state import update_scan_phase
 
 logger = logging.getLogger(__name__)
@@ -180,6 +181,7 @@ def orchestrate_role_assignments(context: df.DurableOrchestrationContext):
 @bp.activity_trigger(input_name="payload")
 def fetch_users_page_activity(payload: dict) -> dict:
     """Fetch one page of users, store raw JSON to scan_staging."""
+    set_scan_context(payload)
     scan_id = payload.get("scan_id", "?")
     page_num = payload.get("page_number", 0)
     tenant_id = payload["tenant_id"]
@@ -257,6 +259,7 @@ def fetch_users_page_activity(payload: dict) -> dict:
 @bp.activity_trigger(input_name="payload")
 def fetch_sps_page_activity(payload: dict) -> dict:
     """Fetch one page of service principals, store to scan_staging."""
+    set_scan_context(payload)
     scan_id = payload.get("scan_id", "?")
     page_num = payload.get("page_number", 0)
     tenant_id = payload["tenant_id"]
@@ -339,6 +342,7 @@ def fetch_role_assignments_activity(payload: dict) -> dict:
     - role_assignments: active role assignments (PIM schedule instances or legacy)
     - role_eligibilities: PIM-eligible role assignments
     """
+    set_scan_context(payload)
     scan_id = payload.get("scan_id", "?")
     tenant_id = payload["tenant_id"]
 
@@ -426,6 +430,7 @@ def fetch_role_assignments_activity(payload: dict) -> dict:
         "fetch_role_assignments DONE | scan=%s | definitions=%d | assignments=%d | eligibilities=%d | elapsed=%.0fms",
         scan_id, len(defs_data), len(assignments), len(eligibilities), elapsed_ms,
     )
+
     return {"count": total}
 
 

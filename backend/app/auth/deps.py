@@ -29,10 +29,10 @@ class CurrentUser(BaseModel):
 
 
 _MOCK_USER = CurrentUser(
-    oid="local-dev-user",
-    tid="local-dev-tenant",
-    name="Dev User",
-    email="dev@localhost",
+    oid="9e25480a-7954-4e4b-95bb-cc57535932eb",
+    tid="c8a8cdf0-9270-446b-9930-3d017bf24220",
+    name="Jatin Madan",
+    email="jatmadan@deloitte.com",
     roles=["SecurityEngineer", "IAMAdmin", "Executive"],
 )
 
