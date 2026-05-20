@@ -82,7 +82,6 @@ function AuthenticatedApp() {
         <Route path="scan/:scanId/logs" element={<ScanLogsPage />} />
         <Route path="members" element={<ProjectMembersPage />} />
         <Route path="settings" element={<SettingsPage />} />
-        <Route path="docs" element={<DocsPage />} />
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Route>
@@ -105,21 +104,37 @@ function LocalModeBanner() {
 export function App() {
   if (isLocalMode) {
     return (
-      <>
-        <LocalModeBanner />
-        <AuthenticatedApp />
-      </>
+      <Routes>
+        <Route path="/docs" element={<DocsPage />} />
+        <Route
+          path="*"
+          element={
+            <>
+              <LocalModeBanner />
+              <AuthenticatedApp />
+            </>
+          }
+        />
+      </Routes>
     );
   }
 
   return (
-    <>
-      <UnauthenticatedTemplate>
-        <LoginGate />
-      </UnauthenticatedTemplate>
-      <AuthenticatedTemplate>
-        <AuthenticatedApp />
-      </AuthenticatedTemplate>
-    </>
+    <Routes>
+      <Route path="/docs" element={<DocsPage />} />
+      <Route
+        path="*"
+        element={
+          <>
+            <UnauthenticatedTemplate>
+              <LoginGate />
+            </UnauthenticatedTemplate>
+            <AuthenticatedTemplate>
+              <AuthenticatedApp />
+            </AuthenticatedTemplate>
+          </>
+        }
+      />
+    </Routes>
   );
 }

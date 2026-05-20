@@ -8,7 +8,7 @@ interface NavItem {
   path: string;
   hint: string;
   icon: React.ReactNode;
-  section: "analyze" | "manage" | "help";
+  section: "analyze" | "manage";
 }
 
 function useNavItems(): NavItem[] {
@@ -204,17 +204,6 @@ function useNavItems(): NavItem[] {
         </svg>
       ),
     },
-    {
-      label: "Documentation",
-      path: `${base}/docs`,
-      hint: "Features, setup, API reference, and configuration guide",
-      section: "help",
-      icon: (
-        <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-        </svg>
-      ),
-    },
   ];
 }
 
@@ -232,7 +221,6 @@ export function Sidebar() {
 
   const analyzeItems = navItems.filter((i) => i.section === "analyze");
   const manageItems = navItems.filter((i) => i.section === "manage");
-  const helpItems = navItems.filter((i) => i.section === "help");
 
   return (
     <aside className="flex min-h-0 w-60 flex-col border-r border-slate-200/80 bg-white dark:border-slate-700/80 dark:bg-slate-900">
@@ -322,47 +310,21 @@ export function Sidebar() {
           })}
         </div>
 
-        <SectionLabel>Help</SectionLabel>
-        <div className="space-y-0.5">
-          {helpItems.map((item) => {
-            const isActive =
-              location.pathname === item.path ||
-              (item.path !== "/" && location.pathname.startsWith(item.path + "/"));
-            return (
-              <Tooltip key={item.path} content={item.hint} position="right" delay={400}>
-                <Link
-                  to={item.path}
-                  className={clsx(
-                    "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-200",
-                    isActive
-                      ? "bg-brand-50 text-brand-700 shadow-sm dark:bg-brand-950/50 dark:text-brand-300"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200",
-                  )}
-                >
-                  <span
-                    className={clsx(
-                      "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-                      isActive
-                        ? "bg-brand-100 text-brand-600 dark:bg-brand-900/40 dark:text-brand-400"
-                        : "bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:group-hover:bg-slate-700 dark:group-hover:text-slate-300",
-                    )}
-                  >
-                    {item.icon}
-                  </span>
-                  <span>{item.label}</span>
-                  {isActive && (
-                    <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-500" />
-                  )}
-                </Link>
-              </Tooltip>
-            );
-          })}
-        </div>
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-slate-200/80 px-4 py-3 dark:border-slate-700/80">
-        <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500">
+      <div className="border-t border-slate-200/80 px-3 py-3 dark:border-slate-700/80">
+        <Link
+          to="/docs"
+          target="_blank"
+          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+          </svg>
+          Documentation
+        </Link>
+        <p className="mt-1 px-2 text-[10px] font-medium text-slate-400 dark:text-slate-500">
           Powered by Microsoft Entra ID
         </p>
       </div>
