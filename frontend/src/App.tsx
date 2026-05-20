@@ -31,6 +31,7 @@ import { RemediationHistoryPage } from "@/pages/RemediationHistoryPage";
 import { PimSessionsPage } from "@/pages/PimSessionsPage";
 import { PimSessionDetailPage } from "@/pages/PimSessionDetailPage";
 import { AccessPathsPage } from "@/pages/AccessPathsPage";
+import { DocsPage } from "@/pages/DocsPage";
 import { useAuth } from "@/auth/useAuth";
 import { ProjectProvider } from "@/store/projectContext";
 import { getApiClient } from "@/api/client";
@@ -81,6 +82,7 @@ function AuthenticatedApp() {
         <Route path="scan/:scanId/logs" element={<ScanLogsPage />} />
         <Route path="members" element={<ProjectMembersPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="docs" element={<DocsPage />} />
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Route>
