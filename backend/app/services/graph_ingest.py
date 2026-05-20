@@ -93,12 +93,14 @@ class GraphIngestService:
         client_secret: str | None = None,
         token_provider: Callable[[], Awaitable[str]] | None = None,
         progress_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        max_pages: int = 0,
     ) -> None:
         self._settings = settings
         self._client_id = client_id or settings.azure_client_id
         self._client_secret = client_secret or settings.azure_client_secret
         self._token_provider = token_provider
         self._progress_callback = progress_callback
+        self._max_pages = max_pages
         api_version = getattr(settings, "graph_api_version", "beta")
         self._graph_base = f"https://graph.microsoft.com/{api_version}"
 
@@ -231,8 +233,15 @@ class GraphIngestService:
         params: dict[str, str] | None = None,
         *,
         phase_name: str | None = None,
+        max_pages: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Follow @odata.nextLink to get all pages, collecting all 'value' arrays."""
+        """Follow @odata.nextLink to get all pages, collecting all 'value' arrays.
+
+        When *max_pages* > 0, stop after that many pages (useful for testing).
+        Defaults to ``self._max_pages`` when not explicitly passed.
+        """
+        if max_pages is None:
+            max_pages = self._max_pages
         all_items: list[dict[str, Any]] = []
         current_url: str | None = url
         current_params = params
@@ -256,6 +265,8 @@ class GraphIngestService:
                         },
                     }
                 )
+                if max_pages > 0 and page_count >= max_pages:
+                    break
                 current_url = data.get("@odata.nextLink")
                 current_params = None  # nextLink includes query params already
 
@@ -270,6 +281,7 @@ class GraphIngestService:
         phase_name: str | None = None,
         start_from_next_link: str | None = None,
         page_offset: int = 0,
+        max_pages: int | None = None,
     ) -> AsyncGenerator[tuple[list[dict[str, Any]], str | None], None]:
         """Yield ``(page_items, next_link)`` tuples one page at a time.
 
@@ -277,10 +289,15 @@ class GraphIngestService:
         pagination begins from the continuation point (used for scan resume).
         *page_offset* shifts the displayed page number so resumed scans show
         accurate page counts (e.g. page 51 instead of page 1).
+        When *max_pages* > 0, stop after that many pages (useful for testing).
+        Defaults to ``self._max_pages`` when not explicitly passed.
         """
+        if max_pages is None:
+            max_pages = self._max_pages
         current_url: str | None = start_from_next_link or url
         current_params = None if start_from_next_link else params
         page_count = page_offset
+        pages_fetched = 0
         total_items = 0
 
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -288,6 +305,7 @@ class GraphIngestService:
                 data = await self._request_json(client, token, current_url, current_params)
                 page_items = data.get("value", [])
                 page_count += 1
+                pages_fetched += 1
                 total_items += len(page_items)
                 next_link = data.get("@odata.nextLink")
                 await self._emit_progress(
@@ -302,6 +320,9 @@ class GraphIngestService:
                         },
                     }
                 )
+                if max_pages > 0 and pages_fetched >= max_pages:
+                    yield page_items, None
+                    return
                 yield page_items, next_link
                 current_url = next_link
                 current_params = None
@@ -349,12 +370,14 @@ class GraphIngestService:
         *,
         resume_next_link: str | None = None,
         page_offset: int = 0,
+        max_pages: int = 0,
     ) -> AsyncGenerator[tuple[list[dict[str, Any]], str | None], None]:
         """Stream audit log pages one at a time for incremental storage."""
         token = await self._get_token(tenant_id)
         since = (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
         url = f"{self._graph_base}/auditLogs/directoryAudits"
         params = {"$filter": f"activityDateTime ge {since}", "$top": "999"}
+        effective_max = max_pages or self._max_pages
         async for page in self._graph_get_pages_stream(
             token,
             url,
@@ -362,6 +385,7 @@ class GraphIngestService:
             phase_name="audit_logs",
             start_from_next_link=resume_next_link,
             page_offset=page_offset,
+            max_pages=effective_max,
         ):
             yield page
 
@@ -371,12 +395,14 @@ class GraphIngestService:
         *,
         resume_next_link: str | None = None,
         page_offset: int = 0,
+        max_pages: int = 0,
     ) -> AsyncGenerator[tuple[list[dict[str, Any]], str | None], None]:
         """Stream sign-in log pages one at a time for incremental storage."""
         token = await self._get_token(tenant_id)
         cutoff = (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
         url = f"{self._graph_base}/auditLogs/signIns"
         params = {"$filter": f"createdDateTime ge {cutoff}", "$top": "999"}
+        effective_max = max_pages or self._max_pages
         async for page in self._graph_get_pages_stream(
             token,
             url,
@@ -384,6 +410,7 @@ class GraphIngestService:
             phase_name="sign_in_logs",
             start_from_next_link=resume_next_link,
             page_offset=page_offset,
+            max_pages=effective_max,
         ):
             yield page
 

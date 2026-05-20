@@ -18,8 +18,14 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.116.0"
     }
+    azapi = {
+      source  = "Azure/azapi"
+      version = "~> 1.14.0"
+    }
   }
 }
+
+data "azurerm_client_config" "current" {}
 
 # ---------------------
 # Storage Account (Durable Functions Task Hub)
@@ -40,75 +46,78 @@ resource "azurerm_storage_account" "functions" {
 }
 
 # ---------------------
-# Service Plan (Flex Consumption)
+# Flex deployment container for zip packages
 # ---------------------
 
-resource "azurerm_service_plan" "functions" {
-  name                = "asp-${var.project_name}-func-${var.environment}"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  os_type             = "Linux"
-  sku_name            = "FC1"
-
-  tags = var.tags
+resource "azurerm_storage_container" "deployment" {
+  name                 = "app-package-func${var.project_name}scan${var.environment}"
+  storage_account_name = azurerm_storage_account.functions.name
+  container_access_type = "private"
 }
 
 # ---------------------
-# Function App: Scan Orchestrator
+# Function App: Scan Orchestrator (Flex Consumption)
 # ---------------------
 
-resource "azurerm_linux_function_app" "scan" {
-  name                       = "func-${var.project_name}-scan-${var.environment}"
-  location                   = var.location
-  resource_group_name        = var.resource_group_name
-  service_plan_id            = azurerm_service_plan.functions.id
-  storage_account_name       = azurerm_storage_account.functions.name
-  storage_account_access_key = azurerm_storage_account.functions.primary_access_key
+resource "azapi_resource" "scan" {
+  type      = "Microsoft.Web/sites@2023-12-01"
+  name      = "func-${var.project_name}-scan-${var.environment}"
+  location  = var.location
+  parent_id = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${var.resource_group_name}"
 
   identity {
     type         = "UserAssigned"
     identity_ids = [var.managed_identity_id]
   }
 
-  key_vault_reference_identity_id = var.managed_identity_id
-
-  site_config {
-    application_stack {
-      python_version = "3.12"
+  body = jsonencode({
+    kind = "functionapp,linux"
+    properties = {
+      keyVaultReferenceIdentity = var.managed_identity_id
+      functionAppConfig = {
+        deployment = {
+          storage = {
+            type  = "blobContainer"
+            value = "${azurerm_storage_account.functions.primary_blob_endpoint}${azurerm_storage_container.deployment.name}"
+            authentication = {
+              type                               = "StorageAccountConnectionString"
+              storageAccountConnectionStringName = "DEPLOYMENT_STORAGE_CONNECTION_STRING"
+            }
+          }
+        }
+        runtime = {
+          name    = "python"
+          version = "3.12"
+        }
+        scaleAndConcurrency = {
+          instanceMemoryMB     = 2048
+          maximumInstanceCount = var.maximum_instance_count
+          alwaysReady          = []
+        }
+      }
+      httpsOnly = false
     }
+  })
 
-    # Flex Consumption scaling settings
-    app_scale_limit = var.maximum_instance_count
-  }
+  response_export_values = ["id", "name", "properties.defaultHostName"]
+}
 
-  app_settings = {
-    # --- Storage (required by Functions runtime) ---
-    AzureWebJobsStorage = azurerm_storage_account.functions.primary_connection_string
+resource "azapi_update_resource" "scan_appsettings" {
+  type      = "Microsoft.Web/sites/config@2023-12-01"
+  name      = "appsettings"
+  parent_id = azapi_resource.scan.id
 
-    # --- Cosmos DB (Key Vault references) ---
-    COSMOS_ENDPOINT = "@Microsoft.KeyVault(SecretUri=${var.secret_uris["cosmos_endpoint"]})"
-    COSMOS_KEY      = "@Microsoft.KeyVault(SecretUri=${var.secret_uris["cosmos_key"]})"
+  body = jsonencode({
+    properties = {
+      DEPLOYMENT_STORAGE_CONNECTION_STRING           = azurerm_storage_account.functions.primary_connection_string
+      COSMOS_ENDPOINT                                = "@Microsoft.KeyVault(SecretUri=${var.secret_uris["cosmos_endpoint"]})"
+      COSMOS_KEY                                     = "@Microsoft.KeyVault(SecretUri=${var.secret_uris["cosmos_key"]})"
+      COSMOS_DATABASE                                = var.cosmos_database_name
+      APPLICATIONINSIGHTS_CONNECTION_STRING          = var.application_insights_connection_string
+      AzureWebJobsFeatureFlags                       = "EnableWorkerIndexing"
+      WEBSITE_FLEXCONSUMPTION_ALWAYS_READY_INSTANCES = tostring(var.always_ready_instances)
+    }
+  })
 
-    # --- Cosmos DB (plain) ---
-    COSMOS_DATABASE = var.cosmos_database_name
-
-    # --- Observability ---
-    APPLICATIONINSIGHTS_CONNECTION_STRING = var.application_insights_connection_string
-
-    # --- Functions runtime ---
-    FUNCTIONS_WORKER_RUNTIME   = "python"
-    AzureWebJobsFeatureFlags   = "EnableWorkerIndexing"
-
-    # --- Flex Consumption: always-ready instances to avoid cold starts ---
-    WEBSITE_FLEXCONSUMPTION_ALWAYS_READY_INSTANCES = tostring(var.always_ready_instances)
-  }
-
-  tags = var.tags
-
-  lifecycle {
-    ignore_changes = [
-      # App settings may be updated by deployment scripts outside Terraform
-      app_settings["WEBSITE_RUN_FROM_PACKAGE"],
-    ]
-  }
+  depends_on = [azapi_resource.scan]
 }

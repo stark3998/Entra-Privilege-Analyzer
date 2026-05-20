@@ -1182,6 +1182,7 @@ async def trigger_sync(
     project_id: str,
     request: Request,
     full: bool = False,
+    max_pages: int = Query(default=0, ge=0, description="Limit Graph API pages (0 = unlimited)"),
     user: CurrentUser = Depends(get_current_user),
     repo: MasterRepo = Depends(get_master_repo),
     settings: Settings = Depends(get_settings),
@@ -1205,7 +1206,9 @@ async def trigger_sync(
 
     crypto = CryptoService(settings)
     secret = crypto.decrypt(project.encrypted_client_secret)
-    graph = GraphIngestService(settings, client_id=project.client_id, client_secret=secret)
+    graph = GraphIngestService(
+        settings, client_id=project.client_id, client_secret=secret, max_pages=max_pages,
+    )
     roles_svc = GraphRolesService(graph)
     pipeline = IngestPipeline(project_repo, graph, roles_svc, scan_repo=repo)
     summary = await pipeline.run(project.target_tenant_id, full_sync=full)
