@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections import Counter
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -203,15 +205,23 @@ class ProjectRepo:
         query: str,
         parameters: list[dict[str, Any]],
         op_name: str,
+        **kwargs: Any,
     ) -> list[dict[str, Any]]:
         t0 = time.monotonic()
+        ru: float = 0.0
+
+        def _hook(_: Any, headers: dict[str, str]) -> None:
+            nonlocal ru
+            ru += float(headers.get("x-ms-request-charge", 0))
+
         results: list[dict[str, Any]] = [
             item async for item in container.query_items(
                 query=query, parameters=parameters,
+                response_hook=_hook, **kwargs,
             )
         ]
         elapsed = (time.monotonic() - t0) * 1000
-        self._log_op(op_name, container.id, items=len(results), duration_ms=elapsed)
+        self._log_op(op_name, container.id, items=len(results), duration_ms=elapsed, ru=ru)
         return results
 
     # ------------------------------------------------------------------
@@ -328,6 +338,13 @@ class ProjectRepo:
         self,
         since: datetime | None = None,
     ) -> list[ActionEvent]:
+        return [event async for event in self.stream_action_events(since=since)]
+
+    async def stream_action_events(
+        self,
+        since: datetime | None = None,
+    ) -> AsyncGenerator[ActionEvent, None]:
+        """Yield action events one at a time to avoid loading all into memory."""
         conditions: list[str] = []
         parameters: list[dict[str, Any]] = []
         if since is not None:
@@ -335,12 +352,10 @@ class ProjectRepo:
             parameters.append({"name": "@since", "value": since.isoformat()})
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
         query = f"SELECT * FROM c{where} ORDER BY c.timestamp ASC"
-        return [
-            ActionEvent.model_validate(item)
-            async for item in self._action_events.query_items(
-                query=query, parameters=parameters,
-            )
-        ]
+        async for item in self._action_events.query_items(
+            query=query, parameters=parameters,
+        ):
+            yield ActionEvent.model_validate(item)
 
     async def list_actions(
         self,
@@ -1144,59 +1159,96 @@ class ProjectRepo:
         cutoff = (now - timedelta(days=days)).isoformat()
         params: list[dict[str, Any]] = [{"name": "@cutoff", "value": cutoff}]
 
-        all_query = "SELECT * FROM c WHERE c.activation_time >= @cutoff"
-        sessions: list[dict[str, Any]] = [
-            item async for item in self._pim_sessions.query_items(
-                query=all_query, parameters=params,
-            )
-        ]
+        # Run server-side aggregations concurrently instead of loading all sessions
+        (
+            counts_agg,
+            avg_duration_scalar,
+            roles_by_count,
+            activators_by_count,
+            daily_counts,
+        ) = await asyncio.gather(
+            self._query_scalar(
+                self._pim_sessions,
+                "SELECT VALUE {"
+                "  total: COUNT(1),"
+                "  active: COUNT(c.status = 'active' ? 1 : undefined),"
+                "  expired: COUNT(c.status = 'expired' ? 1 : undefined),"
+                "  with_anomalies: COUNT(ARRAY_LENGTH(c.anomalies) > 0 ? 1 : undefined)"
+                "} FROM c WHERE c.activation_time >= @cutoff",
+                params,
+            ),
+            self._query_scalar(
+                self._pim_sessions,
+                "SELECT VALUE AVG(c.duration_minutes) FROM c "
+                "WHERE c.activation_time >= @cutoff",
+                params,
+            ),
+            self._tracked_query(
+                self._pim_sessions,
+                "SELECT c.role_name, COUNT(1) AS cnt FROM c "
+                "WHERE c.activation_time >= @cutoff GROUP BY c.role_name",
+                params, "pim_analytics.roles",
+            ),
+            self._tracked_query(
+                self._pim_sessions,
+                "SELECT c.principal_display_name, COUNT(1) AS cnt FROM c "
+                "WHERE c.activation_time >= @cutoff GROUP BY c.principal_display_name",
+                params, "pim_analytics.activators",
+            ),
+            self._query_trend(
+                self._pim_sessions,
+                "SELECT SUBSTRING(c.activation_time, 0, 10) AS date, COUNT(1) AS cnt "
+                "FROM c WHERE c.activation_time >= @cutoff "
+                "GROUP BY SUBSTRING(c.activation_time, 0, 10)",
+                params,
+            ),
+        )
 
-        total = len(sessions)
-        active = sum(1 for s in sessions if s.get("status") == "active")
-        expired = sum(1 for s in sessions if s.get("status") == "expired")
-        with_anomalies = sum(1 for s in sessions if len(s.get("anomalies", [])) > 0)
+        counts = counts_agg or {}
+        avg_duration = avg_duration_scalar or 0.0
 
-        durations = [s.get("duration_minutes", 0) for s in sessions]
-        avg_duration = sum(durations) / len(durations) if durations else 0.0
+        roles_by_count.sort(key=lambda x: x.get("cnt", 0), reverse=True)
+        activators_by_count.sort(key=lambda x: x.get("cnt", 0), reverse=True)
 
-        role_counter: Counter[str] = Counter()
-        activator_counter: Counter[str] = Counter()
+        # Hour-of-day and anomaly breakdowns still need row-level data,
+        # but we only fetch the two small fields needed
         hour_counter: Counter[int] = Counter()
-        day_counter: Counter[str] = Counter()
         anomaly_type_counter: Counter[str] = Counter()
-
-        for s in sessions:
-            role_counter[s.get("role_name", "Unknown")] += 1
-            activator_counter[s.get("principal_display_name", "Unknown")] += 1
-
-            act_time = s.get("activation_time", "")
+        slim_query = (
+            "SELECT c.activation_time, c.anomalies FROM c "
+            "WHERE c.activation_time >= @cutoff"
+        )
+        async for item in self._pim_sessions.query_items(
+            query=slim_query, parameters=params,
+        ):
+            act_time = item.get("activation_time", "")
             if isinstance(act_time, str) and len(act_time) >= 13:
                 try:
                     dt = datetime.fromisoformat(act_time.replace("Z", "+00:00"))
                     hour_counter[dt.hour] += 1
-                    day_counter[dt.strftime("%Y-%m-%d")] += 1
                 except (ValueError, TypeError):
                     pass
-
-            for a in s.get("anomalies", []):
+            for a in item.get("anomalies", []):
                 anomaly_type_counter[a.get("anomaly_type", "unknown")] += 1
 
         return {
-            "total_sessions": total,
-            "active_sessions": active,
-            "expired_sessions": expired,
-            "sessions_with_anomalies": with_anomalies,
+            "total_sessions": counts.get("total", 0),
+            "active_sessions": counts.get("active", 0),
+            "expired_sessions": counts.get("expired", 0),
+            "sessions_with_anomalies": counts.get("with_anomalies", 0),
             "avg_session_duration_minutes": round(avg_duration, 1),
             "top_activated_roles": [
-                {"role_name": name, "count": cnt} for name, cnt in role_counter.most_common(10)
+                {"role_name": r.get("role_name", "Unknown"), "count": r.get("cnt", 0)}
+                for r in roles_by_count[:10]
             ],
             "top_activators": [
-                {"principal_display_name": name, "count": cnt}
-                for name, cnt in activator_counter.most_common(10)
+                {"principal_display_name": r.get("principal_display_name", "Unknown"), "count": r.get("cnt", 0)}
+                for r in activators_by_count[:10]
             ],
             "activations_by_hour": dict(hour_counter),
             "activations_by_day": [
-                {"date": d, "count": c} for d, c in sorted(day_counter.items())
+                {"date": d["date"], "count": int(d["value"])}
+                for d in sorted(daily_counts, key=lambda x: x["date"])
             ],
             "anomaly_counts_by_type": dict(anomaly_type_counter),
             "computed_at": now.isoformat(),
@@ -1288,87 +1340,94 @@ class ProjectRepo:
     # Dashboard aggregation helpers
     # ------------------------------------------------------------------
 
+    async def _query_to_dict(
+        self,
+        container: ContainerProxy,
+        query: str,
+        parameters: list[dict[str, Any]],
+        key_field: str,
+        value_field: str = "cnt",
+    ) -> dict[str, int]:
+        result: dict[str, int] = {}
+        async for item in container.query_items(query=query, parameters=parameters):
+            result[item.get(key_field, "unknown")] = item.get(value_field, 0)
+        return result
+
+    async def _query_scalar(
+        self,
+        container: ContainerProxy,
+        query: str,
+        parameters: list[dict[str, Any]],
+    ) -> Any:
+        results: list[Any] = [
+            item async for item in container.query_items(query=query, parameters=parameters)
+        ]
+        return results[0] if results else None
+
     async def get_dashboard_summary(self) -> dict[str, Any]:
-        total_identities = await self.count_items("identity_profiles")
-        total_actions = await self.count_items("action_events")
-
-        type_query = (
-            "SELECT c.identity_type, COUNT(1) AS cnt FROM c GROUP BY c.identity_type"
+        (
+            total_identities,
+            total_actions,
+            identities_by_type,
+            risk_agg,
+            drift_alerts_open,
+            drift_alerts_by_severity,
+            bp_total,
+            bp_resolved,
+            top_risky,
+            rec_agg,
+        ) = await asyncio.gather(
+            self.count_items("identity_profiles"),
+            self.count_items("action_events"),
+            self._query_to_dict(
+                self._identity_profiles,
+                "SELECT c.identity_type, COUNT(1) AS cnt FROM c GROUP BY c.identity_type",
+                [], "identity_type",
+            ),
+            self._query_scalar(
+                self._identity_profiles,
+                "SELECT VALUE {"
+                "  avg_risk: AVG(c.risk_score),"
+                "  high_count: COUNT(c.risk_score > 70 ? 1 : undefined)"
+                "} FROM c",
+                [],
+            ),
+            self._query_scalar(
+                self._drift_alerts,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.status = 'open'",
+                [],
+            ),
+            self._query_to_dict(
+                self._drift_alerts,
+                "SELECT c.severity, COUNT(1) AS cnt FROM c "
+                "WHERE c.status = 'open' GROUP BY c.severity",
+                [], "severity",
+            ),
+            self.count_items("best_practice_violations"),
+            self._query_scalar(
+                self._best_practice_violations,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.resolved = true",
+                [],
+            ),
+            self._tracked_query(
+                self._identity_profiles,
+                "SELECT c.id, c.display_name, c.identity_type, c.risk_score FROM c "
+                "ORDER BY c.risk_score DESC OFFSET 0 LIMIT 10",
+                [], "dashboard.top_risky",
+            ),
+            self._query_scalar(
+                self._role_recommendations,
+                "SELECT VALUE {cnt: COUNT(1), avg_reduction: AVG(c.reduction_score)} FROM c",
+                [],
+            ),
         )
-        identities_by_type: dict[str, int] = {}
-        async for item in self._identity_profiles.query_items(
-            query=type_query, parameters=[],
-        ):
-            identities_by_type[item.get("identity_type", "unknown")] = item.get("cnt", 0)
 
-        risk_query = (
-            "SELECT VALUE {"
-            "  avg_risk: AVG(c.risk_score),"
-            "  high_count: COUNT(c.risk_score > 70 ? 1 : undefined)"
-            "} FROM c"
-        )
-        risk_results: list[dict[str, Any]] = [
-            item async for item in self._identity_profiles.query_items(
-                query=risk_query, parameters=[],
-            )
-        ]
-        avg_risk = 0.0
-        high_risk_count = 0
-        if risk_results:
-            avg_risk = risk_results[0].get("avg_risk") or 0.0
-            high_risk_count = risk_results[0].get("high_count") or 0
-
-        drift_open_query = "SELECT VALUE COUNT(1) FROM c WHERE c.status = 'open'"
-        drift_open_results: list[int] = [
-            item async for item in self._drift_alerts.query_items(
-                query=drift_open_query, parameters=[],
-            )
-        ]
-        drift_alerts_open = drift_open_results[0] if drift_open_results else 0
-
-        sev_query = (
-            "SELECT c.severity, COUNT(1) AS cnt FROM c "
-            "WHERE c.status = 'open' GROUP BY c.severity"
-        )
-        drift_alerts_by_severity: dict[str, int] = {}
-        async for item in self._drift_alerts.query_items(
-            query=sev_query, parameters=[],
-        ):
-            drift_alerts_by_severity[item.get("severity", "unknown")] = item.get("cnt", 0)
-
-        bp_total = await self.count_items("best_practice_violations")
-        bp_resolved_query = "SELECT VALUE COUNT(1) FROM c WHERE c.resolved = true"
-        bp_resolved_results: list[int] = [
-            item async for item in self._best_practice_violations.query_items(
-                query=bp_resolved_query, parameters=[],
-            )
-        ]
-        bp_resolved = bp_resolved_results[0] if bp_resolved_results else 0
-        compliance_score = (bp_resolved / bp_total * 100.0) if bp_total > 0 else 100.0
-
-        top_query = (
-            "SELECT c.id, c.display_name, c.identity_type, c.risk_score FROM c "
-            "ORDER BY c.risk_score DESC OFFSET 0 LIMIT 10"
-        )
-        top_risky: list[dict[str, Any]] = [
-            item async for item in self._identity_profiles.query_items(
-                query=top_query, parameters=[],
-            )
-        ]
-
-        rec_query = (
-            "SELECT VALUE {cnt: COUNT(1), avg_reduction: AVG(c.reduction_score)} FROM c"
-        )
-        rec_results: list[dict[str, Any]] = [
-            item async for item in self._role_recommendations.query_items(
-                query=rec_query, parameters=[],
-            )
-        ]
-        recommendations_count = 0
-        avg_reduction_score = 0.0
-        if rec_results:
-            recommendations_count = rec_results[0].get("cnt") or 0
-            avg_reduction_score = rec_results[0].get("avg_reduction") or 0.0
+        avg_risk = (risk_agg.get("avg_risk") or 0.0) if risk_agg else 0.0
+        high_risk_count = (risk_agg.get("high_count") or 0) if risk_agg else 0
+        bp_resolved_count = bp_resolved or 0
+        compliance_score = (bp_resolved_count / bp_total * 100.0) if bp_total > 0 else 100.0
+        recommendations_count = (rec_agg.get("cnt") or 0) if rec_agg else 0
+        avg_reduction_score = (rec_agg.get("avg_reduction") or 0.0) if rec_agg else 0.0
 
         return {
             "total_identities": total_identities,
@@ -1376,7 +1435,7 @@ class ProjectRepo:
             "identities_by_type": identities_by_type,
             "avg_risk_score": avg_risk,
             "high_risk_count": high_risk_count,
-            "drift_alerts_open": drift_alerts_open,
+            "drift_alerts_open": drift_alerts_open or 0,
             "drift_alerts_by_severity": drift_alerts_by_severity,
             "compliance_score": compliance_score,
             "top_risky_identities": top_risky,
@@ -1384,42 +1443,43 @@ class ProjectRepo:
             "avg_reduction_score": avg_reduction_score,
         }
 
+    async def _query_trend(
+        self,
+        container: ContainerProxy,
+        query: str,
+        parameters: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        trend: list[dict[str, Any]] = []
+        async for item in container.query_items(query=query, parameters=parameters):
+            trend.append({
+                "date": item.get("date", ""),
+                "value": float(item.get("cnt", 0)),
+            })
+        return trend
+
     async def get_trends(self, days: int = 30) -> dict[str, Any]:
         cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
         cutoff_params: list[dict[str, Any]] = [{"name": "@cutoff", "value": cutoff}]
 
-        actions_query = (
-            "SELECT SUBSTRING(c.timestamp, 0, 10) AS date, COUNT(1) AS cnt "
-            "FROM c WHERE c.timestamp >= @cutoff "
-            "GROUP BY SUBSTRING(c.timestamp, 0, 10)"
+        actions_trend, drift_alerts_trend = await asyncio.gather(
+            self._query_trend(
+                self._action_events,
+                "SELECT SUBSTRING(c.timestamp, 0, 10) AS date, COUNT(1) AS cnt "
+                "FROM c WHERE c.timestamp >= @cutoff "
+                "GROUP BY SUBSTRING(c.timestamp, 0, 10)",
+                cutoff_params,
+            ),
+            self._query_trend(
+                self._drift_alerts,
+                "SELECT SUBSTRING(c.detected_at, 0, 10) AS date, COUNT(1) AS cnt "
+                "FROM c WHERE c.detected_at >= @cutoff "
+                "GROUP BY SUBSTRING(c.detected_at, 0, 10)",
+                cutoff_params,
+            ),
         )
-        actions_trend: list[dict[str, Any]] = []
-        async for item in self._action_events.query_items(
-            query=actions_query, parameters=cutoff_params,
-        ):
-            actions_trend.append({
-                "date": item.get("date", ""),
-                "value": float(item.get("cnt", 0)),
-            })
-
-        drift_query = (
-            "SELECT SUBSTRING(c.detected_at, 0, 10) AS date, COUNT(1) AS cnt "
-            "FROM c WHERE c.detected_at >= @cutoff "
-            "GROUP BY SUBSTRING(c.detected_at, 0, 10)"
-        )
-        drift_alerts_trend: list[dict[str, Any]] = []
-        async for item in self._drift_alerts.query_items(
-            query=drift_query, parameters=cutoff_params,
-        ):
-            drift_alerts_trend.append({
-                "date": item.get("date", ""),
-                "value": float(item.get("cnt", 0)),
-            })
-
-        risk_score_trend: list[dict[str, Any]] = []
 
         return {
-            "risk_score_trend": risk_score_trend,
+            "risk_score_trend": [],
             "drift_alerts_trend": drift_alerts_trend,
             "actions_trend": actions_trend,
         }
@@ -1428,139 +1488,7 @@ class ProjectRepo:
     # Analytics aggregation helpers
     # ------------------------------------------------------------------
 
-    async def get_analytics_data(self, days: int = 30) -> dict[str, Any]:
-        now = datetime.now(UTC)
-        cutoff = (now - timedelta(days=days)).isoformat()
-        base_params: list[dict[str, Any]] = [{"name": "@cutoff", "value": cutoff}]
-
-        # action_events: totals
-        totals_query = (
-            "SELECT VALUE {"
-            "  total: COUNT(1),"
-            "  failures: COUNT(c.result = 'failure' ? 1 : undefined)"
-            "} FROM c WHERE c.timestamp >= @cutoff"
-        )
-        totals_results: list[dict[str, Any]] = [
-            item async for item in self._action_events.query_items(
-                query=totals_query, parameters=base_params,
-            )
-        ]
-        total_actions = totals_results[0].get("total", 0) if totals_results else 0
-        failures = totals_results[0].get("failures", 0) if totals_results else 0
-        failed_action_pct = (failures / total_actions * 100.0) if total_actions > 0 else 0.0
-
-        # unique active identities
-        unique_query = (
-            "SELECT VALUE COUNT(1) FROM "
-            "(SELECT DISTINCT c.identity_id FROM c WHERE c.timestamp >= @cutoff)"
-        )
-        unique_results: list[int] = [
-            item async for item in self._action_events.query_items(
-                query=unique_query, parameters=base_params,
-            )
-        ]
-        unique_active = unique_results[0] if unique_results else 0
-        avg_actions = (total_actions / unique_active) if unique_active > 0 else 0.0
-
-        # daily action counts
-        daily_query = (
-            "SELECT SUBSTRING(c.timestamp, 0, 10) AS date, COUNT(1) AS cnt "
-            "FROM c WHERE c.timestamp >= @cutoff "
-            "GROUP BY SUBSTRING(c.timestamp, 0, 10)"
-        )
-        daily_action_counts: list[dict[str, Any]] = []
-        async for item in self._action_events.query_items(
-            query=daily_query, parameters=base_params,
-        ):
-            daily_action_counts.append({
-                "date": item.get("date", ""),
-                "value": float(item.get("cnt", 0)),
-            })
-        daily_action_counts.sort(key=lambda x: x["date"])
-
-        # top actions
-        top_actions_query = (
-            "SELECT c.action, COUNT(1) AS cnt "
-            "FROM c WHERE c.timestamp >= @cutoff GROUP BY c.action"
-        )
-        top_actions_raw: list[dict[str, Any]] = [
-            item async for item in self._action_events.query_items(
-                query=top_actions_query, parameters=base_params,
-            )
-        ]
-        top_actions_raw.sort(key=lambda x: x.get("cnt", 0), reverse=True)
-        top_actions = [
-            {"action": r.get("action", ""), "count": r.get("cnt", 0)}
-            for r in top_actions_raw[:10]
-        ]
-
-        # most active identities
-        active_query = (
-            "SELECT c.identity_id, c.identity_display_name, COUNT(1) AS cnt "
-            "FROM c WHERE c.timestamp >= @cutoff "
-            "GROUP BY c.identity_id, c.identity_display_name"
-        )
-        active_raw: list[dict[str, Any]] = [
-            item async for item in self._action_events.query_items(
-                query=active_query, parameters=base_params,
-            )
-        ]
-        active_raw.sort(key=lambda x: x.get("cnt", 0), reverse=True)
-        most_active = [
-            {
-                "identity_id": r.get("identity_id", ""),
-                "display_name": r.get("identity_display_name", ""),
-                "identity_type": r.get("identity_id", "").split("_")[0]
-                if "_" in r.get("identity_id", "") else "User",
-                "count": r.get("cnt", 0),
-            }
-            for r in active_raw[:10]
-        ]
-
-        # by source
-        source_query = (
-            "SELECT c.source, COUNT(1) AS cnt "
-            "FROM c WHERE c.timestamp >= @cutoff GROUP BY c.source"
-        )
-        actions_by_source: dict[str, int] = {}
-        async for item in self._action_events.query_items(
-            query=source_query, parameters=base_params,
-        ):
-            actions_by_source[item.get("source", "unknown")] = item.get("cnt", 0)
-
-        # success vs failure
-        result_query = (
-            "SELECT c.result, COUNT(1) AS cnt "
-            "FROM c WHERE c.timestamp >= @cutoff GROUP BY c.result"
-        )
-        success_vs_failure: dict[str, int] = {}
-        async for item in self._action_events.query_items(
-            query=result_query, parameters=base_params,
-        ):
-            success_vs_failure[item.get("result", "unknown")] = item.get("cnt", 0)
-
-        # top resources
-        resource_query = (
-            "SELECT c.resource, c.resource_type, COUNT(1) AS cnt "
-            "FROM c WHERE c.timestamp >= @cutoff AND c.resource != null "
-            "GROUP BY c.resource, c.resource_type"
-        )
-        resource_raw: list[dict[str, Any]] = [
-            item async for item in self._action_events.query_items(
-                query=resource_query, parameters=base_params,
-            )
-        ]
-        resource_raw.sort(key=lambda x: x.get("cnt", 0), reverse=True)
-        top_resources = [
-            {
-                "resource": r.get("resource", ""),
-                "resource_type": r.get("resource_type", ""),
-                "count": r.get("cnt", 0),
-            }
-            for r in resource_raw[:10]
-        ]
-
-        # identity_profiles: roles
+    async def _compute_roles_breakdown(self) -> tuple[list[dict[str, Any]], int, int]:
         roles_query = "SELECT c.current_roles FROM c"
         role_counter: Counter[str] = Counter()
         permanent_count = 0
@@ -1577,32 +1505,9 @@ class ProjectRepo:
         top_roles = [
             {"role_name": name, "count": cnt} for name, cnt in role_counter.most_common(10)
         ]
+        return top_roles, permanent_count, pim_count
 
-        # stale identities
-        stale_counts: dict[str, int] = {}
-        for label, threshold_days in [("30d", 30), ("60d", 60), ("90d", 90)]:
-            threshold = (now - timedelta(days=threshold_days)).isoformat()
-            stale_query = "SELECT VALUE COUNT(1) FROM c WHERE c.last_seen < @threshold"
-            stale_params: list[dict[str, Any]] = [
-                {"name": "@threshold", "value": threshold},
-            ]
-            results: list[int] = [
-                item async for item in self._identity_profiles.query_items(
-                    query=stale_query, parameters=stale_params,
-                )
-            ]
-            stale_counts[label] = results[0] if results else 0
-
-        # new identities
-        new_query = "SELECT VALUE COUNT(1) FROM c WHERE c.first_seen >= @cutoff"
-        new_results: list[int] = [
-            item async for item in self._identity_profiles.query_items(
-                query=new_query, parameters=base_params,
-            )
-        ]
-        new_identities_count = new_results[0] if new_results else 0
-
-        # permission utilization
+    async def _compute_permission_utilization(self) -> tuple[int, int]:
         perm_query = "SELECT c.permission_gaps FROM c"
         used_count = 0
         unused_count = 0
@@ -1614,50 +1519,183 @@ class ProjectRepo:
                     used_count += 1
                 else:
                     unused_count += 1
+        return used_count, unused_count
 
-        # overprivileged count
-        overpriv_query = "SELECT VALUE COUNT(1) FROM c WHERE c.reduction_score > 30"
-        overpriv_results: list[int] = [
-            item async for item in self._role_recommendations.query_items(
-                query=overpriv_query, parameters=[],
+    async def _compute_stale_counts(self, now: datetime) -> dict[str, int]:
+        async def _stale_at(label: str, threshold_days: int) -> tuple[str, int]:
+            threshold = (now - timedelta(days=threshold_days)).isoformat()
+            result = await self._query_scalar(
+                self._identity_profiles,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.last_seen < @threshold",
+                [{"name": "@threshold", "value": threshold}],
             )
+            return label, result or 0
+
+        results = await asyncio.gather(
+            _stale_at("30d", 30),
+            _stale_at("60d", 60),
+            _stale_at("90d", 90),
+        )
+        return dict(results)
+
+    async def get_analytics_data(self, days: int = 30) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        cutoff = (now - timedelta(days=days)).isoformat()
+        base_params: list[dict[str, Any]] = [{"name": "@cutoff", "value": cutoff}]
+
+        # Fire all independent queries concurrently
+        (
+            totals_agg,
+            unique_active_scalar,
+            daily_action_counts,
+            top_actions_raw,
+            active_raw,
+            actions_by_source,
+            success_vs_failure,
+            resource_raw,
+            roles_breakdown,
+            stale_counts,
+            new_identities_scalar,
+            perm_utilization,
+            overprivileged_scalar,
+            violations_by_type,
+            credential_expiry,
+            recent_drift,
+        ) = await asyncio.gather(
+            self._query_scalar(
+                self._action_events,
+                "SELECT VALUE {"
+                "  total: COUNT(1),"
+                "  failures: COUNT(c.result = 'failure' ? 1 : undefined)"
+                "} FROM c WHERE c.timestamp >= @cutoff",
+                base_params,
+            ),
+            self._query_scalar(
+                self._action_events,
+                "SELECT VALUE COUNT(1) FROM "
+                "(SELECT DISTINCT c.identity_id FROM c WHERE c.timestamp >= @cutoff)",
+                base_params,
+            ),
+            self._query_trend(
+                self._action_events,
+                "SELECT SUBSTRING(c.timestamp, 0, 10) AS date, COUNT(1) AS cnt "
+                "FROM c WHERE c.timestamp >= @cutoff "
+                "GROUP BY SUBSTRING(c.timestamp, 0, 10)",
+                base_params,
+            ),
+            self._tracked_query(
+                self._action_events,
+                "SELECT c.action, COUNT(1) AS cnt "
+                "FROM c WHERE c.timestamp >= @cutoff GROUP BY c.action",
+                base_params, "analytics.top_actions",
+            ),
+            self._tracked_query(
+                self._action_events,
+                "SELECT c.identity_id, c.identity_display_name, COUNT(1) AS cnt "
+                "FROM c WHERE c.timestamp >= @cutoff "
+                "GROUP BY c.identity_id, c.identity_display_name",
+                base_params, "analytics.active_identities",
+            ),
+            self._query_to_dict(
+                self._action_events,
+                "SELECT c.source, COUNT(1) AS cnt "
+                "FROM c WHERE c.timestamp >= @cutoff GROUP BY c.source",
+                base_params, "source",
+            ),
+            self._query_to_dict(
+                self._action_events,
+                "SELECT c.result, COUNT(1) AS cnt "
+                "FROM c WHERE c.timestamp >= @cutoff GROUP BY c.result",
+                base_params, "result",
+            ),
+            self._tracked_query(
+                self._action_events,
+                "SELECT c.resource, c.resource_type, COUNT(1) AS cnt "
+                "FROM c WHERE c.timestamp >= @cutoff AND c.resource != null "
+                "GROUP BY c.resource, c.resource_type",
+                base_params, "analytics.top_resources",
+            ),
+            self._compute_roles_breakdown(),
+            self._compute_stale_counts(now),
+            self._query_scalar(
+                self._identity_profiles,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.first_seen >= @cutoff",
+                base_params,
+            ),
+            self._compute_permission_utilization(),
+            self._query_scalar(
+                self._role_recommendations,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.reduction_score > 30",
+                [],
+            ),
+            self._query_to_dict(
+                self._best_practice_violations,
+                "SELECT c.violation_type, COUNT(1) AS cnt FROM c "
+                "WHERE c.resolved = false GROUP BY c.violation_type",
+                [], "violation_type",
+            ),
+            self._tracked_query(
+                self._best_practice_violations,
+                "SELECT c.identity_id, c.identity_display_name, c.detected_at FROM c "
+                "WHERE c.violation_type = 'sp_credential_expiry' AND c.resolved = false "
+                "ORDER BY c.detected_at DESC OFFSET 0 LIMIT 10",
+                [], "analytics.cred_expiry",
+            ),
+            self._tracked_query(
+                self._drift_alerts,
+                "SELECT * FROM c ORDER BY c.detected_at DESC OFFSET 0 LIMIT 5",
+                [], "analytics.recent_drift",
+            ),
+        )
+
+        # Unpack aggregated results
+        total_actions = (totals_agg.get("total", 0)) if totals_agg else 0
+        failures = (totals_agg.get("failures", 0)) if totals_agg else 0
+        failed_action_pct = (failures / total_actions * 100.0) if total_actions > 0 else 0.0
+        unique_active = unique_active_scalar or 0
+        avg_actions = (total_actions / unique_active) if unique_active > 0 else 0.0
+        new_identities_count = new_identities_scalar or 0
+        overprivileged_count = overprivileged_scalar or 0
+        top_roles, permanent_count, pim_count = roles_breakdown
+        used_count, unused_count = perm_utilization
+
+        daily_action_counts.sort(key=lambda x: x["date"])
+
+        top_actions_raw.sort(key=lambda x: x.get("cnt", 0), reverse=True)
+        top_actions = [
+            {"action": r.get("action", ""), "count": r.get("cnt", 0)}
+            for r in top_actions_raw[:10]
         ]
-        overprivileged_count = overpriv_results[0] if overpriv_results else 0
 
-        # violations by type
-        vtype_query = (
-            "SELECT c.violation_type, COUNT(1) AS cnt FROM c "
-            "WHERE c.resolved = false GROUP BY c.violation_type"
-        )
-        violations_by_type: dict[str, int] = {}
-        async for item in self._best_practice_violations.query_items(
-            query=vtype_query, parameters=[],
-        ):
-            violations_by_type[item.get("violation_type", "unknown")] = item.get("cnt", 0)
+        active_raw.sort(key=lambda x: x.get("cnt", 0), reverse=True)
+        most_active = [
+            {
+                "identity_id": r.get("identity_id", ""),
+                "display_name": r.get("identity_display_name", ""),
+                "identity_type": r.get("identity_id", "").split("_")[0]
+                if "_" in r.get("identity_id", "") else "User",
+                "count": r.get("cnt", 0),
+            }
+            for r in active_raw[:10]
+        ]
 
-        # credential expiry violations
-        cred_query = (
-            "SELECT c.identity_id, c.identity_display_name, c.detected_at FROM c "
-            "WHERE c.violation_type = 'sp_credential_expiry' AND c.resolved = false "
-            "ORDER BY c.detected_at DESC OFFSET 0 LIMIT 10"
-        )
-        credential_expiry: list[dict[str, str]] = [
+        resource_raw.sort(key=lambda x: x.get("cnt", 0), reverse=True)
+        top_resources = [
+            {
+                "resource": r.get("resource", ""),
+                "resource_type": r.get("resource_type", ""),
+                "count": r.get("cnt", 0),
+            }
+            for r in resource_raw[:10]
+        ]
+
+        cred_expiry_list = [
             {
                 "identity_id": item.get("identity_id", ""),
                 "identity_display_name": item.get("identity_display_name", ""),
                 "detected_at": item.get("detected_at", ""),
             }
-            async for item in self._best_practice_violations.query_items(
-                query=cred_query, parameters=[],
-            )
-        ]
-
-        # recent drift alerts
-        drift_query = "SELECT * FROM c ORDER BY c.detected_at DESC OFFSET 0 LIMIT 5"
-        recent_drift: list[dict[str, Any]] = [
-            item async for item in self._drift_alerts.query_items(
-                query=drift_query, parameters=[],
-            )
+            for item in credential_expiry
         ]
 
         return {
@@ -1678,7 +1716,7 @@ class ProjectRepo:
             "overprivileged_count": overprivileged_count,
             "violations_by_type": violations_by_type,
             "stale_identity_counts": stale_counts,
-            "credential_expiry_violations": credential_expiry,
+            "credential_expiry_violations": cred_expiry_list,
             "recent_drift_alerts": recent_drift,
         }
 

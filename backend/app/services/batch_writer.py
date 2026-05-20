@@ -71,13 +71,16 @@ class BatchWriter:
                 return await self._fallback_upsert(docs)
 
     async def _fallback_upsert(self, docs: list[dict[str, Any]]) -> int:
-        count = 0
-        for doc in docs:
-            try:
-                await self._container.upsert_item(body=doc)
-                count += 1
-            except CosmosHttpResponseError as exc:
-                logger.warning(
-                    "Fallback upsert failed for %s: %s", doc.get("id", "?"), exc.message
-                )
-        return count
+        async def _single(doc: dict[str, Any]) -> bool:
+            async with self._semaphore:
+                try:
+                    await self._container.upsert_item(body=doc)
+                    return True
+                except CosmosHttpResponseError as exc:
+                    logger.warning(
+                        "Fallback upsert failed for %s: %s", doc.get("id", "?"), exc.message,
+                    )
+                    return False
+
+        results = await asyncio.gather(*(_single(doc) for doc in docs))
+        return sum(1 for ok in results if ok)

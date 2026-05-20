@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import datetime
@@ -137,13 +138,20 @@ class MasterRepo:
         **kwargs: Any,
     ) -> list[dict[str, Any]]:
         t0 = time.monotonic()
+        ru: float = 0.0
+
+        def _hook(_: Any, headers: dict[str, str]) -> None:
+            nonlocal ru
+            ru += float(headers.get("x-ms-request-charge", 0))
+
         results: list[dict[str, Any]] = [
             item async for item in container.query_items(
-                query=query, parameters=parameters, **kwargs,
+                query=query, parameters=parameters,
+                response_hook=_hook, **kwargs,
             )
         ]
         elapsed = (time.monotonic() - t0) * 1000
-        self._log_op(op_name, container.id, items=len(results), duration_ms=elapsed)
+        self._log_op(op_name, container.id, items=len(results), duration_ms=elapsed, ru=ru)
         return results
 
     # ------------------------------------------------------------------
@@ -199,10 +207,11 @@ class MasterRepo:
         memberships = await self.list_user_memberships(user_id, email)
         member_project_ids = {m.project_id for m in memberships} - {p.id for p in owned}
 
-        for pid in member_project_ids:
-            proj = await self.get_project(pid)
-            if proj is not None:
-                owned.append(proj)
+        if member_project_ids:
+            member_projects = await asyncio.gather(
+                *(self.get_project(pid) for pid in member_project_ids)
+            )
+            owned.extend(p for p in member_projects if p is not None)
 
         return owned
 

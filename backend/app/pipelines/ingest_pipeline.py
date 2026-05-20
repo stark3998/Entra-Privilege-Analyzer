@@ -183,9 +183,10 @@ class IngestPipeline:
         since: datetime | None = None,
     ) -> None:
         """Reload previously stored events into memory for resume processing."""
-        stored = await self._repo.load_all_action_events(since=since)
-        for event in stored:
+        loaded_count = 0
+        async for event in self._repo.stream_action_events(since=since):
             all_events.append(event)
+            loaded_count += 1
             if event.identity_id and event.identity_id != "unknown":
                 actor_registry[event.identity_id] = (
                     event.identity_display_name or "unknown",
@@ -194,7 +195,7 @@ class IngestPipeline:
         await self._emit_progress(
             {
                 "type": "scan.info",
-                "message": f"Loaded {len(stored)} previously stored events for resume.",
+                "message": f"Loaded {loaded_count} previously stored events for resume.",
                 "phase": "audit_logs",
                 "status": "running",
                 "items_processed": len(stored),
