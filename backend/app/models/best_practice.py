@@ -33,6 +33,28 @@ class ViolationType(StrEnum):
     GUEST_ADMIN = "guest_admin"
     GUEST_NO_MFA = "guest_no_mfa"
 
+    # Identity lifecycle (Phase D)
+    ORPHANED_ACCOUNT = "orphaned_account"
+    INCOMPLETE_OFFBOARDING = "incomplete_offboarding"
+    NEVER_USED_ACCOUNT = "never_used_account"
+
+    # SP workload identity (Phase B)
+    SP_OVERPRIVILEGED = "sp_overprivileged"
+    SP_UNUSED_PERMISSIONS = "sp_unused_permissions"
+    SP_UNUSED_CREDENTIAL = "sp_unused_credential"
+    SP_MULTIPLE_ACTIVE_CREDENTIALS = "sp_multiple_active_credentials"
+    MI_OVERPRIVILEGED = "mi_overprivileged"
+    MI_BROAD_SCOPE = "mi_broad_scope"
+    FEDERATION_BROAD_SUBJECT = "federation_broad_subject"
+    FEDERATION_NO_AUDIENCE = "federation_no_audience"
+
+    # OAuth consent (Phase C)
+    RISKY_CONSENT_GRANT = "risky_consent_grant"
+    UNVERIFIED_PUBLISHER_CONSENT = "unverified_publisher_consent"
+    USER_CONSENT_HIGH_PRIVILEGE = "user_consent_high_privilege"
+    USER_CONSENT_UNRESTRICTED = "user_consent_unrestricted"
+    NO_ADMIN_CONSENT_WORKFLOW = "no_admin_consent_workflow"
+
     # Conditional Access (Phase 2.1)
     CA_LEGACY_AUTH_NOT_BLOCKED = "ca_legacy_auth_not_blocked"
     CA_NO_MFA_FOR_ADMINS = "ca_no_mfa_for_admins"

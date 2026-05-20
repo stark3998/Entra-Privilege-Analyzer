@@ -47,17 +47,22 @@ A multi-tenant SaaS application that connects to Microsoft Entra ID tenants via 
 - Exports recommendations to **Terraform HCL**, **Bicep**, and **ARM JSON** templates
 
 ### Permission Drift Detection
-- **Two-layer detection engine:**
+- **Multi-layer detection engine:**
   - **First-seen detection** — flags any action not previously observed in an identity's baseline
   - **Z-score anomaly detection** — rolling statistics (mean, stddev) per identity per action; z > 3.0 = High, z > 2.0 = Medium, z > 1.5 = Low severity
+  - **Time-of-day anomaly** — hour-of-day histogram per identity; flags actions outside normal working hours (>2 stddev from hour distribution)
+  - **Velocity / burst detection** — compares recent-hour action count to baseline hourly rate; 3x = Medium, 5x = High, 10x = Critical
+  - **Geo-location anomaly** — sign-in from a country not in the identity's known location profile
+  - **Impossible travel** — two sign-ins >500km apart within 1 hour (haversine distance calculation)
+  - **Peer group deviation** — z-score of action count vs role-based peer group mean; z > 2 = Medium, z > 3 = High, z > 4 = Critical
 - **Identity Protection integration** — auto-creates drift alerts when Entra ID flags an identity as `atRisk` or `confirmedCompromised`
-- Rolling 30-day baselines computed daily
+- Rolling 30-day baselines computed daily with hour-of-day histograms and hourly rate statistics
 - Identities with < 7 days of baseline data use first-seen only
 - Drift alert workflow: Open, Acknowledged, Escalated, Resolved
 - Composite risk scoring (0-100) weighted across 6 components: drift alerts (20%), overprivilege (20%), admin roles (15%), stale access (15%), identity protection (20%), guest/B2B risk (10%)
 
 ### Best Practice Advisor
-Rule engine evaluating identities, apps, groups, and policies against 30+ Entra ID and Azure RBAC best practices:
+Rule engine evaluating identities, apps, groups, and policies against 50+ Entra ID and Azure RBAC best practices:
 
 #### Identity Rules
 
@@ -143,10 +148,41 @@ Rule engine evaluating identities, apps, groups, and policies against 30+ Entra 
 | Stale Reviews | Access reviews with no recurrence and last instance >6 months ago | Medium |
 | No Guest Review | No access review scoped to guest members | High |
 
+#### Identity Lifecycle Rules
+
+| Rule | What It Checks | Priority |
+|------|---------------|----------|
+| Orphaned Account | Disabled account still holding active role assignments | Critical (admin) / High |
+| Incomplete Offboarding | Recently disabled account with remaining roles or group memberships | High |
+| Never-Used Account | Account created >30 days ago with no sign-in activity | Critical (admin) / Medium |
+
+#### Service Principal & Workload Identity Rules
+
+| Rule | What It Checks | Priority |
+|------|---------------|----------|
+| SP Overprivileged | SP with high-risk permissions never observed in use | Critical |
+| SP Unused Permissions | SP with 3+ granted permissions never used | High |
+| SP Unused Credential | SP credential with no sign-in activity | Medium |
+| SP Multiple Active Credentials | SP with >2 active password credentials | Medium |
+| MI Overprivileged | Managed identity with admin roles | Critical (GA) / High |
+| MI Broad Scope | Managed identity with all roles at root scope | High |
+| Federation Broad Subject | Federated credential with wildcard or empty subject filter | Critical / High |
+| Federation No Audience | Federated credential with no audience restriction | Medium |
+
+#### OAuth Consent Rules
+
+| Rule | What It Checks | Priority |
+|------|---------------|----------|
+| Risky Consent Grant | Delegated grant for high-risk scopes (Mail.ReadWrite, Files.ReadWrite.All) | Critical / High |
+| Unverified Publisher Consent | Consent grant to app from unverified publisher | High |
+| User Consent High Privilege | User-consented (not admin-consented) high-privilege grant | High |
+| User Consent Unrestricted | Tenant allows user consent to all apps | Critical |
+| No Admin Consent Workflow | No admin consent workflow configured | Medium |
+
 - Configurable Separation of Duties policy engine with 20 built-in conflict pairs (expandable per-tenant via CRUD API)
 - Compliance score (0-100%) with priority-weighted penalty deductions
 - Actionable remediation steps for each violation
-- Compliance framework mapping: SOC 2, ISO 27001:2022, NIST 800-53 Rev 5
+- Compliance framework mapping: CIS Microsoft 365 v3.1.0, NIST 800-53 Rev 5, SOC 2 Type II
 
 ### Remediation Workflow
 - Request/approve/reject/execute lifecycle for remediation actions
@@ -201,20 +237,15 @@ Rule engine evaluating identities, apps, groups, and policies against 30+ Entra 
 - Prompt injection sanitization on all identity-sourced data
 
 ### Compliance Evidence Export
-- Maps violations to compliance framework controls:
+- Maps 50+ violation types to three compliance frameworks via structured JSON mapping files:
 
-| Best Practice Check | SOC 2 | ISO 27001:2022 | NIST 800-53 Rev 5 |
+| Framework | Version | Controls Mapped | Coverage |
 |---|---|---|---|
-| Stale Identity | CC6.1, CC6.2 | A.5.16, A.5.18 | AC-2, AC-2(3) |
-| Permanent Admin | CC6.1, CC6.3 | A.5.18, A.8.2 | AC-6(5), AC-6(2) |
-| No PIM | CC6.1, CC6.3 | A.5.18, A.8.2 | AC-6, AC-6(1), AC-6(5) |
-| Overprivileged | CC6.3 | A.5.15, A.5.18 | AC-6, AC-6(10) |
-| Separation of Duties | CC6.1, CC5.1 | A.5.3 | AC-5 |
-| SP Credential Expiry | CC6.1, CC6.6 | A.5.17, A.8.5 | IA-5 |
-| MFA Gap | CC6.1, CC6.6 | A.5.17, A.8.5 | IA-2, IA-2(1) |
-| CA Misconfiguration | CC6.6 | A.8.5, A.8.20 | AC-17, IA-2(6) |
-| Guest Governance | CC6.1, CC6.2 | A.5.19 | AC-2(5), AC-17(1) |
+| CIS Microsoft 365 | Foundations Benchmark v3.1.0 | 23 | Identity, privileged access, guest access, applications, governance, CA, roles |
+| NIST SP 800-53 | Rev. 5 | 22 | Access control, identification/auth, config management, risk assessment, personnel security |
+| SOC 2 Type II | Trust Services Criteria 2017 | 14 | Common criteria (CC6, CC7, CC8), availability, confidentiality |
 
+- Compliance scoring engine computes per-framework pass/fail per control with linked violation IDs
 - Per-framework compliance report generation with control coverage summary
 
 ### Real-Time Webhooks
@@ -255,7 +286,7 @@ Three application roles with scoped access:
                     |                                |  |  15 Routers      || |
                     |                                |  |  (60+ endpoints) || |
                     |                                |  +------------------+| |
-                    |                                |  |  22 Services     || |
+                    |                                |  |  30 Services     || |
                     |                                |  +------------------+| |
                     |                                |  |  4 Pipelines     || |
                     |                                |  +------------------+| |
@@ -445,7 +476,7 @@ Entra-Permissions-Analyzer/
 |   |   |   +-- action.py       # ActionEvent (audit log entry)
 |   |   |   +-- role.py         # Role assignment and recommendation
 |   |   |   +-- drift.py        # DriftAlert with identity protection types
-|   |   |   +-- best_practice.py        # 30+ violation types
+|   |   |   +-- best_practice.py        # 50+ violation types
 |   |   |   +-- app_registration.py     # App credentials, owners, permissions
 |   |   |   +-- mfa_status.py           # MFA registration with method tier classification
 |   |   |   +-- conditional_access.py   # CA policy conditions and grant controls
@@ -463,7 +494,7 @@ Entra-Permissions-Analyzer/
 |   |   |   +-- cosmos.py               # CosmosRepo with 18 containers, 50+ methods
 |   |   |   +-- graph_ingest.py         # 20+ Graph API fetch methods (PIM, CA, MFA, groups, risk)
 |   |   |   +-- graph_roles.py          # PIM-aware role assignment fetching
-|   |   |   +-- best_practice_analyzer.py  # 30+ rule checks + tenant-level analyzer orchestration
+|   |   |   +-- best_practice_analyzer.py  # 50+ rule checks + tenant-level analyzer orchestration
 |   |   |   +-- ca_analyzer.py          # 12 Conditional Access misconfiguration checks
 |   |   |   +-- group_analyzer.py       # Group membership and privilege analysis
 |   |   |   +-- custom_role_analyzer.py # Custom role governance (6 checks)
@@ -475,7 +506,14 @@ Entra-Permissions-Analyzer/
 |   |   |   +-- permission_validator.py # Graph API permission validation
 |   |   |   +-- role_mapper.py          # Action-to-permission mapping
 |   |   |   +-- role_recommender.py     # Least-privilege role recommendations
-|   |   |   +-- drift_detector.py       # Two-layer drift detection
+|   |   |   +-- drift_detector.py       # Multi-layer drift detection (first-seen, z-score, temporal, velocity)
+|   |   |   +-- geo_analyzer.py        # Geo-location anomaly and impossible travel detection
+|   |   |   +-- peer_group_analyzer.py # Role-based peer group behavioral deviation
+|   |   |   +-- sp_permission_analyzer.py  # SP permission usage analysis (granted vs observed)
+|   |   |   +-- consent_analyzer.py    # OAuth consent grant and tenant policy analysis
+|   |   |   +-- managed_identity_analyzer.py  # Managed identity privilege analysis
+|   |   |   +-- federation_analyzer.py # Workload identity federation credential validation
+|   |   |   +-- compliance_mapper.py   # CIS/NIST/SOC2 compliance framework scoring engine
 |   |   |   +-- narrative_engine.py     # AI narrative generation (Foundry)
 |   |   |   +-- foundry.py             # FoundryClient wrapper
 |   |   |   +-- report_generator.py    # PDF/PPTX report generation
@@ -522,6 +560,10 @@ Entra-Permissions-Analyzer/
 |   +-- permission_mappings.json    # 72 Graph scopes, 86 audit operation mappings
 |   +-- builtin_roles_entra.json   # 72 Entra ID built-in role definitions
 |   +-- builtin_roles_azure.json   # 57 Azure RBAC built-in role definitions
+|   +-- compliance_frameworks/     # Compliance framework control mappings
+|       +-- cis_m365.json          # CIS Microsoft 365 v3.1.0 (23 controls)
+|       +-- nist_800_53.json       # NIST SP 800-53 Rev 5 (22 controls)
+|       +-- soc2.json              # SOC 2 Trust Services Criteria (14 controls)
 +-- docker-compose.yml
 +-- CLAUDE.md
 ```
@@ -671,7 +713,7 @@ All project-scoped endpoints validate project membership and extract the target 
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/best-practices` | Filterable violation list (30+ types) |
+| GET | `/best-practices` | Filterable violation list (50+ types) |
 | GET | `/best-practices/summary` | Aggregated compliance score |
 | GET | `/best-practices/{vid}` | Violation detail with remediation steps |
 | POST | `/best-practices/evaluate` | Trigger full evaluation (202 Accepted) |
@@ -747,7 +789,7 @@ All project-scoped endpoints validate project membership and extract the target 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/reports/executive?format=pdf\|pptx` | Download executive report |
-| GET | `/reports/compliance?framework=soc2\|iso27001\|nist80053` | Compliance evidence report |
+| GET | `/reports/compliance?framework=cis_m365\|nist_800_53\|soc2` | Compliance evidence report |
 
 #### Narratives
 
@@ -820,7 +862,7 @@ Containers use `/tenantId` or `/projectId` as partition keys for data isolation.
 | `ActionEvent` | action_name, resource_name, action_result, source (audit/sign-in/activity), timestamp |
 | `RoleRecommendation` | current_roles, required_permissions, gaps[], best_builtin_match, alternatives[], custom_role, reduction_score |
 | `DriftAlert` | drift_type (first_seen/frequency_anomaly/identity_protection), severity, status, z_score, entra_risk_level |
-| `BestPracticeViolation` | violation_type (30+ types), priority, description, remediation_steps, affected_identity |
+| `BestPracticeViolation` | violation_type (50+ types), priority, description, remediation_steps, affected_identity |
 | `AppRegistrationProfile` | app_id, display_name, password_credentials[], key_credentials[], owner_count, high_risk_permissions[] |
 | `ConditionalAccessPolicyRecord` | display_name, state, conditions, grant_controls |
 | `GroupProfile` | display_name, is_role_assignable, is_dynamic, membership_rule, member_count, roles_assigned[] |

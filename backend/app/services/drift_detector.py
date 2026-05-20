@@ -157,16 +157,146 @@ class DriftDetector:
 
         return alerts
 
+    async def detect_temporal_anomaly(
+        self,
+        tenant_id: str,
+        identity: IdentityProfile,
+        baselines: list[BaselineStats],
+    ) -> list[DriftAlert]:
+        """A1: Flag actions occurring outside the identity's normal working hours."""
+        now = datetime.now(UTC)
+        alerts: list[DriftAlert] = []
+
+        baseline_histograms: dict[str, list[int]] = {}
+        for b in baselines:
+            if b.hour_histogram and len(b.hour_histogram) == 24:
+                baseline_histograms[b.action] = b.hour_histogram
+
+        if not baseline_histograms:
+            return alerts
+
+        total_hist = [0] * 24
+        for hist in baseline_histograms.values():
+            for i in range(24):
+                total_hist[i] += hist[i]
+
+        total_events = sum(total_hist) or 1
+        hour_fractions = [h / total_events for h in total_hist]
+        mean_frac = sum(hour_fractions) / 24
+        variance = sum((f - mean_frac) ** 2 for f in hour_fractions) / 24
+        stddev_frac = variance**0.5
+
+        if stddev_frac == 0:
+            return alerts
+
+        for observed in identity.observed_actions:
+            hour = observed.last_seen.hour
+            frac = hour_fractions[hour]
+            if frac < mean_frac - 2 * stddev_frac and total_hist[hour] < 3:
+                permission = action_to_permission(observed.action)
+                weight = get_risk_weight_numeric(permission) if permission else 1
+                severity = _severity_from_risk_weight(weight)
+
+                alert = DriftAlert(
+                    id=str(uuid.uuid4()),
+                    tenant_id=tenant_id,
+                    identity_id=identity.id,
+                    identity_display_name=identity.display_name,
+                    drift_type=DriftType.TEMPORAL_ANOMALY,
+                    action=observed.action,
+                    resource=observed.resource,
+                    severity=severity,
+                    status=DriftStatus.OPEN,
+                    hour_of_day=hour,
+                    details=(
+                        f"Action '{observed.action}' at hour {hour:02d}:00 UTC "
+                        f"is outside normal activity pattern for this identity."
+                    ),
+                    detected_at=now,
+                )
+                alerts.append(alert)
+
+        return alerts
+
+    async def detect_velocity_anomaly(
+        self,
+        tenant_id: str,
+        identity: IdentityProfile,
+        baselines: list[BaselineStats],
+    ) -> list[DriftAlert]:
+        """A3: Flag identities with action bursts exceeding baseline rate."""
+        now = datetime.now(UTC)
+        alerts: list[DriftAlert] = []
+
+        if not baselines:
+            return alerts
+
+        total_baseline_mean = sum(b.mean for b in baselines)
+        total_baseline_stddev = sum(b.stddev for b in baselines)
+
+        if total_baseline_mean == 0:
+            return alerts
+
+        recent_actions = [
+            oa for oa in identity.observed_actions
+            if (now - oa.last_seen).total_seconds() < 3600
+        ]
+        recent_count = sum(oa.count for oa in recent_actions)
+
+        hourly_baseline = total_baseline_mean / 24
+        if hourly_baseline == 0:
+            hourly_baseline = 1.0
+
+        velocity_ratio = recent_count / hourly_baseline
+
+        if velocity_ratio < 3.0:
+            return alerts
+
+        if velocity_ratio > 10:
+            severity = DriftSeverity.CRITICAL
+        elif velocity_ratio > 5:
+            severity = DriftSeverity.HIGH
+        else:
+            severity = DriftSeverity.MEDIUM
+
+        high_risk_actions = [
+            oa.action for oa in recent_actions
+            if action_to_permission(oa.action) and get_risk_weight_numeric(action_to_permission(oa.action)) >= 7
+        ]
+        if high_risk_actions:
+            severity = DriftSeverity.CRITICAL
+
+        alert = DriftAlert(
+            id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            identity_id=identity.id,
+            identity_display_name=identity.display_name,
+            drift_type=DriftType.VELOCITY_ANOMALY,
+            action=f"{recent_count} actions in last hour",
+            severity=severity,
+            status=DriftStatus.OPEN,
+            velocity_window_minutes=60,
+            velocity_count=recent_count,
+            baseline_mean=round(hourly_baseline, 4),
+            details=(
+                f"Identity '{identity.display_name}' performed {recent_count} "
+                f"actions in the last hour ({velocity_ratio:.1f}x baseline rate "
+                f"of {hourly_baseline:.1f}/hour)."
+            ),
+            detected_at=now,
+        )
+        alerts.append(alert)
+
+        return alerts
+
     async def detect_all(
         self,
         tenant_id: str,
         identity: IdentityProfile,
     ) -> list[DriftAlert]:
-        """Run both detection layers and return combined alerts."""
-        # Load baselines for this identity
+        """Run all detection layers and return combined alerts."""
         baselines = await self._repo.list_baselines(identity.id)
 
-        # Build baseline action set for first-seen detection
         baseline_actions: set[str] = {b.action for b in baselines}
 
         first_seen = await self.detect_first_seen(
@@ -179,5 +309,15 @@ class DriftDetector:
             identity,
             baselines,
         )
+        temporal = await self.detect_temporal_anomaly(
+            tenant_id,
+            identity,
+            baselines,
+        )
+        velocity = await self.detect_velocity_anomaly(
+            tenant_id,
+            identity,
+            baselines,
+        )
 
-        return first_seen + frequency
+        return first_seen + frequency + temporal + velocity

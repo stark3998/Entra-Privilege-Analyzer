@@ -650,6 +650,29 @@ class GraphIngestService:
     # Cross-tenant access
     # ------------------------------------------------------------------
 
+    async def fetch_federated_identity_credentials(
+        self,
+        tenant_id: str,
+        app_object_id: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch federated identity credentials for an app registration."""
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/applications/{app_object_id}/federatedIdentityCredentials"
+        try:
+            return await self._graph_get_all_pages(token, url, phase_name="identity_profiles")
+        except Exception:
+            logger.debug("Failed to fetch federated credentials for app %s", app_object_id)
+            return []
+
+    async def fetch_authorization_policy(
+        self,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """Fetch the tenant authorization policy (consent settings)."""
+        token = await self._get_token(tenant_id)
+        url = f"{self._graph_base}/policies/authorizationPolicy"
+        return await self._graph_get(token, url)
+
     async def fetch_cross_tenant_access_partners(
         self,
         tenant_id: str,

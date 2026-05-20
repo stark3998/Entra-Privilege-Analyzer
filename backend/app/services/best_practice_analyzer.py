@@ -62,6 +62,9 @@ class BestPracticeAnalyzer:
         violations.extend(await self._check_overprivileged(tenant_id, identity))
         violations.extend(self._check_separation_of_duties(tenant_id, identity, sod_rules))
         violations.extend(self._check_role_assignable_group(tenant_id, identity))
+        violations.extend(self._check_orphaned_account(tenant_id, identity))
+        violations.extend(self._check_incomplete_offboarding(tenant_id, identity))
+        violations.extend(self._check_never_used_account(tenant_id, identity))
 
         return violations
 
@@ -474,6 +477,245 @@ class BestPracticeAnalyzer:
                 affected_roles=[r.role_name for r in admin_roles],
             ),
         ]
+
+    # ------------------------------------------------------------------
+    # Identity lifecycle checks (Phase D)
+    # ------------------------------------------------------------------
+
+    def _check_orphaned_account(
+        self,
+        tenant_id: str,
+        identity: IdentityProfile,
+    ) -> list[BestPracticeViolation]:
+        """D1: Disabled account that still holds active role assignments."""
+        if identity.account_enabled is None or identity.account_enabled:
+            return []
+        if not identity.current_roles:
+            return []
+
+        admin_roles = [
+            r for r in identity.current_roles
+            if "administrator" in r.role_name.lower() or "global" in r.role_name.lower()
+        ]
+        priority = ViolationPriority.CRITICAL if admin_roles else ViolationPriority.HIGH
+        role_names = [r.role_name for r in identity.current_roles]
+
+        return [
+            self._build_violation(
+                tenant_id=tenant_id,
+                identity=identity,
+                violation_type=ViolationType.ORPHANED_ACCOUNT,
+                priority=priority,
+                title=f"Disabled account still holds {len(role_names)} role(s)",
+                description=(
+                    f"Identity '{identity.display_name}' is disabled but retains "
+                    f"active role assignments: {', '.join(role_names[:5])}. "
+                    "If re-enabled, it would immediately regain these privileges."
+                ),
+                remediation_steps=[
+                    "Remove all role assignments from this disabled account.",
+                    "Remove group memberships that confer roles.",
+                    "If the account is no longer needed, delete it.",
+                ],
+                affected_roles=role_names,
+                id_suffix="orphaned",
+            ),
+        ]
+
+    def _check_incomplete_offboarding(
+        self,
+        tenant_id: str,
+        identity: IdentityProfile,
+    ) -> list[BestPracticeViolation]:
+        """D2: Recently disabled account still has roles or group memberships."""
+        if identity.account_enabled is None or identity.account_enabled:
+            return []
+        if not identity.current_roles and not identity.group_memberships:
+            return []
+        if identity.last_seen is None:
+            return []
+
+        now = datetime.now(UTC)
+        last_seen = identity.last_seen
+        if last_seen.tzinfo is None:
+            last_seen = last_seen.replace(tzinfo=UTC)
+        days_since_last_seen = (now - last_seen).days
+
+        if days_since_last_seen > 30:
+            return []
+
+        remaining = []
+        if identity.current_roles:
+            remaining.append(f"{len(identity.current_roles)} role(s)")
+        if identity.group_memberships:
+            remaining.append(f"{len(identity.group_memberships)} group(s)")
+
+        return [
+            self._build_violation(
+                tenant_id=tenant_id,
+                identity=identity,
+                violation_type=ViolationType.INCOMPLETE_OFFBOARDING,
+                priority=ViolationPriority.HIGH,
+                title=f"Incomplete offboarding — {', '.join(remaining)} remaining",
+                description=(
+                    f"Identity '{identity.display_name}' was recently disabled "
+                    f"(last active {days_since_last_seen}d ago) but still has "
+                    f"{', '.join(remaining)}. Complete the offboarding process."
+                ),
+                remediation_steps=[
+                    "Remove all role assignments.",
+                    "Remove all group memberships.",
+                    "Revoke any active sessions and refresh tokens.",
+                    "Review and revoke OAuth consent grants.",
+                ],
+                affected_roles=[r.role_name for r in identity.current_roles],
+                id_suffix="offboarding",
+            ),
+        ]
+
+    def _check_never_used_account(
+        self,
+        tenant_id: str,
+        identity: IdentityProfile,
+    ) -> list[BestPracticeViolation]:
+        """D3: Account provisioned >30d ago but never signed in."""
+        if identity.identity_type not in (IdentityType.USER,):
+            return []
+        if identity.account_enabled is not None and not identity.account_enabled:
+            return []
+
+        has_sign_in = (
+            identity.last_sign_in_at is not None
+            or identity.last_non_interactive_sign_in_at is not None
+        )
+        if has_sign_in:
+            return []
+        if identity.last_seen is not None:
+            return []
+        if identity.created_at is None:
+            return []
+
+        now = datetime.now(UTC)
+        created = identity.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=UTC)
+        days_since_created = (now - created).days
+
+        if days_since_created <= 30:
+            return []
+
+        has_admin = any(
+            "administrator" in r.role_name.lower() or "global" in r.role_name.lower()
+            for r in identity.current_roles
+        )
+        priority = ViolationPriority.CRITICAL if has_admin else ViolationPriority.MEDIUM
+
+        return [
+            self._build_violation(
+                tenant_id=tenant_id,
+                identity=identity,
+                violation_type=ViolationType.NEVER_USED_ACCOUNT,
+                priority=priority,
+                title=f"Account created {days_since_created}d ago, never signed in",
+                description=(
+                    f"Identity '{identity.display_name}' was created "
+                    f"{days_since_created} days ago but has never signed in. "
+                    "Unused accounts waste licenses and increase attack surface."
+                ),
+                remediation_steps=[
+                    "Verify the account is still needed.",
+                    "Disable or delete if no longer required.",
+                    "If needed, contact the user to complete onboarding.",
+                ],
+                affected_roles=[r.role_name for r in identity.current_roles],
+                id_suffix="never_used",
+            ),
+        ]
+
+    # ------------------------------------------------------------------
+    # SP credential hygiene checks (Phase B2)
+    # ------------------------------------------------------------------
+
+    def evaluate_sp_credentials(
+        self,
+        tenant_id: str,
+        identity: IdentityProfile,
+        sp_data: dict,
+    ) -> list[BestPracticeViolation]:
+        """B2: Analyze SP credentials for hygiene issues."""
+        if identity.identity_type != IdentityType.SERVICE_PRINCIPAL:
+            return []
+
+        violations: list[BestPracticeViolation] = []
+        now = datetime.now(UTC)
+
+        password_creds = sp_data.get("passwordCredentials", [])
+        key_creds = sp_data.get("keyCredentials", [])
+        all_creds = password_creds + key_creds
+
+        active_creds = []
+        for cred in all_creds:
+            end_str = cred.get("endDateTime")
+            if end_str:
+                end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+                if end_dt < now:
+                    continue
+            active_creds.append(cred)
+
+        if len(active_creds) > 2:
+            violations.append(
+                self._build_violation(
+                    tenant_id=tenant_id,
+                    identity=identity,
+                    violation_type=ViolationType.SP_MULTIPLE_ACTIVE_CREDENTIALS,
+                    priority=ViolationPriority.MEDIUM,
+                    title=f"SP has {len(active_creds)} active credentials",
+                    description=(
+                        f"Service principal '{identity.display_name}' has "
+                        f"{len(active_creds)} active credentials. Multiple "
+                        "credentials increase attack surface and complicate rotation."
+                    ),
+                    remediation_steps=[
+                        "Remove redundant credentials, keeping only the one in active use.",
+                        "Prefer certificate credentials over passwords.",
+                        "Consider migrating to managed identity where possible.",
+                    ],
+                    affected_roles=[r.role_name for r in identity.current_roles],
+                    id_suffix="sp_multi_cred",
+                ),
+            )
+
+        for cred in password_creds:
+            start_str = cred.get("startDateTime")
+            if not start_str:
+                continue
+            start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+            age_days = (now - start_dt).days
+            if age_days > 365:
+                violations.append(
+                    self._build_violation(
+                        tenant_id=tenant_id,
+                        identity=identity,
+                        violation_type=ViolationType.SP_UNUSED_CREDENTIAL,
+                        priority=ViolationPriority.HIGH,
+                        title=f"SP password credential is {age_days} days old",
+                        description=(
+                            f"Service principal '{identity.display_name}' has a "
+                            f"password credential that is {age_days} days old. "
+                            "Secrets should be rotated at least annually."
+                        ),
+                        remediation_steps=[
+                            "Rotate the password credential.",
+                            "Prefer certificate-based authentication.",
+                            "Consider migrating to managed identity.",
+                        ],
+                        affected_roles=[r.role_name for r in identity.current_roles],
+                        id_suffix=f"sp_stale_cred_{cred.get('keyId', '')[:8]}",
+                    ),
+                )
+                break
+
+        return violations
 
     # ------------------------------------------------------------------
     # App registration checks (Phase 1.2)

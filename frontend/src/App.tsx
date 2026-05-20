@@ -31,6 +31,7 @@ import { RemediationHistoryPage } from "@/pages/RemediationHistoryPage";
 import { PimSessionsPage } from "@/pages/PimSessionsPage";
 import { PimSessionDetailPage } from "@/pages/PimSessionDetailPage";
 import { AccessPathsPage } from "@/pages/AccessPathsPage";
+import { DocsPage } from "@/pages/DocsPage";
 import { useAuth } from "@/auth/useAuth";
 import { ProjectProvider } from "@/store/projectContext";
 import { getApiClient } from "@/api/client";
@@ -103,21 +104,37 @@ function LocalModeBanner() {
 export function App() {
   if (isLocalMode) {
     return (
-      <>
-        <LocalModeBanner />
-        <AuthenticatedApp />
-      </>
+      <Routes>
+        <Route path="/docs" element={<DocsPage />} />
+        <Route
+          path="*"
+          element={
+            <>
+              <LocalModeBanner />
+              <AuthenticatedApp />
+            </>
+          }
+        />
+      </Routes>
     );
   }
 
   return (
-    <>
-      <UnauthenticatedTemplate>
-        <LoginGate />
-      </UnauthenticatedTemplate>
-      <AuthenticatedTemplate>
-        <AuthenticatedApp />
-      </AuthenticatedTemplate>
-    </>
+    <Routes>
+      <Route path="/docs" element={<DocsPage />} />
+      <Route
+        path="*"
+        element={
+          <>
+            <UnauthenticatedTemplate>
+              <LoginGate />
+            </UnauthenticatedTemplate>
+            <AuthenticatedTemplate>
+              <AuthenticatedApp />
+            </AuthenticatedTemplate>
+          </>
+        }
+      />
+    </Routes>
   );
 }

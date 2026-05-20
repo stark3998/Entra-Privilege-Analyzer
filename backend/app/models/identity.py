@@ -120,3 +120,9 @@ class IdentityProfile(BaseModel):
     # Access review coverage
     covered_by_access_review: bool = False
     access_review_ids: list[str] = []
+
+    # Account status
+    account_enabled: bool | None = None
+
+    # Location profile (for geo-anomaly detection)
+    known_locations: list[dict[str, str]] = []
