@@ -71,7 +71,7 @@ class BaselinePipeline:
                     day_str = event.timestamp.strftime("%Y-%m-%d")
                     action_dates[key].append(day_str)
 
-                # Compute daily counts, then mean/stddev
+                # Compute daily counts, hour histogram, then mean/stddev
                 identity_baselines: list[BaselineStats] = []
                 for (action, resource), dates in action_dates.items():
                     daily_counts: dict[str, int] = defaultdict(int)
@@ -87,6 +87,31 @@ class BaselinePipeline:
                     mean = sum(counts) / sample_count
                     variance = sum((c - mean) ** 2 for c in counts) / max(sample_count, 1)
                     stddev = variance**0.5
+
+                    # Build hour-of-day histogram from event timestamps
+                    hour_histogram = [0] * 24
+                    action_events = [
+                        e for e in events
+                        if e.action == action and e.resource == resource
+                    ]
+                    for evt in action_events:
+                        hour_histogram[evt.timestamp.hour] += 1
+
+                    # Compute hourly rate baseline
+                    total_events = sum(hour_histogram)
+                    window_hours = max((_WINDOW_DAYS * 24), 1)
+                    actions_per_hour_mean = total_events / window_hours
+                    hourly_counts_by_day: dict[str, int] = defaultdict(int)
+                    for evt in action_events:
+                        key = evt.timestamp.strftime("%Y-%m-%d-%H")
+                        hourly_counts_by_day[key] += 1
+                    if hourly_counts_by_day:
+                        hourly_vals = list(hourly_counts_by_day.values())
+                        h_mean = sum(hourly_vals) / len(hourly_vals)
+                        h_var = sum((v - h_mean) ** 2 for v in hourly_vals) / len(hourly_vals)
+                        actions_per_hour_stddev = h_var**0.5
+                    else:
+                        actions_per_hour_stddev = 0.0
 
                     # Deterministic id for the baseline document
                     hash_input = f"{identity_id}|{action}|{resource or ''}"
@@ -104,6 +129,9 @@ class BaselinePipeline:
                         window_start=window_start,
                         window_end=now,
                         updated_at=now,
+                        hour_histogram=hour_histogram,
+                        actions_per_hour_mean=round(actions_per_hour_mean, 4),
+                        actions_per_hour_stddev=round(actions_per_hour_stddev, 4),
                     )
 
                     identity_baselines.append(baseline)

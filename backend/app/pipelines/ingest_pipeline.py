@@ -522,11 +522,14 @@ class IngestPipeline:
             last_sign_in_at: datetime | None = None
             last_non_interactive_sign_in_at: datetime | None = None
 
+            account_enabled: bool | None = None
+
             if identity_type == IdentityType.USER and object_id in user_lookup:
                 user_data = user_lookup[object_id]
                 upn = user_data.get("userPrincipalName")
                 user_type = user_data.get("userType")
                 external_user_state = user_data.get("externalUserState")
+                account_enabled = user_data.get("accountEnabled")
                 sign_in_activity = user_data.get("signInActivity")
                 if sign_in_activity:
                     ts = sign_in_activity.get("lastSignInDateTime")
@@ -540,6 +543,7 @@ class IngestPipeline:
             elif identity_type == IdentityType.SERVICE_PRINCIPAL and object_id in sp_lookup:
                 sp_data = sp_lookup[object_id]
                 app_id = sp_data.get("appId")
+                account_enabled = sp_data.get("accountEnabled")
 
             if existing:
                 upn = upn or existing.upn
@@ -550,6 +554,8 @@ class IngestPipeline:
                 last_non_interactive_sign_in_at = (
                     last_non_interactive_sign_in_at or existing.last_non_interactive_sign_in_at
                 )
+                if account_enabled is None:
+                    account_enabled = existing.account_enabled
 
             profile = IdentityProfile(
                 id=identity_id,
@@ -572,6 +578,7 @@ class IngestPipeline:
                 external_user_state=external_user_state,
                 last_sign_in_at=last_sign_in_at,
                 last_non_interactive_sign_in_at=last_non_interactive_sign_in_at,
+                account_enabled=account_enabled,
             )
             identity_batch.append(profile)
             identities_processed += 1

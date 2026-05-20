@@ -1,0 +1,110 @@
+{
+  "framework": "SOC 2 Type II — Trust Services Criteria (2017)",
+  "version": "2017",
+  "controls": {
+    "CC6.1": {
+      "title": "Logical and Physical Access Controls — Access Security Software, Infrastructure, and Architectures",
+      "category": "Common Criteria",
+      "violation_types": [
+        "ca_no_mfa_for_all", "ca_no_mfa_for_admins", "mfa_gap",
+        "ca_legacy_auth_not_blocked", "ca_no_device_compliance",
+        "ca_no_azure_mgmt_mfa"
+      ]
+    },
+    "CC6.2": {
+      "title": "Logical and Physical Access Controls — Registration and Authorization",
+      "category": "Common Criteria",
+      "violation_types": [
+        "user_consent_unrestricted", "no_admin_consent_workflow",
+        "risky_consent_grant", "user_consent_high_privilege"
+      ]
+    },
+    "CC6.3": {
+      "title": "Logical and Physical Access Controls — Role-Based Access and Least Privilege",
+      "category": "Common Criteria",
+      "violation_types": [
+        "overprivileged", "permanent_admin", "no_pim",
+        "sp_overprivileged", "sp_unused_permissions",
+        "mi_overprivileged", "mi_broad_scope",
+        "guest_admin", "separation_of_duties",
+        "role_assignable_group"
+      ]
+    },
+    "CC6.4": {
+      "title": "Logical and Physical Access Controls — Restriction and Control of Physical Access",
+      "category": "Common Criteria",
+      "violation_types": []
+    },
+    "CC6.5": {
+      "title": "Logical and Physical Access Controls — Disposal of Assets",
+      "category": "Common Criteria",
+      "violation_types": [
+        "orphaned_account", "incomplete_offboarding",
+        "stale_identity", "never_used_account"
+      ]
+    },
+    "CC6.6": {
+      "title": "Logical and Physical Access Controls — External Threats",
+      "category": "Common Criteria",
+      "violation_types": [
+        "ca_no_risk_policy", "ca_legacy_auth_not_blocked",
+        "unverified_publisher_consent"
+      ]
+    },
+    "CC6.7": {
+      "title": "Logical and Physical Access Controls — Transmission of Data",
+      "category": "Common Criteria",
+      "violation_types": ["federation_broad_subject", "federation_no_audience"]
+    },
+    "CC6.8": {
+      "title": "Logical and Physical Access Controls — Prevention of Unauthorized Software",
+      "category": "Common Criteria",
+      "violation_types": [
+        "risky_consent_grant", "unverified_publisher_consent",
+        "user_consent_unrestricted", "app_multi_tenant"
+      ]
+    },
+    "CC7.1": {
+      "title": "System Operations — Detection of Changes",
+      "category": "Common Criteria",
+      "violation_types": ["ca_report_only_critical"]
+    },
+    "CC7.2": {
+      "title": "System Operations — Monitoring for Anomalous Activity",
+      "category": "Common Criteria",
+      "violation_types": ["ca_no_risk_policy"]
+    },
+    "CC8.1": {
+      "title": "Change Management — Authorization and Approval",
+      "category": "Common Criteria",
+      "violation_types": [
+        "no_pim", "permanent_admin",
+        "ca_admin_excluded", "ca_excessive_exclusions"
+      ]
+    },
+    "A1.2": {
+      "title": "Availability — Environmental Protections and Recovery Procedures",
+      "category": "Availability",
+      "violation_types": [
+        "sp_credential_expiry", "app_stale_credential",
+        "sp_unused_credential", "sp_multiple_active_credentials"
+      ]
+    },
+    "C1.1": {
+      "title": "Confidentiality — Identification and Maintenance of Confidential Information",
+      "category": "Confidentiality",
+      "violation_types": [
+        "app_excessive_permissions", "risky_consent_grant",
+        "user_consent_high_privilege"
+      ]
+    },
+    "C1.2": {
+      "title": "Confidentiality — Disposal of Confidential Information",
+      "category": "Confidentiality",
+      "violation_types": [
+        "orphaned_account", "incomplete_offboarding",
+        "sp_unused_credential"
+      ]
+    }
+  }
+}

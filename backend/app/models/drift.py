@@ -35,6 +35,11 @@ class DriftType(StrEnum):
     IDENTITY_PROTECTION = "identity_protection"
     GUEST_PRIVILEGE_ESCALATION = "guest_privilege_escalation"
     GROUP_ROLE_CHANGE = "group_role_change"
+    TEMPORAL_ANOMALY = "temporal_anomaly"
+    VELOCITY_ANOMALY = "velocity_anomaly"
+    GEO_ANOMALY = "geo_anomaly"
+    IMPOSSIBLE_TRAVEL = "impossible_travel"
+    PEER_GROUP_ANOMALY = "peer_group_anomaly"
 
 
 class DriftAlert(BaseModel):
@@ -63,6 +68,12 @@ class DriftAlert(BaseModel):
     risk_event_type: str | None = None
     risk_detection_id: str | None = None
     entra_risk_level: str | None = None
+    hour_of_day: int | None = None
+    location_country: str | None = None
+    location_city: str | None = None
+    velocity_window_minutes: int | None = None
+    velocity_count: int | None = None
+    peer_group_role: str | None = None
 
 
 class BaselineStats(BaseModel):
@@ -81,6 +92,9 @@ class BaselineStats(BaseModel):
     window_start: datetime
     window_end: datetime
     updated_at: datetime
+    hour_histogram: list[int] = []
+    actions_per_hour_mean: float = 0.0
+    actions_per_hour_stddev: float = 0.0
 
 
 class DriftAlertUpdate(BaseModel):

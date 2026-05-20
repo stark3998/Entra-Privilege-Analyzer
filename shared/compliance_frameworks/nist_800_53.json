@@ -1,0 +1,149 @@
+{
+  "framework": "NIST SP 800-53 Rev. 5",
+  "version": "5.1",
+  "controls": {
+    "AC-2": {
+      "title": "Account Management",
+      "family": "Access Control",
+      "violation_types": [
+        "stale_identity", "orphaned_account", "incomplete_offboarding",
+        "never_used_account", "guest_stale", "guest_pending_invitation"
+      ]
+    },
+    "AC-2(4)": {
+      "title": "Account Management — Automated Audit Actions",
+      "family": "Access Control",
+      "violation_types": ["stale_identity", "never_used_account"]
+    },
+    "AC-3": {
+      "title": "Access Enforcement",
+      "family": "Access Control",
+      "violation_types": [
+        "overprivileged", "sp_overprivileged", "mi_overprivileged",
+        "app_excessive_permissions"
+      ]
+    },
+    "AC-5": {
+      "title": "Separation of Duties",
+      "family": "Access Control",
+      "violation_types": ["separation_of_duties"]
+    },
+    "AC-6": {
+      "title": "Least Privilege",
+      "family": "Access Control",
+      "violation_types": [
+        "overprivileged", "permanent_admin", "sp_overprivileged",
+        "sp_unused_permissions", "mi_overprivileged", "mi_broad_scope",
+        "guest_admin"
+      ]
+    },
+    "AC-6(1)": {
+      "title": "Least Privilege — Authorize Access to Security Functions",
+      "family": "Access Control",
+      "violation_types": ["permanent_admin", "no_pim"]
+    },
+    "AC-6(5)": {
+      "title": "Least Privilege — Privileged Accounts",
+      "family": "Access Control",
+      "violation_types": ["permanent_admin", "no_pim", "guest_admin"]
+    },
+    "AC-6(7)": {
+      "title": "Least Privilege — Review of User Privileges",
+      "family": "Access Control",
+      "violation_types": [
+        "overprivileged", "sp_unused_permissions", "role_assignable_group"
+      ]
+    },
+    "AC-6(10)": {
+      "title": "Least Privilege — Prohibit Non-Privileged Users from Executing Privileged Functions",
+      "family": "Access Control",
+      "violation_types": ["guest_admin", "mi_overprivileged"]
+    },
+    "AC-17": {
+      "title": "Remote Access",
+      "family": "Access Control",
+      "violation_types": [
+        "ca_legacy_auth_not_blocked", "ca_no_mfa_for_all",
+        "ca_no_device_compliance"
+      ]
+    },
+    "IA-2": {
+      "title": "Identification and Authentication (Organizational Users)",
+      "family": "Identification and Authentication",
+      "violation_types": ["mfa_gap", "ca_no_mfa_for_all"]
+    },
+    "IA-2(1)": {
+      "title": "Multi-Factor Authentication — Network Access to Privileged Accounts",
+      "family": "Identification and Authentication",
+      "violation_types": [
+        "ca_no_mfa_for_admins", "ca_no_azure_mgmt_mfa", "mfa_gap"
+      ]
+    },
+    "IA-2(2)": {
+      "title": "Multi-Factor Authentication — Network Access to Non-Privileged Accounts",
+      "family": "Identification and Authentication",
+      "violation_types": ["ca_no_mfa_for_all", "ca_no_guest_mfa", "guest_no_mfa"]
+    },
+    "IA-4": {
+      "title": "Identifier Management",
+      "family": "Identification and Authentication",
+      "violation_types": [
+        "stale_identity", "orphaned_account", "never_used_account"
+      ]
+    },
+    "IA-5": {
+      "title": "Authenticator Management",
+      "family": "Identification and Authentication",
+      "violation_types": [
+        "sp_credential_expiry", "app_stale_credential",
+        "sp_unused_credential", "sp_multiple_active_credentials",
+        "federation_broad_subject", "federation_no_audience"
+      ]
+    },
+    "CM-7": {
+      "title": "Least Functionality",
+      "family": "Configuration Management",
+      "violation_types": [
+        "ca_legacy_auth_not_blocked", "user_consent_unrestricted",
+        "app_multi_tenant"
+      ]
+    },
+    "CM-7(1)": {
+      "title": "Least Functionality — Periodic Review",
+      "family": "Configuration Management",
+      "violation_types": [
+        "sp_unused_permissions", "app_stale_credential", "sp_unused_credential"
+      ]
+    },
+    "RA-5": {
+      "title": "Vulnerability Monitoring and Scanning",
+      "family": "Risk Assessment",
+      "violation_types": ["ca_no_risk_policy"]
+    },
+    "SA-9": {
+      "title": "External System Services",
+      "family": "System and Services Acquisition",
+      "violation_types": [
+        "risky_consent_grant", "unverified_publisher_consent",
+        "user_consent_high_privilege", "app_multi_tenant"
+      ]
+    },
+    "SI-4": {
+      "title": "System Monitoring",
+      "family": "System and Information Integrity",
+      "violation_types": [
+        "ca_no_risk_policy", "ca_report_only_critical"
+      ]
+    },
+    "PS-4": {
+      "title": "Personnel Termination",
+      "family": "Personnel Security",
+      "violation_types": ["orphaned_account", "incomplete_offboarding"]
+    },
+    "PS-5": {
+      "title": "Personnel Transfer",
+      "family": "Personnel Security",
+      "violation_types": ["overprivileged", "incomplete_offboarding"]
+    }
+  }
+}

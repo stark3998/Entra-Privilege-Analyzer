@@ -1,0 +1,121 @@
+{
+  "framework": "CIS Microsoft 365 Foundations Benchmark v3.1.0",
+  "version": "3.1.0",
+  "controls": {
+    "1.1.1": {
+      "title": "Ensure MFA is required for all users",
+      "section": "1.1 Identity",
+      "violation_types": ["ca_no_mfa_for_all", "mfa_gap"]
+    },
+    "1.1.2": {
+      "title": "Ensure MFA is required for admin roles",
+      "section": "1.1 Identity",
+      "violation_types": ["ca_no_mfa_for_admins"]
+    },
+    "1.1.3": {
+      "title": "Ensure phishing-resistant MFA for admins",
+      "section": "1.1 Identity",
+      "violation_types": ["mfa_gap"]
+    },
+    "1.1.4": {
+      "title": "Ensure legacy authentication is blocked",
+      "section": "1.1 Identity",
+      "violation_types": ["ca_legacy_auth_not_blocked"]
+    },
+    "1.1.5": {
+      "title": "Ensure sign-in risk policy is configured",
+      "section": "1.1 Identity",
+      "violation_types": ["ca_no_risk_policy"]
+    },
+    "1.2.1": {
+      "title": "Ensure PIM is used for admin role activation",
+      "section": "1.2 Privileged Access",
+      "violation_types": ["permanent_admin", "no_pim"]
+    },
+    "1.2.2": {
+      "title": "Ensure Global Administrator count is limited",
+      "section": "1.2 Privileged Access",
+      "violation_types": ["permanent_admin"]
+    },
+    "1.2.3": {
+      "title": "Ensure admin accounts are cloud-only",
+      "section": "1.2 Privileged Access",
+      "violation_types": ["permanent_admin"]
+    },
+    "1.3.1": {
+      "title": "Ensure guest users are reviewed regularly",
+      "section": "1.3 Guest Access",
+      "violation_types": ["guest_stale", "guest_pending_invitation", "guest_no_mfa"]
+    },
+    "1.3.2": {
+      "title": "Ensure guest users do not have admin roles",
+      "section": "1.3 Guest Access",
+      "violation_types": ["guest_admin"]
+    },
+    "1.3.3": {
+      "title": "Ensure MFA is required for guest users",
+      "section": "1.3 Guest Access",
+      "violation_types": ["ca_no_guest_mfa", "guest_no_mfa"]
+    },
+    "1.4.1": {
+      "title": "Ensure user consent to apps is restricted",
+      "section": "1.4 Applications",
+      "violation_types": ["user_consent_unrestricted", "user_consent_high_privilege"]
+    },
+    "1.4.2": {
+      "title": "Ensure app registrations have owners",
+      "section": "1.4 Applications",
+      "violation_types": ["app_no_owner"]
+    },
+    "1.4.3": {
+      "title": "Ensure credentials are rotated regularly",
+      "section": "1.4 Applications",
+      "violation_types": ["sp_credential_expiry", "app_stale_credential", "sp_unused_credential"]
+    },
+    "1.4.4": {
+      "title": "Ensure multi-tenant apps are reviewed",
+      "section": "1.4 Applications",
+      "violation_types": ["app_multi_tenant"]
+    },
+    "1.5.1": {
+      "title": "Ensure access reviews are configured for privileged roles",
+      "section": "1.5 Governance",
+      "violation_types": ["overprivileged"]
+    },
+    "1.5.2": {
+      "title": "Ensure stale accounts are disabled",
+      "section": "1.5 Governance",
+      "violation_types": ["stale_identity", "never_used_account"]
+    },
+    "1.5.3": {
+      "title": "Ensure separation of duties is enforced",
+      "section": "1.5 Governance",
+      "violation_types": ["separation_of_duties"]
+    },
+    "1.5.4": {
+      "title": "Ensure disabled accounts have roles removed",
+      "section": "1.5 Governance",
+      "violation_types": ["orphaned_account", "incomplete_offboarding"]
+    },
+    "2.1.1": {
+      "title": "Ensure device compliance is required",
+      "section": "2.1 Conditional Access",
+      "violation_types": ["ca_no_device_compliance"]
+    },
+    "2.1.2": {
+      "title": "Ensure Azure Management requires MFA",
+      "section": "2.1 Conditional Access",
+      "violation_types": ["ca_no_azure_mgmt_mfa"]
+    },
+    "5.1.1": {
+      "title": "Ensure custom roles follow least privilege",
+      "section": "5.1 Roles",
+      "violation_types": ["overprivileged", "sp_overprivileged", "mi_overprivileged"]
+    },
+    "5.1.2": {
+      "title": "Ensure role-assignable groups are secured",
+      "section": "5.1 Roles",
+      "violation_types": ["role_assignable_group"]
+    }
+  }
+}
