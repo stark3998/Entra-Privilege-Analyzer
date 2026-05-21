@@ -51,5 +51,8 @@ coverage/
 # Docker
 docker-compose.override.yml
 
+# Azure Functions local secrets (contains keys)
+functions/secrets/
+
 # Misc
 *.log
