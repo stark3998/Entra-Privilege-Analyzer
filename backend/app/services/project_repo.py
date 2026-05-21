@@ -167,7 +167,7 @@ class ProjectRepo:
         t0 = time.monotonic()
         ru: float = 0.0
 
-        def _hook(_: Any, headers: dict[str, str]) -> None:
+        def _hook(headers: dict[str, str], _: Any) -> None:
             nonlocal ru
             ru = float(headers.get("x-ms-request-charge", 0))
 
@@ -188,7 +188,7 @@ class ProjectRepo:
         t0 = time.monotonic()
         ru: float = 0.0
 
-        def _hook(_: Any, headers: dict[str, str]) -> None:
+        def _hook(headers: dict[str, str], _: Any) -> None:
             nonlocal ru
             ru = float(headers.get("x-ms-request-charge", 0))
 
@@ -210,7 +210,7 @@ class ProjectRepo:
         t0 = time.monotonic()
         ru: float = 0.0
 
-        def _hook(_: Any, headers: dict[str, str]) -> None:
+        def _hook(headers: dict[str, str], _: Any) -> None:
             nonlocal ru
             ru += float(headers.get("x-ms-request-charge", 0))
 
@@ -1185,19 +1185,19 @@ class ProjectRepo:
             ),
             self._tracked_query(
                 self._pim_sessions,
-                "SELECT c.role_name, COUNT(1) AS cnt FROM c "
+                "SELECT VALUE {role_name: c.role_name, cnt: COUNT(1)} FROM c "
                 "WHERE c.activation_time >= @cutoff GROUP BY c.role_name",
                 params, "pim_analytics.roles",
             ),
             self._tracked_query(
                 self._pim_sessions,
-                "SELECT c.principal_display_name, COUNT(1) AS cnt FROM c "
+                "SELECT VALUE {principal_display_name: c.principal_display_name, cnt: COUNT(1)} FROM c "
                 "WHERE c.activation_time >= @cutoff GROUP BY c.principal_display_name",
                 params, "pim_analytics.activators",
             ),
             self._query_trend(
                 self._pim_sessions,
-                "SELECT SUBSTRING(c.activation_time, 0, 10) AS date, COUNT(1) AS cnt "
+                "SELECT VALUE {date: SUBSTRING(c.activation_time, 0, 10), cnt: COUNT(1)} "
                 "FROM c WHERE c.activation_time >= @cutoff "
                 "GROUP BY SUBSTRING(c.activation_time, 0, 10)",
                 params,
@@ -1381,7 +1381,7 @@ class ProjectRepo:
             self.count_items("action_events"),
             self._query_to_dict(
                 self._identity_profiles,
-                "SELECT c.identity_type, COUNT(1) AS cnt FROM c GROUP BY c.identity_type",
+                "SELECT VALUE {identity_type: c.identity_type, cnt: COUNT(1)} FROM c GROUP BY c.identity_type",
                 [], "identity_type",
             ),
             self._query_scalar(
@@ -1399,7 +1399,7 @@ class ProjectRepo:
             ),
             self._query_to_dict(
                 self._drift_alerts,
-                "SELECT c.severity, COUNT(1) AS cnt FROM c "
+                "SELECT VALUE {severity: c.severity, cnt: COUNT(1)} FROM c "
                 "WHERE c.status = 'open' GROUP BY c.severity",
                 [], "severity",
             ),
@@ -1464,14 +1464,14 @@ class ProjectRepo:
         actions_trend, drift_alerts_trend = await asyncio.gather(
             self._query_trend(
                 self._action_events,
-                "SELECT SUBSTRING(c.timestamp, 0, 10) AS date, COUNT(1) AS cnt "
+                "SELECT VALUE {date: SUBSTRING(c.timestamp, 0, 10), cnt: COUNT(1)} "
                 "FROM c WHERE c.timestamp >= @cutoff "
                 "GROUP BY SUBSTRING(c.timestamp, 0, 10)",
                 cutoff_params,
             ),
             self._query_trend(
                 self._drift_alerts,
-                "SELECT SUBSTRING(c.detected_at, 0, 10) AS date, COUNT(1) AS cnt "
+                "SELECT VALUE {date: SUBSTRING(c.detected_at, 0, 10), cnt: COUNT(1)} "
                 "FROM c WHERE c.detected_at >= @cutoff "
                 "GROUP BY SUBSTRING(c.detected_at, 0, 10)",
                 cutoff_params,
@@ -1578,39 +1578,39 @@ class ProjectRepo:
             ),
             self._query_trend(
                 self._action_events,
-                "SELECT SUBSTRING(c.timestamp, 0, 10) AS date, COUNT(1) AS cnt "
+                "SELECT VALUE {date: SUBSTRING(c.timestamp, 0, 10), cnt: COUNT(1)} "
                 "FROM c WHERE c.timestamp >= @cutoff "
                 "GROUP BY SUBSTRING(c.timestamp, 0, 10)",
                 base_params,
             ),
             self._tracked_query(
                 self._action_events,
-                "SELECT c.action, COUNT(1) AS cnt "
+                "SELECT VALUE {action: c.action, cnt: COUNT(1)} "
                 "FROM c WHERE c.timestamp >= @cutoff GROUP BY c.action",
                 base_params, "analytics.top_actions",
             ),
             self._tracked_query(
                 self._action_events,
-                "SELECT c.identity_id, c.identity_display_name, COUNT(1) AS cnt "
+                "SELECT VALUE {identity_id: c.identity_id, identity_display_name: c.identity_display_name, cnt: COUNT(1)} "
                 "FROM c WHERE c.timestamp >= @cutoff "
                 "GROUP BY c.identity_id, c.identity_display_name",
                 base_params, "analytics.active_identities",
             ),
             self._query_to_dict(
                 self._action_events,
-                "SELECT c.source, COUNT(1) AS cnt "
+                "SELECT VALUE {source: c.source, cnt: COUNT(1)} "
                 "FROM c WHERE c.timestamp >= @cutoff GROUP BY c.source",
                 base_params, "source",
             ),
             self._query_to_dict(
                 self._action_events,
-                "SELECT c.result, COUNT(1) AS cnt "
+                "SELECT VALUE {result: c.result, cnt: COUNT(1)} "
                 "FROM c WHERE c.timestamp >= @cutoff GROUP BY c.result",
                 base_params, "result",
             ),
             self._tracked_query(
                 self._action_events,
-                "SELECT c.resource, c.resource_type, COUNT(1) AS cnt "
+                "SELECT VALUE {resource: c.resource, resource_type: c.resource_type, cnt: COUNT(1)} "
                 "FROM c WHERE c.timestamp >= @cutoff AND c.resource != null "
                 "GROUP BY c.resource, c.resource_type",
                 base_params, "analytics.top_resources",
@@ -1630,7 +1630,7 @@ class ProjectRepo:
             ),
             self._query_to_dict(
                 self._best_practice_violations,
-                "SELECT c.violation_type, COUNT(1) AS cnt FROM c "
+                "SELECT VALUE {violation_type: c.violation_type, cnt: COUNT(1)} FROM c "
                 "WHERE c.resolved = false GROUP BY c.violation_type",
                 [], "violation_type",
             ),

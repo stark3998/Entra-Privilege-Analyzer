@@ -124,7 +124,7 @@ class MasterRepo:
             t0 = time.monotonic()
             ru: float = 0.0
 
-            def _hook(_: Any, headers: dict[str, str]) -> None:
+            def _hook(headers: dict[str, str], _: Any) -> None:
                 nonlocal ru
                 ru = float(headers.get("x-ms-request-charge", 0))
 
@@ -154,7 +154,7 @@ class MasterRepo:
             t0 = time.monotonic()
             ru: float = 0.0
 
-            def _hook(_: Any, headers: dict[str, str]) -> None:
+            def _hook(headers: dict[str, str], _: Any) -> None:
                 nonlocal ru
                 ru += float(headers.get("x-ms-request-charge", 0))
 
