@@ -1,21 +1,16 @@
-<mxGraphModel dx="1800" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0" adaptiveColors="auto">
+<mxGraphModel dx="1900" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="1500" math="0" shadow="0" adaptiveColors="auto">
   <root>
     <mxCell id="0"/>
     <mxCell id="1" parent="0"/>
+
+    <!-- ======== Azure Subscription ======== -->
     <mxCell id="azure" value="Azure Subscription" style="swimlane;startSize=30;fillColor=#f8fbff;strokeColor=#6c8ebf;html=1;fontStyle=1;" vertex="1" parent="1">
-      <mxGeometry x="280" y="30" width="1360" height="980" as="geometry"/>
+      <mxGeometry x="280" y="30" width="1580" height="1200" as="geometry"/>
     </mxCell>
-    <mxCell id="rg" value="Resource Group&#xa;rg-entra-permissions-analyzer-prod" style="swimlane;startSize=28;fillColor=#ffffff;strokeColor=#6c8ebf;html=1;fontStyle=1;" vertex="1" parent="azure">
-      <mxGeometry x="20" y="240" width="1320" height="710" as="geometry"/>
-    </mxCell>
-    <mxCell id="entra" value="Microsoft Entra Tenant&#xa;Identity Module: app registration, service principal, OIDC federation" style="swimlane;startSize=28;fillColor=#fff8ef;strokeColor=#d79b00;html=1;fontStyle=1;" vertex="1" parent="azure">
+
+    <!-- Entra Tenant -->
+    <mxCell id="entra" value="Microsoft Entra Tenant&#xa;app registration, service principal, OIDC federation" style="swimlane;startSize=28;fillColor=#fff8ef;strokeColor=#d79b00;html=1;fontStyle=1;" vertex="1" parent="azure">
       <mxGeometry x="20" y="50" width="430" height="160" as="geometry"/>
-    </mxCell>
-    <mxCell id="browser" value="Users&#xa;Browser + MSAL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontStyle=1;" vertex="1" parent="1">
-      <mxGeometry x="40" y="160" width="180" height="70" as="geometry"/>
-    </mxCell>
-    <mxCell id="graph" value="Microsoft Graph API&#xa;audit logs, sign-ins, roles, webhooks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" vertex="1" parent="1">
-      <mxGeometry x="1700" y="180" width="260" height="90" as="geometry"/>
     </mxCell>
     <mxCell id="appReg" value="App Registration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="entra">
       <mxGeometry x="30" y="50" width="120" height="60" as="geometry"/>
@@ -26,94 +21,215 @@
     <mxCell id="oidc" value="GitHub Actions&#xa;OIDC federation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="entra">
       <mxGeometry x="300" y="50" width="100" height="60" as="geometry"/>
     </mxCell>
+
+    <!-- ======== Resource Group ======== -->
+    <mxCell id="rg" value="Resource Group — rg-entra-permissions-analyzer-prod" style="swimlane;startSize=28;fillColor=#ffffff;strokeColor=#6c8ebf;html=1;fontStyle=1;" vertex="1" parent="azure">
+      <mxGeometry x="20" y="240" width="1540" height="930" as="geometry"/>
+    </mxCell>
+
+    <!-- ======== External actors ======== -->
+    <mxCell id="browser" value="Users&#xa;Browser + MSAL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="40" y="160" width="180" height="70" as="geometry"/>
+    </mxCell>
+    <mxCell id="ghActions" value="GitHub Actions&#xa;CI / CD Pipeline" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="40" y="320" width="180" height="70" as="geometry"/>
+    </mxCell>
+    <mxCell id="graph" value="Microsoft Graph API&#xa;audit logs, sign-ins,&#xa;roles, directory data" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;" vertex="1" parent="1">
+      <mxGeometry x="1920" y="200" width="240" height="100" as="geometry"/>
+    </mxCell>
+
+    <!-- ======== Observability Module ======== -->
     <mxCell id="obsModule" value="Observability Module" style="swimlane;startSize=24;fillColor=#fbf4ff;strokeColor=#9673a6;html=1;fontStyle=1;" vertex="1" parent="rg">
       <mxGeometry x="30" y="50" width="280" height="210" as="geometry"/>
     </mxCell>
-    <mxCell id="identityModule" value="Identity Module" style="swimlane;startSize=24;fillColor=#fff8ef;strokeColor=#d79b00;html=1;fontStyle=1;" vertex="1" parent="rg">
-      <mxGeometry x="340" y="50" width="220" height="210" as="geometry"/>
-    </mxCell>
-    <mxCell id="dataModule" value="Data Module" style="swimlane;startSize=24;fillColor=#f7fbf5;strokeColor=#82b366;html=1;fontStyle=1;" vertex="1" parent="rg">
-      <mxGeometry x="590" y="50" width="290" height="260" as="geometry"/>
-    </mxCell>
-    <mxCell id="securityModule" value="Security Module" style="swimlane;startSize=24;fillColor=#fff8ef;strokeColor=#d79b00;html=1;fontStyle=1;" vertex="1" parent="rg">
-      <mxGeometry x="910" y="50" width="220" height="260" as="geometry"/>
-    </mxCell>
-    <mxCell id="computeModule" value="Compute Module" style="swimlane;startSize=24;fillColor=#eef6ff;strokeColor=#6c8ebf;html=1;fontStyle=1;" vertex="1" parent="rg">
-      <mxGeometry x="30" y="340" width="1100" height="300" as="geometry"/>
-    </mxCell>
-    <mxCell id="logIcon" value="Log Analytics Workspace" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/analytics/Log_Analytics_Workspaces.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="obsModule">
+    <mxCell id="logIcon" value="Log Analytics&#xa;Workspace" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/analytics/Log_Analytics_Workspaces.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="obsModule">
       <mxGeometry x="35" y="55" width="80" height="110" as="geometry"/>
     </mxCell>
     <mxCell id="appiIcon" value="Application Insights&#xa;workspace-based" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/devops/Application_Insights.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="obsModule">
       <mxGeometry x="165" y="55" width="70" height="110" as="geometry"/>
     </mxCell>
+
+    <!-- ======== Identity Module ======== -->
+    <mxCell id="identityModule" value="Identity Module" style="swimlane;startSize=24;fillColor=#fff8ef;strokeColor=#d79b00;html=1;fontStyle=1;" vertex="1" parent="rg">
+      <mxGeometry x="340" y="50" width="220" height="210" as="geometry"/>
+    </mxCell>
     <mxCell id="miIcon" value="User-Assigned&#xa;Managed Identity" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/identity/Managed_Identities.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="identityModule">
       <mxGeometry x="65" y="60" width="90" height="110" as="geometry"/>
     </mxCell>
-    <mxCell id="cosmosIcon" value="Azure Cosmos DB&#xa;SQL API + 9 containers" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/databases/Azure_Cosmos_DB.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="dataModule">
-      <mxGeometry x="35" y="60" width="90" height="120" as="geometry"/>
+
+    <!-- ======== Data Module (expanded for Storage) ======== -->
+    <mxCell id="dataModule" value="Data Module" style="swimlane;startSize=24;fillColor=#f7fbf5;strokeColor=#82b366;html=1;fontStyle=1;" vertex="1" parent="rg">
+      <mxGeometry x="590" y="50" width="420" height="260" as="geometry"/>
     </mxCell>
-    <mxCell id="redisIcon" value="Azure Cache for Redis" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Azure_Cache_for_Redis.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="dataModule">
-      <mxGeometry x="170" y="70" width="80" height="110" as="geometry"/>
+    <mxCell id="cosmosIcon" value="Azure Cosmos DB&#xa;NoSQL API&#xa;database-per-project" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/databases/Azure_Cosmos_DB.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="dataModule">
+      <mxGeometry x="20" y="45" width="90" height="120" as="geometry"/>
+    </mxCell>
+    <mxCell id="redisIcon" value="Azure Cache&#xa;for Redis" style="image;sketch=0;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/mscae/Azure_Cache_for_Redis.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="dataModule">
+      <mxGeometry x="160" y="55" width="80" height="110" as="geometry"/>
+    </mxCell>
+    <mxCell id="storageIcon" value="Storage Account&#xa;Durable Task state" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/storage/Storage_Accounts.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="dataModule">
+      <mxGeometry x="290" y="50" width="90" height="120" as="geometry"/>
+    </mxCell>
+
+    <!-- ======== Security Module ======== -->
+    <mxCell id="securityModule" value="Security Module" style="swimlane;startSize=24;fillColor=#fff8ef;strokeColor=#d79b00;html=1;fontStyle=1;" vertex="1" parent="rg">
+      <mxGeometry x="1040" y="50" width="220" height="260" as="geometry"/>
     </mxCell>
     <mxCell id="kvIcon" value="Azure Key Vault&#xa;RBAC + app secrets" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/security/Key_Vaults.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="securityModule">
       <mxGeometry x="65" y="60" width="90" height="120" as="geometry"/>
     </mxCell>
-    <mxCell id="acrIcon" value="Azure Container Registry" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/containers/Container_Registries.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="computeModule">
-      <mxGeometry x="40" y="65" width="90" height="110" as="geometry"/>
+
+    <!-- ======== Compute &amp; Serverless Module ======== -->
+    <mxCell id="computeModule" value="Compute &amp; Serverless Module" style="swimlane;startSize=24;fillColor=#eef6ff;strokeColor=#6c8ebf;html=1;fontStyle=1;" vertex="1" parent="rg">
+      <mxGeometry x="30" y="340" width="1230" height="460" as="geometry"/>
     </mxCell>
-    <mxCell id="caeIcon" value="Container App Environment&#xa;single shared environment" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/other/Container_App_Environments.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="computeModule">
-      <mxGeometry x="190" y="60" width="95" height="115" as="geometry"/>
+
+    <!-- Row 1: Container Apps platform -->
+    <mxCell id="acrIcon" value="Azure Container&#xa;Registry" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/containers/Container_Registries.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="computeModule">
+      <mxGeometry x="30" y="55" width="90" height="110" as="geometry"/>
     </mxCell>
-    <mxCell id="frontendIcon" value="Frontend Container App&#xa;React + Vite" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/other/Worker_Container_App.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="computeModule">
-      <mxGeometry x="360" y="55" width="90" height="120" as="geometry"/>
+    <mxCell id="caeIcon" value="Container App&#xa;Environment" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/other/Container_App_Environments.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="computeModule">
+      <mxGeometry x="180" y="50" width="95" height="115" as="geometry"/>
     </mxCell>
-    <mxCell id="backendIcon" value="Backend Container App&#xa;FastAPI API" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/other/Worker_Container_App.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="computeModule">
-      <mxGeometry x="530" y="55" width="90" height="120" as="geometry"/>
+    <mxCell id="frontendIcon" value="Frontend App&#xa;React + Nginx" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/other/Worker_Container_App.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="computeModule">
+      <mxGeometry x="350" y="50" width="90" height="120" as="geometry"/>
     </mxCell>
-    <mxCell id="jobsIcon" value="Container App Jobs&#xa;sync, baselines, drift, recs, narratives" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/other/Worker_Container_App.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="computeModule">
-      <mxGeometry x="720" y="55" width="90" height="120" as="geometry"/>
+    <mxCell id="backendIcon" value="Backend App&#xa;FastAPI" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/other/Worker_Container_App.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="computeModule">
+      <mxGeometry x="530" y="50" width="90" height="120" as="geometry"/>
     </mxCell>
-    <mxCell id="openaiIcon" value="Azure AI Foundry / OpenAI&#xa;endpoint from config" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/ai_machine_learning/Azure_OpenAI.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="computeModule">
-      <mxGeometry x="900" y="55" width="90" height="120" as="geometry"/>
+
+    <!-- Row 2: Serverless &amp; AI -->
+    <mxCell id="funcIcon" value="Azure Functions&#xa;Durable Functions&#xa;scan orchestration" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="computeModule">
+      <mxGeometry x="180" y="240" width="90" height="120" as="geometry"/>
     </mxCell>
-    <mxCell id="noteBox" value="Terraform composes modules in one root stack: observability, identity, data, security, compute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;dashed=1;" vertex="1" parent="rg">
-      <mxGeometry x="40" y="650" width="760" height="40" as="geometry"/>
+    <mxCell id="jobsIcon" value="Container App Jobs&#xa;baselines, drift,&#xa;recommendations" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/other/Worker_Container_App.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="computeModule">
+      <mxGeometry x="530" y="240" width="90" height="120" as="geometry"/>
     </mxCell>
+    <mxCell id="openaiIcon" value="Azure AI Foundry&#xa;GPT-4o narratives" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=img/lib/azure2/ai_machine_learning/Azure_OpenAI.svg;verticalLabelPosition=bottom;verticalAlign=top;" vertex="1" parent="computeModule">
+      <mxGeometry x="870" y="240" width="90" height="120" as="geometry"/>
+    </mxCell>
+
+    <!-- Row labels -->
+    <mxCell id="row1Label" value="Container Apps" style="text;html=1;fontSize=11;fontStyle=2;fillColor=none;strokeColor=none;fontColor=#6c8ebf;" vertex="1" parent="computeModule">
+      <mxGeometry x="30" y="28" width="120" height="20" as="geometry"/>
+    </mxCell>
+    <mxCell id="row2Label" value="Serverless &amp; AI" style="text;html=1;fontSize=11;fontStyle=2;fillColor=none;strokeColor=none;fontColor=#6c8ebf;" vertex="1" parent="computeModule">
+      <mxGeometry x="30" y="260" width="120" height="20" as="geometry"/>
+    </mxCell>
+
+    <!-- Note box -->
+    <mxCell id="noteBox" value="Terraform composes modules: observability → identity → data → security → compute" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;dashed=1;" vertex="1" parent="rg">
+      <mxGeometry x="40" y="820" width="760" height="40" as="geometry"/>
+    </mxCell>
+
+    <!-- ======== EDGES ======== -->
+
+    <!-- Browser → Frontend (primary flow) -->
     <mxCell id="e1" value="MSAL sign-in" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;" edge="1" parent="1" source="browser" target="frontendIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
+
+    <!-- GitHub Actions → OIDC federation -->
+    <mxCell id="eGH1" value="OIDC login" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="ghActions" target="oidc">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <!-- GitHub Actions → ACR -->
+    <mxCell id="eGH2" value="build &amp; push images" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;" edge="1" parent="1" source="ghActions" target="acrIcon">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+
+    <!-- Frontend → AppReg (auth redirect) -->
     <mxCell id="e2" value="redirect URIs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="frontendIcon" target="appReg">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
+    <!-- Backend → AppReg (auth) -->
     <mxCell id="e3" value="JWT + OBO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="backendIcon" target="appReg">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
+    <!-- AppReg → SP -->
     <mxCell id="e4" value="app object" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="appReg" target="sp">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
-    <mxCell id="e5" value="OIDC federation" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="oidc" target="appReg">
+    <!-- OIDC → AppReg -->
+    <mxCell id="e5" value="federation" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="oidc" target="appReg">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
-    <mxCell id="e6" value="Graph API calls" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;" edge="1" parent="1" source="backendIcon" target="graph">
+
+    <!-- Frontend → Backend (REST API) -->
+    <mxCell id="e21" value="REST API + SSE" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;" edge="1" parent="1" source="frontendIcon" target="backendIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
-    <mxCell id="e7" value="webhook + delta sync" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="graph" target="jobsIcon">
+
+    <!-- Backend → Graph (OBO) -->
+    <mxCell id="e6" value="Graph API&#xa;(OBO flow)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;" edge="1" parent="1" source="backendIcon" target="graph">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
+
+    <!-- Backend → Functions (scan trigger) -->
+    <mxCell id="eF2" value="trigger scan&#xa;(HTTP POST)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;" edge="1" parent="1" source="backendIcon" target="funcIcon">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+
+    <!-- Functions → Graph (client credentials ingestion) -->
+    <mxCell id="eF1" value="data ingestion&#xa;(client credentials)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;" edge="1" parent="1" source="funcIcon" target="graph">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <!-- Functions → Cosmos DB (write scan results) -->
+    <mxCell id="eF3" value="write scan results" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;" edge="1" parent="1" source="funcIcon" target="cosmosIcon">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <!-- Functions → Storage (durable state) -->
+    <mxCell id="eF4" value="durable state" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="funcIcon" target="storageIcon">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+
+    <!-- Backend → Cosmos DB -->
+    <mxCell id="e22" value="read / write" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;" edge="1" parent="1" source="backendIcon" target="cosmosIcon">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <!-- Backend → Redis -->
+    <mxCell id="e23" value="cache" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="backendIcon" target="redisIcon">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <!-- Backend → Key Vault -->
+    <mxCell id="e24" value="secret refs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="backendIcon" target="kvIcon">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <!-- Backend → App Insights -->
+    <mxCell id="e25" value="telemetry" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="backendIcon" target="appiIcon">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <!-- Backend → AI Foundry (narratives) -->
+    <mxCell id="e26" value="narratives" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="backendIcon" target="openaiIcon">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+
+    <!-- Jobs → Cosmos DB -->
+    <mxCell id="e27" value="analysis outputs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="jobsIcon" target="cosmosIcon">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    <!-- Jobs → AI Foundry -->
+    <mxCell id="e28" value="AI digests" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="jobsIcon" target="openaiIcon">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+
+    <!-- Log Analytics → App Insights -->
     <mxCell id="e8" value="workspace id" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="logIcon" target="appiIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
+    <!-- Log Analytics → CAE -->
     <mxCell id="e9" value="workspace logs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="logIcon" target="caeIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
-    <mxCell id="e10" value="shared identity" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="miIcon" target="frontendIcon">
+
+    <!-- Managed Identity RBAC assignments (dashed) -->
+    <mxCell id="e10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="miIcon" target="frontendIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
-    <mxCell id="e11" value="shared identity" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="miIcon" target="backendIcon">
+    <mxCell id="e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="miIcon" target="backendIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
-    <mxCell id="e12" value="shared identity" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="miIcon" target="jobsIcon">
+    <mxCell id="e12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="miIcon" target="jobsIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
     <mxCell id="e13" value="AcrPull" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="miIcon" target="acrIcon">
@@ -122,47 +238,60 @@
     <mxCell id="e14" value="Secrets User" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="miIcon" target="kvIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
-    <mxCell id="e15" value="Cosmos SQL Data Contributor" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="miIcon" target="cosmosIcon">
+    <mxCell id="e15" value="Cosmos Data Contributor" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="miIcon" target="cosmosIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
+
+    <!-- ACR → apps (image pull) -->
     <mxCell id="e16" value="pull images" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="acrIcon" target="frontendIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
     <mxCell id="e17" value="pull images" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="acrIcon" target="backendIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
-    <mxCell id="e18" value="shared environment" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="caeIcon" target="frontendIcon">
+
+    <!-- CAE → apps (shared environment) -->
+    <mxCell id="e18" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="caeIcon" target="frontendIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
-    <mxCell id="e19" value="shared environment" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="caeIcon" target="backendIcon">
+    <mxCell id="e19" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="caeIcon" target="backendIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
-    <mxCell id="e20" value="shared environment" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="caeIcon" target="jobsIcon">
+    <mxCell id="e20" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="caeIcon" target="jobsIcon">
       <mxGeometry relative="1" as="geometry"/>
     </mxCell>
-    <mxCell id="e21" value="REST API" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;" edge="1" parent="1" source="frontendIcon" target="backendIcon">
-      <mxGeometry relative="1" as="geometry"/>
+
+    <!-- ======== LEGEND ======== -->
+    <mxCell id="legend" value="Legend" style="swimlane;startSize=20;fillColor=#ffffff;strokeColor=#999999;html=1;fontSize=11;" vertex="1" parent="1">
+      <mxGeometry x="1920" y="380" width="240" height="130" as="geometry"/>
     </mxCell>
-    <mxCell id="e22" value="read/write" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;" edge="1" parent="1" source="backendIcon" target="cosmosIcon">
-      <mxGeometry relative="1" as="geometry"/>
+    <mxCell id="leg1" value="Primary data flow" style="text;html=1;fontSize=11;fillColor=none;strokeColor=none;" vertex="1" parent="legend">
+      <mxGeometry x="50" y="25" width="170" height="20" as="geometry"/>
     </mxCell>
-    <mxCell id="e23" value="cache" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="backendIcon" target="redisIcon">
-      <mxGeometry relative="1" as="geometry"/>
+    <mxCell id="leg1line" value="" style="endArrow=classic;html=1;strokeWidth=2;" edge="1" parent="legend">
+      <mxGeometry relative="1" as="geometry">
+        <mxPoint x="10" y="35" as="sourcePoint"/>
+        <mxPoint x="45" y="35" as="targetPoint"/>
+      </mxGeometry>
     </mxCell>
-    <mxCell id="e24" value="secret refs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="backendIcon" target="kvIcon">
-      <mxGeometry relative="1" as="geometry"/>
+    <mxCell id="leg2" value="Secondary flow" style="text;html=1;fontSize=11;fillColor=none;strokeColor=none;" vertex="1" parent="legend">
+      <mxGeometry x="50" y="50" width="170" height="20" as="geometry"/>
     </mxCell>
-    <mxCell id="e25" value="telemetry" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="backendIcon" target="appiIcon">
-      <mxGeometry relative="1" as="geometry"/>
+    <mxCell id="leg2line" value="" style="endArrow=classic;html=1;strokeWidth=1;" edge="1" parent="legend">
+      <mxGeometry relative="1" as="geometry">
+        <mxPoint x="10" y="60" as="sourcePoint"/>
+        <mxPoint x="45" y="60" as="targetPoint"/>
+      </mxGeometry>
     </mxCell>
-    <mxCell id="e26" value="narratives" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="backendIcon" target="openaiIcon">
-      <mxGeometry relative="1" as="geometry"/>
+    <mxCell id="leg3" value="Config / identity binding" style="text;html=1;fontSize=11;fillColor=none;strokeColor=none;" vertex="1" parent="legend">
+      <mxGeometry x="50" y="75" width="170" height="20" as="geometry"/>
     </mxCell>
-    <mxCell id="e27" value="batch outputs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;" edge="1" parent="1" source="jobsIcon" target="cosmosIcon">
-      <mxGeometry relative="1" as="geometry"/>
+    <mxCell id="leg3line" value="" style="endArrow=classic;html=1;dashed=1;" edge="1" parent="legend">
+      <mxGeometry relative="1" as="geometry">
+        <mxPoint x="10" y="85" as="sourcePoint"/>
+        <mxPoint x="45" y="85" as="targetPoint"/>
+      </mxGeometry>
     </mxCell>
-    <mxCell id="e28" value="AI digests" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;" edge="1" parent="1" source="jobsIcon" target="openaiIcon">
-      <mxGeometry relative="1" as="geometry"/>
-    </mxCell>
+
   </root>
 </mxGraphModel>

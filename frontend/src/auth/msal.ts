@@ -16,7 +16,19 @@ const msalConfig: Configuration = {
   },
 };
 
-export const msalInstance = new PublicClientApplication(msalConfig);
+let _msalInstance: PublicClientApplication | null = null;
+
+export function getMsalInstance(): PublicClientApplication {
+  if (!_msalInstance) {
+    _msalInstance = new PublicClientApplication(msalConfig);
+  }
+  return _msalInstance;
+}
+
+export const msalInstance =
+  import.meta.env.VITE_LOCAL_MODE === "true"
+    ? (null as unknown as PublicClientApplication)
+    : new PublicClientApplication(msalConfig);
 
 /** Scopes for Microsoft Graph calls (profile info). */
 export const graphScopes = ["User.Read"];
