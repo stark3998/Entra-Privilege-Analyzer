@@ -134,6 +134,23 @@ function Invoke-AzCli {
     return $text
 }
 
+function Update-ContainerAppEnvVars {
+    param(
+        [Parameter(Mandatory = $true)][string]$AppName,
+        [Parameter(Mandatory = $true)][string]$ResourceGroupName,
+        [Parameter(Mandatory = $true)][string[]]$EnvVars
+    )
+
+    if (-not $EnvVars -or $EnvVars.Count -eq 0) {
+        return
+    }
+
+    & az containerapp update --name $AppName --resource-group $ResourceGroupName --set-env-vars @EnvVars | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Container App runtime env var update failed for $AppName"
+    }
+}
+
 function Import-TerraformResource {
     param(
         [Parameter(Mandatory = $true)][string]$WorkingDirectory,
@@ -538,10 +555,34 @@ function Invoke-SmokeTests {
         throw "Backend /api/projects $projectsExpectationLabel check expected $expectedProjectsStatus but got $($projectsResult.StatusCode). Body: $($projectsResult.Body)"
     }
 
-    $preflightHeaders = curl.exe -k -sS -D - -o NUL -X OPTIONS ($BackendUrl.TrimEnd('/') + '/api/projects') -H "Origin: $FrontendUrl" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: authorization,content-type"
-    $preflightHeaderText = ($preflightHeaders | Out-String)
-    if (-not $preflightHeaderText.ToLowerInvariant().Contains(("Access-Control-Allow-Origin: $FrontendUrl").ToLowerInvariant())) {
-        throw "Backend preflight response does not allow frontend origin $FrontendUrl"
+    $normalizedFrontendOrigin = $FrontendUrl.TrimEnd('/').ToLowerInvariant()
+    $preflightAllowed = $false
+    $lastPreflightHeaderText = ""
+    for ($attempt = 1; $attempt -le 12; $attempt++) {
+        $preflightHeaders = curl.exe -k -sS -D - -o NUL -X OPTIONS ($BackendUrl.TrimEnd('/') + '/api/projects') -H "Origin: $FrontendUrl" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: authorization,content-type"
+        $lastPreflightHeaderText = ($preflightHeaders | Out-String)
+
+        $originHeaderMatches = [regex]::Matches($lastPreflightHeaderText, "(?im)^access-control-allow-origin:\s*(.+?)\s*$")
+        foreach ($match in $originHeaderMatches) {
+            $allowedOrigin = $match.Groups[1].Value.Trim().TrimEnd('/').ToLowerInvariant()
+            if ($allowedOrigin -eq $normalizedFrontendOrigin) {
+                $preflightAllowed = $true
+                break
+            }
+        }
+
+        if ($preflightAllowed) {
+            break
+        }
+
+        if ($attempt -lt 12) {
+            Write-Host "Waiting for backend preflight to allow frontend origin (attempt $attempt of 12)"
+            Start-Sleep -Seconds 10
+        }
+    }
+
+    if (-not $preflightAllowed) {
+        throw "Backend preflight response does not allow frontend origin $FrontendUrl. Last headers: $lastPreflightHeaderText"
     }
 
     $readyResult = Get-HttpResult -Uri ($BackendUrl.TrimEnd('/') + '/readyz')
@@ -596,6 +637,8 @@ $env:TF_VAR_github_repository = $GitHubRepository
 $env:TF_VAR_location = $Location
 $env:TF_VAR_project_name = $ProjectName
 $env:TF_VAR_environment = $Environment
+
+$localModeValue = if ($EnableLocalMode) { "true" } else { "false" }
 
 Write-Step "Initializing Terraform"
 Invoke-Terraform -WorkingDirectory $tfWorkDir -Arguments @("init", "-reconfigure")
@@ -699,7 +742,7 @@ if (-not $SkipFrontendRedeploy) {
     $backendUrl = "https://$(Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name 'backend_fqdn')"
 
     Write-Step "Building frontend image with same-origin backend proxy"
-    & az acr build --registry $acrName --image "$ProjectName-frontend:$frontendTag" --file (Join-Path $repoRoot "frontend/Dockerfile") --target prod --build-arg "VITE_APP_CLIENT_ID=$ExistingApplicationClientId" --build-arg "VITE_TENANT_ID=$tenantId" --build-arg "VITE_API_BASE_URL=" --build-arg "BACKEND_URL=$backendUrl" (Join-Path $repoRoot "frontend")
+    & az acr build --registry $acrName --image "$ProjectName-frontend:$frontendTag" --file (Join-Path $repoRoot "frontend/Dockerfile") --target prod --build-arg "VITE_APP_CLIENT_ID=$ExistingApplicationClientId" --build-arg "VITE_TENANT_ID=$tenantId" --build-arg "VITE_LOCAL_MODE=$localModeValue" --build-arg "VITE_API_BASE_URL=" --build-arg "BACKEND_URL=$backendUrl" (Join-Path $repoRoot "frontend")
     if ($LASTEXITCODE -ne 0) {
         throw "Frontend live image build failed"
     }
@@ -713,11 +756,12 @@ if (-not $SkipFrontendRedeploy) {
 
 $backendFqdn = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "backend_fqdn"
 $frontendFqdn = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "frontend_fqdn"
+$keyVaultName = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "key_vault_name"
 $backendUrl = "https://$backendFqdn"
 $frontendUrl = "https://$frontendFqdn"
+$keyVaultUrl = "https://$keyVaultName.vault.azure.net/"
 
 Write-Step "Updating backend runtime settings"
-$localModeValue = if ($EnableLocalMode) { "true" } else { "false" }
 $resolvedEncryptionKey = $EncryptionKey
 if (-not $resolvedEncryptionKey -and $EnableLocalMode) {
     $bytes = New-Object byte[] 32
@@ -729,17 +773,29 @@ if (-not $resolvedEncryptionKey -and $EnableLocalMode) {
 $envVars = @(
     "LOCAL_MODE=$localModeValue",
     "CORS_ORIGINS=$frontendUrl",
-    "CORS_ORIGIN_REGEX="
+    "CORS_ORIGIN_REGEX=",
+    "AZURE_CLIENT_ID=$ExistingApplicationClientId",
+    "AZURE_TENANT_ID=$tenantId",
+    "AZURE_FOUNDRY_ENDPOINT=$FoundryEndpoint",
+    "AZURE_FOUNDRY_MODEL=$FoundryModel",
+    "KEYVAULT_URL=$keyVaultUrl"
 )
 
 if ($resolvedEncryptionKey) {
     $envVars += "ENCRYPTION_KEY=$resolvedEncryptionKey"
 }
 
-& az containerapp update --name $backendAppName --resource-group $ResourceGroupName --set-env-vars @envVars | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw "Backend container app runtime setting update failed"
-}
+Update-ContainerAppEnvVars -AppName $backendAppName -ResourceGroupName $ResourceGroupName -EnvVars $envVars
+
+Write-Step "Updating frontend runtime settings"
+$frontendEnvVars = @(
+    "BACKEND_URL=$backendUrl",
+    "VITE_APP_CLIENT_ID=$ExistingApplicationClientId",
+    "VITE_TENANT_ID=$tenantId",
+    "VITE_API_BASE_URL=",
+    "VITE_LOCAL_MODE=$localModeValue"
+)
+Update-ContainerAppEnvVars -AppName $frontendAppName -ResourceGroupName $ResourceGroupName -EnvVars $frontendEnvVars
 
 if (-not $SkipSmokeTests) {
     Invoke-SmokeTests -FrontendUrl $frontendUrl -BackendUrl $backendUrl -ClientId $ExistingApplicationClientId -LocalModeEnabled:$EnableLocalMode

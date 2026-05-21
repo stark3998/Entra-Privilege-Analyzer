@@ -55,6 +55,17 @@ resource "azurerm_storage_container" "deployment" {
   container_access_type = "private"
 }
 
+# Flex Consumption still requires a dedicated FC1 Linux plan id at creation.
+resource "azurerm_service_plan" "functions" {
+  name                = "asp-${var.project_name}-functions-${var.environment}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  os_type             = "Linux"
+  sku_name            = "FC1"
+
+  tags = var.tags
+}
+
 # ---------------------
 # Function App: Scan Orchestrator (Flex Consumption)
 # ---------------------
@@ -73,6 +84,7 @@ resource "azapi_resource" "scan" {
   body = jsonencode({
     kind = "functionapp,linux"
     properties = {
+      serverFarmId = replace(azurerm_service_plan.functions.id, "serverFarms", "serverfarms")
       keyVaultReferenceIdentity = var.managed_identity_id
       functionAppConfig = {
         deployment = {
@@ -99,7 +111,6 @@ resource "azapi_resource" "scan" {
     }
   })
 
-  response_export_values = ["id", "name", "properties.defaultHostName"]
 }
 
 resource "azapi_update_resource" "scan_appsettings" {

@@ -273,6 +273,11 @@ resource "azurerm_container_app" "frontend" {
       image  = "${azurerm_container_registry.main.login_server}/${var.project_name}-frontend:${var.frontend_image_tag}"
       cpu    = 0.25
       memory = "0.5Gi"
+
+      env {
+        name  = "BACKEND_URL"
+        value = "https://${azurerm_container_app.backend.ingress[0].fqdn}"
+      }
     }
 
     # HTTP scaling rule
