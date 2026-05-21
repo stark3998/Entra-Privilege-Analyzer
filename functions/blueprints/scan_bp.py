@@ -243,7 +243,7 @@ def update_scan_phase_activity(payload: dict) -> None:
         payload.get("scan_id", "?"), phase_name, phase_status, items,
     )
     update_scan_phase(
-        cfg["endpoint"], cfg["key"], cfg["database"],
+        cfg["endpoint"], cfg["key"], cfg["master_database"],
         payload["project_id"], payload["scan_id"],
         phase_name, phase_status,
         items_processed=items,
@@ -262,7 +262,7 @@ def finalize_scan_activity(payload: dict) -> None:
     )
     cfg = cosmos_config(payload)
     finalize_scan(
-        cfg["endpoint"], cfg["key"], cfg["database"],
+        cfg["endpoint"], cfg["key"], cfg["master_database"],
         payload["project_id"], scan_id,
         final_status,
         summary=payload.get("summary"),

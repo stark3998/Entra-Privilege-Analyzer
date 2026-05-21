@@ -18,4 +18,6 @@ def cosmos_config(payload: dict) -> dict:
         "endpoint": payload["cosmos_endpoint"],
         "key": payload["cosmos_key"],
         "database": payload["cosmos_database"],
+        # ScanRecord/ScanPhase docs live in master DB scan_history.
+        "master_database": payload.get("cosmos_master_database", payload["cosmos_database"]),
     }

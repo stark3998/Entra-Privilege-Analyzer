@@ -7,6 +7,7 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import jwt as pyjwt
@@ -129,7 +130,10 @@ async def _poll_orchestration_status(
 ) -> None:
     """Poll orchestration status + history and relay per-activity events to the broker."""
     broker: ScanEventBroker = app.state.scan_event_broker
-    headers = {"x-functions-key": function_key}
+    parsed_status_uri = urlparse(status_uri)
+    status_query = parse_qs(parsed_status_uri.query)
+    has_embedded_code = bool(status_query.get("code"))
+    headers = {} if has_embedded_code else {"x-functions-key": function_key}
     last_message: str | None = None
     last_history_index: int = 0
     history_uri = status_uri + "&showHistory=true&showHistoryOutput=true"
@@ -418,6 +422,7 @@ async def trigger_scan(
         "cosmos_endpoint": settings.cosmos_endpoint,
         "cosmos_key": settings.cosmos_key,
         "cosmos_database": cosmos_database,
+        "cosmos_master_database": settings.cosmos_master_database,
         "graph_api_version": settings.graph_api_version,
     }
 
