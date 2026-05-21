@@ -1161,7 +1161,10 @@ class ProjectRepo:
 
         # Run server-side aggregations concurrently instead of loading all sessions
         (
-            counts_agg,
+            pim_total,
+            pim_active,
+            pim_expired,
+            pim_with_anomalies,
             avg_duration_scalar,
             roles_by_count,
             activators_by_count,
@@ -1169,12 +1172,22 @@ class ProjectRepo:
         ) = await asyncio.gather(
             self._query_scalar(
                 self._pim_sessions,
-                "SELECT VALUE {"
-                "  total: COUNT(1),"
-                "  active: COUNT(c.status = 'active' ? 1 : undefined),"
-                "  expired: COUNT(c.status = 'expired' ? 1 : undefined),"
-                "  with_anomalies: COUNT(ARRAY_LENGTH(c.anomalies) > 0 ? 1 : undefined)"
-                "} FROM c WHERE c.activation_time >= @cutoff",
+                "SELECT VALUE COUNT(1) FROM c WHERE c.activation_time >= @cutoff",
+                params,
+            ),
+            self._query_scalar(
+                self._pim_sessions,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.activation_time >= @cutoff AND c.status = 'active'",
+                params,
+            ),
+            self._query_scalar(
+                self._pim_sessions,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.activation_time >= @cutoff AND c.status = 'expired'",
+                params,
+            ),
+            self._query_scalar(
+                self._pim_sessions,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.activation_time >= @cutoff AND ARRAY_LENGTH(c.anomalies) > 0",
                 params,
             ),
             self._query_scalar(
@@ -1204,7 +1217,12 @@ class ProjectRepo:
             ),
         )
 
-        counts = counts_agg or {}
+        counts = {
+            "total": pim_total or 0,
+            "active": pim_active or 0,
+            "expired": pim_expired or 0,
+            "with_anomalies": pim_with_anomalies or 0,
+        }
         avg_duration = avg_duration_scalar or 0.0
 
         roles_by_count.sort(key=lambda x: x.get("cnt", 0), reverse=True)
@@ -1369,7 +1387,8 @@ class ProjectRepo:
             total_identities,
             total_actions,
             identities_by_type,
-            risk_agg,
+            avg_risk_scalar,
+            high_risk_count_scalar,
             drift_alerts_open,
             drift_alerts_by_severity,
             bp_total,
@@ -1386,10 +1405,12 @@ class ProjectRepo:
             ),
             self._query_scalar(
                 self._identity_profiles,
-                "SELECT VALUE {"
-                "  avg_risk: AVG(c.risk_score),"
-                "  high_count: COUNT(c.risk_score > 70 ? 1 : undefined)"
-                "} FROM c",
+                "SELECT VALUE AVG(c.risk_score) FROM c",
+                [],
+            ),
+            self._query_scalar(
+                self._identity_profiles,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.risk_score > 70",
                 [],
             ),
             self._query_scalar(
@@ -1422,8 +1443,8 @@ class ProjectRepo:
             ),
         )
 
-        avg_risk = (risk_agg.get("avg_risk") or 0.0) if risk_agg else 0.0
-        high_risk_count = (risk_agg.get("high_count") or 0) if risk_agg else 0
+        avg_risk = avg_risk_scalar or 0.0
+        high_risk_count = high_risk_count_scalar or 0
         bp_resolved_count = bp_resolved or 0
         compliance_score = (bp_resolved_count / bp_total * 100.0) if bp_total > 0 else 100.0
         recommendations_count = (rec_agg.get("cnt") or 0) if rec_agg else 0
@@ -1545,7 +1566,8 @@ class ProjectRepo:
 
         # Fire all independent queries concurrently
         (
-            totals_agg,
+            total_actions_period,
+            failure_count_scalar,
             unique_active_scalar,
             daily_action_counts,
             top_actions_raw,
@@ -1564,10 +1586,12 @@ class ProjectRepo:
         ) = await asyncio.gather(
             self._query_scalar(
                 self._action_events,
-                "SELECT VALUE {"
-                "  total: COUNT(1),"
-                "  failures: COUNT(c.result = 'failure' ? 1 : undefined)"
-                "} FROM c WHERE c.timestamp >= @cutoff",
+                "SELECT VALUE COUNT(1) FROM c WHERE c.timestamp >= @cutoff",
+                base_params,
+            ),
+            self._query_scalar(
+                self._action_events,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.timestamp >= @cutoff AND c.result = 'failure'",
                 base_params,
             ),
             self._query_scalar(
@@ -1649,8 +1673,8 @@ class ProjectRepo:
         )
 
         # Unpack aggregated results
-        total_actions = (totals_agg.get("total", 0)) if totals_agg else 0
-        failures = (totals_agg.get("failures", 0)) if totals_agg else 0
+        total_actions = total_actions_period or 0
+        failures = failure_count_scalar or 0
         failed_action_pct = (failures / total_actions * 100.0) if total_actions > 0 else 0.0
         unique_active = unique_active_scalar or 0
         avg_actions = (total_actions / unique_active) if unique_active > 0 else 0.0
@@ -1785,25 +1809,29 @@ class ProjectRepo:
         return items, total
 
     async def get_access_path_summary(self) -> AccessPathSummary:
-        query = (
-            "SELECT VALUE {"
-            "  total: COUNT(1),"
-            "  critical: COUNT(c.highest_risk = 'critical' ? 1 : undefined),"
-            "  high: COUNT(c.highest_risk = 'high' ? 1 : undefined),"
-            "  medium: COUNT(c.highest_risk = 'medium' ? 1 : undefined)"
-            "} FROM c WHERE c.total_paths > 0"
+        total_q, critical_q, high_q, medium_q = await asyncio.gather(
+            self._query_scalar(
+                self._access_path_analyses,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.total_paths > 0", [],
+            ),
+            self._query_scalar(
+                self._access_path_analyses,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.total_paths > 0 AND c.highest_risk = 'critical'", [],
+            ),
+            self._query_scalar(
+                self._access_path_analyses,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.total_paths > 0 AND c.highest_risk = 'high'", [],
+            ),
+            self._query_scalar(
+                self._access_path_analyses,
+                "SELECT VALUE COUNT(1) FROM c WHERE c.total_paths > 0 AND c.highest_risk = 'medium'", [],
+            ),
         )
-        results: list[dict[str, Any]] = [
-            item async for item in self._access_path_analyses.query_items(
-                query=query, parameters=[],
-            )
-        ]
-        row = results[0] if results else {}
         return AccessPathSummary(
-            total_identities_with_paths=row.get("total", 0),
-            critical_count=row.get("critical", 0),
-            high_count=row.get("high", 0),
-            medium_count=row.get("medium", 0),
+            total_identities_with_paths=total_q or 0,
+            critical_count=critical_q or 0,
+            high_count=high_q or 0,
+            medium_count=medium_q or 0,
         )
 
     # ------------------------------------------------------------------
