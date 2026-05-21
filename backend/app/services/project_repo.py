@@ -1196,24 +1196,17 @@ class ProjectRepo:
                 "WHERE c.activation_time >= @cutoff",
                 params,
             ),
-            self._tracked_query(
-                self._pim_sessions,
-                "SELECT VALUE {role_name: c.role_name, cnt: COUNT(1)} FROM c "
-                "WHERE c.activation_time >= @cutoff GROUP BY c.role_name",
-                params, "pim_analytics.roles",
+            self._group_count(
+                self._pim_sessions, ["role_name"],
+                where="c.activation_time >= @cutoff", params=params,
             ),
-            self._tracked_query(
-                self._pim_sessions,
-                "SELECT VALUE {principal_display_name: c.principal_display_name, cnt: COUNT(1)} FROM c "
-                "WHERE c.activation_time >= @cutoff GROUP BY c.principal_display_name",
-                params, "pim_analytics.activators",
+            self._group_count(
+                self._pim_sessions, ["principal_display_name"],
+                where="c.activation_time >= @cutoff", params=params,
             ),
-            self._query_trend(
-                self._pim_sessions,
-                "SELECT VALUE {date: SUBSTRING(c.activation_time, 0, 10), cnt: COUNT(1)} "
-                "FROM c WHERE c.activation_time >= @cutoff "
-                "GROUP BY SUBSTRING(c.activation_time, 0, 10)",
-                params,
+            self._count_by_date(
+                self._pim_sessions, "activation_time",
+                where="c.activation_time >= @cutoff", params=params,
             ),
         )
 
@@ -1358,18 +1351,78 @@ class ProjectRepo:
     # Dashboard aggregation helpers
     # ------------------------------------------------------------------
 
-    async def _query_to_dict(
+    async def _count_by_field(
         self,
         container: ContainerProxy,
-        query: str,
-        parameters: list[dict[str, Any]],
-        key_field: str,
-        value_field: str = "cnt",
+        field: str,
+        where: str = "",
+        params: list[dict[str, Any]] | None = None,
     ) -> dict[str, int]:
-        result: dict[str, int] = {}
-        async for item in container.query_items(query=query, parameters=parameters):
-            result[item.get(key_field, "unknown")] = item.get(value_field, 0)
-        return result
+        """Fetch items and count by field in Python (avoids Cosmos GROUP BY cross-partition limits)."""
+        query = f"SELECT c.{field} FROM c"
+        if where:
+            query += f" WHERE {where}"
+        counter: Counter[str] = Counter()
+        async for item in container.query_items(query=query, parameters=params or []):
+            counter[str(item.get(field, "unknown"))] += 1
+        return dict(counter)
+
+    async def _group_count(
+        self,
+        container: ContainerProxy,
+        fields: list[str],
+        where: str = "",
+        params: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch items and group-count by fields in Python, sorted by count desc."""
+        select = ", ".join(f"c.{f}" for f in fields)
+        query = f"SELECT {select} FROM c"
+        if where:
+            query += f" WHERE {where}"
+        counter: Counter[tuple[str, ...]] = Counter()
+        field_vals: dict[tuple[str, ...], dict[str, Any]] = {}
+        async for item in container.query_items(query=query, parameters=params or []):
+            key = tuple(str(item.get(f, "")) for f in fields)
+            counter[key] += 1
+            if key not in field_vals:
+                field_vals[key] = {f: item.get(f, "") for f in fields}
+        return [{**field_vals[k], "cnt": cnt} for k, cnt in counter.most_common()]
+
+    async def _count_distinct(
+        self,
+        container: ContainerProxy,
+        field: str,
+        where: str = "",
+        params: list[dict[str, Any]] | None = None,
+    ) -> int:
+        """Count distinct values of a field in Python."""
+        query = f"SELECT c.{field} FROM c"
+        if where:
+            query += f" WHERE {where}"
+        seen: set[str] = set()
+        async for item in container.query_items(query=query, parameters=params or []):
+            val = item.get(field)
+            if val is not None:
+                seen.add(str(val))
+        return len(seen)
+
+    async def _count_by_date(
+        self,
+        container: ContainerProxy,
+        date_field: str,
+        where: str = "",
+        params: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch items and count by date (first 10 chars) in Python, sorted by date."""
+        query = f"SELECT c.{date_field} FROM c"
+        if where:
+            query += f" WHERE {where}"
+        counter: Counter[str] = Counter()
+        async for item in container.query_items(query=query, parameters=params or []):
+            val = item.get(date_field, "")
+            if isinstance(val, str) and len(val) >= 10:
+                counter[val[:10]] += 1
+        return [{"date": d, "value": float(cnt)} for d, cnt in sorted(counter.items())]
 
     async def _query_scalar(
         self,
@@ -1399,11 +1452,7 @@ class ProjectRepo:
         ) = await asyncio.gather(
             self.count_items("identity_profiles"),
             self.count_items("action_events"),
-            self._query_to_dict(
-                self._identity_profiles,
-                "SELECT VALUE {identity_type: c.identity_type, cnt: COUNT(1)} FROM c GROUP BY c.identity_type",
-                [], "identity_type",
-            ),
+            self._count_by_field(self._identity_profiles, "identity_type"),
             self._query_scalar(
                 self._identity_profiles,
                 "SELECT VALUE AVG(c.risk_score) FROM c",
@@ -1419,11 +1468,9 @@ class ProjectRepo:
                 "SELECT VALUE COUNT(1) FROM c WHERE c.status = 'open'",
                 [],
             ),
-            self._query_to_dict(
-                self._drift_alerts,
-                "SELECT VALUE {severity: c.severity, cnt: COUNT(1)} FROM c "
-                "WHERE c.status = 'open' GROUP BY c.severity",
-                [], "severity",
+            self._count_by_field(
+                self._drift_alerts, "severity",
+                where="c.status = 'open'",
             ),
             self.count_items("best_practice_violations"),
             self._query_scalar(
@@ -1470,38 +1517,18 @@ class ProjectRepo:
             "avg_reduction_score": avg_reduction_score,
         }
 
-    async def _query_trend(
-        self,
-        container: ContainerProxy,
-        query: str,
-        parameters: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        trend: list[dict[str, Any]] = []
-        async for item in container.query_items(query=query, parameters=parameters):
-            trend.append({
-                "date": item.get("date", ""),
-                "value": float(item.get("cnt", 0)),
-            })
-        return trend
-
     async def get_trends(self, days: int = 30) -> dict[str, Any]:
         cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
         cutoff_params: list[dict[str, Any]] = [{"name": "@cutoff", "value": cutoff}]
 
         actions_trend, drift_alerts_trend = await asyncio.gather(
-            self._query_trend(
-                self._action_events,
-                "SELECT VALUE {date: SUBSTRING(c.timestamp, 0, 10), cnt: COUNT(1)} "
-                "FROM c WHERE c.timestamp >= @cutoff "
-                "GROUP BY SUBSTRING(c.timestamp, 0, 10)",
-                cutoff_params,
+            self._count_by_date(
+                self._action_events, "timestamp",
+                where="c.timestamp >= @cutoff", params=cutoff_params,
             ),
-            self._query_trend(
-                self._drift_alerts,
-                "SELECT VALUE {date: SUBSTRING(c.detected_at, 0, 10), cnt: COUNT(1)} "
-                "FROM c WHERE c.detected_at >= @cutoff "
-                "GROUP BY SUBSTRING(c.detected_at, 0, 10)",
-                cutoff_params,
+            self._count_by_date(
+                self._drift_alerts, "detected_at",
+                where="c.detected_at >= @cutoff", params=cutoff_params,
             ),
         )
 
@@ -1600,50 +1627,34 @@ class ProjectRepo:
                 "SELECT VALUE COUNT(1) FROM c WHERE c.timestamp >= @cutoff AND c.result = 'failure'",
                 base_params,
             ),
-            self._query_scalar(
-                self._action_events,
-                "SELECT VALUE COUNT(1) FROM "
-                "(SELECT DISTINCT c.identity_id FROM c WHERE c.timestamp >= @cutoff)",
-                base_params,
+            self._count_distinct(
+                self._action_events, "identity_id",
+                where="c.timestamp >= @cutoff", params=base_params,
             ),
-            self._query_trend(
-                self._action_events,
-                "SELECT VALUE {date: SUBSTRING(c.timestamp, 0, 10), cnt: COUNT(1)} "
-                "FROM c WHERE c.timestamp >= @cutoff "
-                "GROUP BY SUBSTRING(c.timestamp, 0, 10)",
-                base_params,
+            self._count_by_date(
+                self._action_events, "timestamp",
+                where="c.timestamp >= @cutoff", params=base_params,
             ),
-            self._tracked_query(
-                self._action_events,
-                "SELECT VALUE {action: c.action, cnt: COUNT(1)} "
-                "FROM c WHERE c.timestamp >= @cutoff GROUP BY c.action",
-                base_params, "analytics.top_actions",
+            self._group_count(
+                self._action_events, ["action"],
+                where="c.timestamp >= @cutoff", params=base_params,
             ),
-            self._tracked_query(
-                self._action_events,
-                "SELECT VALUE {identity_id: c.identity_id, identity_display_name: c.identity_display_name, cnt: COUNT(1)} "
-                "FROM c WHERE c.timestamp >= @cutoff "
-                "GROUP BY c.identity_id, c.identity_display_name",
-                base_params, "analytics.active_identities",
+            self._group_count(
+                self._action_events, ["identity_id", "identity_display_name"],
+                where="c.timestamp >= @cutoff", params=base_params,
             ),
-            self._query_to_dict(
-                self._action_events,
-                "SELECT VALUE {source: c.source, cnt: COUNT(1)} "
-                "FROM c WHERE c.timestamp >= @cutoff GROUP BY c.source",
-                base_params, "source",
+            self._count_by_field(
+                self._action_events, "source",
+                where="c.timestamp >= @cutoff", params=base_params,
             ),
-            self._query_to_dict(
-                self._action_events,
-                "SELECT VALUE {result: c.result, cnt: COUNT(1)} "
-                "FROM c WHERE c.timestamp >= @cutoff GROUP BY c.result",
-                base_params, "result",
+            self._count_by_field(
+                self._action_events, "result",
+                where="c.timestamp >= @cutoff", params=base_params,
             ),
-            self._tracked_query(
-                self._action_events,
-                "SELECT VALUE {resource: c.resource, resource_type: c.resource_type, cnt: COUNT(1)} "
-                "FROM c WHERE c.timestamp >= @cutoff AND c.resource != null "
-                "GROUP BY c.resource, c.resource_type",
-                base_params, "analytics.top_resources",
+            self._group_count(
+                self._action_events, ["resource", "resource_type"],
+                where="c.timestamp >= @cutoff AND c.resource != null",
+                params=base_params,
             ),
             self._compute_roles_breakdown(),
             self._compute_stale_counts(now),
@@ -1658,11 +1669,9 @@ class ProjectRepo:
                 "SELECT VALUE COUNT(1) FROM c WHERE c.reduction_score > 30",
                 [],
             ),
-            self._query_to_dict(
-                self._best_practice_violations,
-                "SELECT VALUE {violation_type: c.violation_type, cnt: COUNT(1)} FROM c "
-                "WHERE c.resolved = false GROUP BY c.violation_type",
-                [], "violation_type",
+            self._count_by_field(
+                self._best_practice_violations, "violation_type",
+                where="c.resolved = false",
             ),
             self._tracked_query(
                 self._best_practice_violations,
