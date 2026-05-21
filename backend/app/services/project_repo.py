@@ -1394,7 +1394,8 @@ class ProjectRepo:
             bp_total,
             bp_resolved,
             top_risky,
-            rec_agg,
+            rec_count_scalar,
+            rec_avg_reduction_scalar,
         ) = await asyncio.gather(
             self.count_items("identity_profiles"),
             self.count_items("action_events"),
@@ -1438,7 +1439,12 @@ class ProjectRepo:
             ),
             self._query_scalar(
                 self._role_recommendations,
-                "SELECT VALUE {cnt: COUNT(1), avg_reduction: AVG(c.reduction_score)} FROM c",
+                "SELECT VALUE COUNT(1) FROM c",
+                [],
+            ),
+            self._query_scalar(
+                self._role_recommendations,
+                "SELECT VALUE AVG(c.reduction_score) FROM c",
                 [],
             ),
         )
@@ -1447,8 +1453,8 @@ class ProjectRepo:
         high_risk_count = high_risk_count_scalar or 0
         bp_resolved_count = bp_resolved or 0
         compliance_score = (bp_resolved_count / bp_total * 100.0) if bp_total > 0 else 100.0
-        recommendations_count = (rec_agg.get("cnt") or 0) if rec_agg else 0
-        avg_reduction_score = (rec_agg.get("avg_reduction") or 0.0) if rec_agg else 0.0
+        recommendations_count = rec_count_scalar or 0
+        avg_reduction_score = rec_avg_reduction_scalar or 0.0
 
         return {
             "total_identities": total_identities,
