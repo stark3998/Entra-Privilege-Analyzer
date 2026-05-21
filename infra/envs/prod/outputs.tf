@@ -52,3 +52,13 @@ output "resource_group_name" {
   description = "Resource group name"
   value       = local.resource_group_name
 }
+
+output "cosmos_database_name" {
+  description = "Cosmos DB master database name"
+  value       = module.data.cosmos_database_name
+}
+
+output "function_app_hostname" {
+  description = "Scan Function App hostname"
+  value       = module.functions.function_app_hostname
+}

@@ -102,3 +102,19 @@ resource "azurerm_key_vault_secret" "appinsights_connection_string" {
 
   depends_on = [azurerm_role_assignment.deployer_kv_admin]
 }
+
+resource "azurerm_key_vault_secret" "encryption_key" {
+  name         = "encryption-key"
+  value        = var.encryption_key
+  key_vault_id = azurerm_key_vault.main.id
+
+  depends_on = [azurerm_role_assignment.deployer_kv_admin]
+}
+
+resource "azurerm_key_vault_secret" "scan_function_key" {
+  name         = "scan-function-key"
+  value        = var.scan_function_key
+  key_vault_id = azurerm_key_vault.main.id
+
+  depends_on = [azurerm_role_assignment.deployer_kv_admin]
+}

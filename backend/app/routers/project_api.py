@@ -105,7 +105,7 @@ async def get_dashboard(
             if cached is not None:
                 return json.loads(cached)
         except Exception:
-            pass
+            logger.debug("Cache read failed for %s", cache_key, exc_info=True)
 
     data = await project_repo.get_dashboard_summary()
     summary = DashboardSummary(
@@ -129,7 +129,7 @@ async def get_dashboard(
         try:
             await cache.set(cache_key, json.dumps(result), ttl_seconds=_DASHBOARD_CACHE_TTL)
         except Exception:
-            pass
+            logger.debug("Cache write failed for %s", cache_key, exc_info=True)
 
     return result
 
@@ -176,7 +176,7 @@ async def get_analytics(
             if cached is not None:
                 return json.loads(cached)
         except Exception:
-            pass
+            logger.debug("Cache read failed for %s", cache_key, exc_info=True)
 
     data = await project_repo.get_analytics_data(days)
     result = AnalyticsData(
@@ -208,7 +208,7 @@ async def get_analytics(
         try:
             await cache.set(cache_key, json.dumps(result), ttl_seconds=_DASHBOARD_CACHE_TTL)
         except Exception:
-            pass
+            logger.debug("Cache write failed for %s", cache_key, exc_info=True)
 
     return result
 

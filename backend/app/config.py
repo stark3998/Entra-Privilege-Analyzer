@@ -10,10 +10,11 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     local_mode: bool = False
+    debug_mode: bool = False
     backend_port: int = 8000
     cors_origins: str = "http://localhost:5173"
     cors_origin_regex: str = (
-        "^https://ca-entraperm-frontend-[a-z0-9-]+\\.[a-z0-9-]+\\.[a-z]+\\.azurecontainerapps\\.io$"
+        "^https://(ca-entraperm-frontend-[a-z0-9-]+\\.[a-z0-9-]+\\.[a-z]+\\.azurecontainerapps\\.io|[a-z0-9-]+\\.jatinmadan\\.com)$"
     )
 
     # Entra ID
@@ -57,6 +58,10 @@ class Settings(BaseSettings):
     pim_session_backfill_days: int = 30
     pim_session_business_hours_start: int = 7
     pim_session_business_hours_end: int = 19
+
+    # Observability
+    log_format: str = "text"
+    otel_service_name: str = "entra-permissions-analyzer"
 
     # App Insights
     applicationinsights_connection_string: str = ""

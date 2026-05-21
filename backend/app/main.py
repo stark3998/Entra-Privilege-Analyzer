@@ -3,16 +3,24 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import traceback
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings, get_settings
-from app.observability import setup_observability
+from app.observability import (
+    JsonFormatter,
+    RequestIdFilter,
+    request_id_var,
+    setup_observability,
+)
 from app.routers import (
     health,
     project_api,
@@ -30,11 +38,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings: Settings = get_settings()
 
     # Logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s — %(message)s",
-    )
+    log_level = logging.DEBUG if settings.debug_mode else logging.INFO
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    if not root_logger.handlers:
+        handler = logging.StreamHandler()
+        root_logger.addHandler(handler)
+    for h in root_logger.handlers:
+        if settings.log_format == "json":
+            h.setFormatter(JsonFormatter())
+        else:
+            h.addFilter(RequestIdFilter())
+            h.setFormatter(
+                logging.Formatter("%(asctime)s %(levelname)s %(name)s [%(request_id)s] — %(message)s")
+            )
     logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+    if settings.debug_mode:
+        logger.info("DEBUG MODE ACTIVE — verbose errors enabled in HTTP responses")
 
     if settings.local_mode:
         logger.warning("LOCAL MODE ACTIVE — authentication disabled")
@@ -42,7 +62,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.instance_id = str(uuid.uuid4())
 
     # Observability
-    setup_observability(settings)
+    setup_observability(settings, instance_id=app.state.instance_id)
 
     # Cosmos DB — master repo + project repo cache
     from azure.cosmos.aio import CosmosClient
@@ -164,6 +184,51 @@ def create_app() -> FastAPI:
 
             await self.app(scope, receive, send_with_headers)
 
+    _PROJECT_PATH_RE = re.compile(r"/api/projects/([^/]+)")
+
+    class RequestIdMiddleware:
+        """Pure ASGI middleware — injects request ID into context, logs, and spans."""
+
+        def __init__(self, app: ASGIApp) -> None:
+            self.app = app
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+
+            headers = dict(scope.get("headers", []))
+            rid = (headers.get(b"x-request-id", b"") or b"").decode() or str(uuid.uuid4())
+            token = request_id_var.set(rid)
+
+            try:
+                from opentelemetry import trace
+
+                span = trace.get_current_span()
+                if span.is_recording():
+                    span.set_attribute("request.id", rid)
+                    path = scope.get("path", "")
+                    m = _PROJECT_PATH_RE.search(path)
+                    if m:
+                        span.set_attribute("project.id", m.group(1))
+            except Exception:
+                pass
+
+            async def send_with_request_id(message: dict) -> None:
+                if message["type"] == "http.response.start":
+                    message = {
+                        **message,
+                        "headers": list(message.get("headers", []))
+                        + [(b"x-request-id", rid.encode())],
+                    }
+                await send(message)
+
+            try:
+                await self.app(scope, receive, send_with_request_id)
+            finally:
+                request_id_var.reset(token)
+
+    app.add_middleware(RequestIdMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
 
     # CORS
@@ -182,6 +247,50 @@ def create_app() -> FastAPI:
     app.include_router(projects.router)
     app.include_router(project_api.router)
     app.include_router(scans.router)
+
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        from app.exceptions import AppError
+
+        rid = request_id_var.get("")
+        tb = traceback.format_exception(type(exc), exc, exc.__traceback__)
+        tb_str = "".join(tb)
+        logger.error("Unhandled exception on %s %s:\n%s", request.method, request.url.path, tb_str)
+
+        try:
+            from opentelemetry import trace
+
+            span = trace.get_current_span()
+            if span.is_recording():
+                span.set_status(trace.StatusCode.ERROR, str(exc))
+                span.record_exception(exc)
+                span.set_attribute("request.id", rid)
+        except Exception:
+            pass
+
+        status_code = 500
+        error_code = "internal_error"
+        if isinstance(exc, AppError):
+            status_code = exc.status_code
+            error_code = exc.code
+
+        if settings.debug_mode:
+            return JSONResponse(
+                status_code=status_code,
+                content={
+                    "detail": str(exc),
+                    "code": error_code,
+                    "exception_type": type(exc).__qualname__,
+                    "traceback": tb_str,
+                    "request_id": rid,
+                    "path": request.url.path,
+                    "method": request.method,
+                },
+            )
+        return JSONResponse(
+            status_code=status_code,
+            content={"detail": "Internal Server Error", "request_id": rid},
+        )
 
     return app
 

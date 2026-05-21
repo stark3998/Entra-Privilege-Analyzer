@@ -435,6 +435,8 @@ function Initialize-TerraformExistingResourceState {
         "module.security.azurerm_key_vault_secret.redis_password"                = "redis-password"
         "module.security.azurerm_key_vault_secret.foundry_key"                   = "foundry-key"
         "module.security.azurerm_key_vault_secret.appinsights_connection_string" = "appinsights-connection-string"
+        "module.security.azurerm_key_vault_secret.encryption_key"                = "encryption-key"
+        "module.security.azurerm_key_vault_secret.scan_function_key"             = "scan-function-key"
     }
     foreach ($address in $keyVaultSecrets.Keys) {
         Write-Host "Adoption check: $address" -ForegroundColor DarkGray
@@ -638,6 +640,19 @@ $env:TF_VAR_location = $Location
 $env:TF_VAR_project_name = $ProjectName
 $env:TF_VAR_environment = $Environment
 
+# Generate encryption key if not provided
+if (-not $EncryptionKey) {
+    $bytes = New-Object byte[] 32
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $EncryptionKey = [Convert]::ToBase64String($bytes)
+    Write-Warning "Generated ENCRYPTION_KEY. Pass -EncryptionKey to persist across redeploys."
+}
+$env:TF_VAR_encryption_key = $EncryptionKey
+
+# scan_function_key has a default of "" in variables.tf — Terraform creates the KV secret;
+# the actual Function App host key is populated after first deployment.
+$env:TF_VAR_scan_function_key = "placeholder-replaced-after-first-deploy"
+
 $localModeValue = if ($EnableLocalMode) { "true" } else { "false" }
 
 Write-Step "Initializing Terraform"
@@ -757,33 +772,32 @@ if (-not $SkipFrontendRedeploy) {
 $backendFqdn = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "backend_fqdn"
 $frontendFqdn = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "frontend_fqdn"
 $keyVaultName = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "key_vault_name"
+$cosmosDatabaseName = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "cosmos_database_name"
+$functionAppHostname = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "function_app_hostname"
 $backendUrl = "https://$backendFqdn"
 $frontendUrl = "https://$frontendFqdn"
 $keyVaultUrl = "https://$keyVaultName.vault.azure.net/"
+$scanFunctionAppUrl = "https://$functionAppHostname"
 
 Write-Step "Updating backend runtime settings"
-$resolvedEncryptionKey = $EncryptionKey
-if (-not $resolvedEncryptionKey -and $EnableLocalMode) {
-    $bytes = New-Object byte[] 32
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
-    $resolvedEncryptionKey = [Convert]::ToBase64String($bytes)
-    Write-Warning "Generated a temporary ENCRYPTION_KEY for local-mode deployment. Persist it with -EncryptionKey if you need encrypted project secrets to survive future redeploys."
-}
-
 $envVars = @(
     "LOCAL_MODE=$localModeValue",
     "CORS_ORIGINS=$frontendUrl",
     "CORS_ORIGIN_REGEX=",
     "AZURE_CLIENT_ID=$ExistingApplicationClientId",
     "AZURE_TENANT_ID=$tenantId",
+    "COSMOS_MASTER_DATABASE=$cosmosDatabaseName",
     "AZURE_FOUNDRY_ENDPOINT=$FoundryEndpoint",
     "AZURE_FOUNDRY_MODEL=$FoundryModel",
-    "KEYVAULT_URL=$keyVaultUrl"
+    "KEYVAULT_URL=$keyVaultUrl",
+    "ENCRYPTION_KEY=$EncryptionKey",
+    "SCAN_FUNCTION_APP_URL=$scanFunctionAppUrl"
 )
-
-if ($resolvedEncryptionKey) {
-    $envVars += "ENCRYPTION_KEY=$resolvedEncryptionKey"
-}
+# AZURE_CLIENT_SECRET, AZURE_FOUNDRY_KEY, COSMOS_KEY, COSMOS_ENDPOINT,
+# REDIS_PASSWORD, SCAN_FUNCTION_KEY, APPLICATIONINSIGHTS_CONNECTION_STRING,
+# and ENCRYPTION_KEY (Key Vault ref) are set by Terraform via Container App
+# secret blocks. The plain ENCRYPTION_KEY above is a runtime override until
+# the next terraform apply wires the Key Vault reference.
 
 Update-ContainerAppEnvVars -AppName $backendAppName -ResourceGroupName $ResourceGroupName -EnvVars $envVars
 

@@ -58,6 +58,18 @@ variable "appinsights_connection_string" {
   sensitive   = true
 }
 
+variable "encryption_key" {
+  description = "Base64-encoded 32-byte AES-256-GCM key for encrypting stored credentials"
+  type        = string
+  sensitive   = true
+}
+
+variable "scan_function_key" {
+  description = "Function-level auth key for the scan Function App"
+  type        = string
+  sensitive   = true
+}
+
 variable "tags" {
   description = "Tags applied to all resources"
   type        = map(string)

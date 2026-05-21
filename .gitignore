@@ -60,3 +60,4 @@ frontend/__azurite_*.json
 frontend/AzuriteConfig
 frontend/__blobstorage__/*
 functions/local.settings.json
+.ruff_cache/

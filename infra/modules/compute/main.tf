@@ -109,6 +109,18 @@ resource "azurerm_container_app" "backend" {
     identity            = var.managed_identity_id
   }
 
+  secret {
+    name                = "encryption-key"
+    key_vault_secret_id = var.secret_uris.encryption_key
+    identity            = var.managed_identity_id
+  }
+
+  secret {
+    name                = "scan-function-key"
+    key_vault_secret_id = var.secret_uris.scan_function_key
+    identity            = var.managed_identity_id
+  }
+
   template {
     min_replicas = 1
     max_replicas = 10
@@ -121,7 +133,7 @@ resource "azurerm_container_app" "backend" {
 
       # Plain env vars
       env {
-        name  = "COSMOS_DATABASE"
+        name  = "COSMOS_MASTER_DATABASE"
         value = var.cosmos_database_name
       }
 
@@ -199,6 +211,26 @@ resource "azurerm_container_app" "backend" {
       env {
         name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         secret_name = "appinsights-connection-string"
+      }
+
+      env {
+        name        = "ENCRYPTION_KEY"
+        secret_name = "encryption-key"
+      }
+
+      env {
+        name        = "SCAN_FUNCTION_KEY"
+        secret_name = "scan-function-key"
+      }
+
+      env {
+        name  = "SCAN_FUNCTION_APP_URL"
+        value = var.scan_function_app_url
+      }
+
+      env {
+        name  = "LOG_FORMAT"
+        value = "json"
       }
 
       # Liveness probe
@@ -394,6 +426,12 @@ resource "azurerm_container_app_job" "scheduled" {
     identity            = var.managed_identity_id
   }
 
+  secret {
+    name                = "encryption-key"
+    key_vault_secret_id = var.secret_uris.encryption_key
+    identity            = var.managed_identity_id
+  }
+
   schedule_trigger_config {
     cron_expression          = each.value.schedule
     parallelism              = 1
@@ -409,7 +447,7 @@ resource "azurerm_container_app_job" "scheduled" {
       command = each.value.command
 
       env {
-        name  = "COSMOS_DATABASE"
+        name  = "COSMOS_MASTER_DATABASE"
         value = var.cosmos_database_name
       }
 
@@ -461,6 +499,11 @@ resource "azurerm_container_app_job" "scheduled" {
       env {
         name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         secret_name = "appinsights-connection-string"
+      }
+
+      env {
+        name        = "ENCRYPTION_KEY"
+        secret_name = "encryption-key"
       }
     }
   }

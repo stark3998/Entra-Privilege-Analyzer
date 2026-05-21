@@ -11,8 +11,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.models.drift import BaselineStats
+from app.observability import get_tracer
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 _WINDOW_DAYS = 30
 _BATCH_SIZE = 500
@@ -30,6 +32,10 @@ class BaselinePipeline:
         Groups action events by (identity_id, action, resource), counts per day,
         then computes mean/stddev of daily counts. Upserts BaselineStats documents.
         """
+        with tracer.start_as_current_span("baseline_pipeline.run", attributes={"tenant_id": tenant_id}):
+            return await self._run_inner(tenant_id)
+
+    async def _run_inner(self, tenant_id: str) -> dict[str, Any]:
         start = time.monotonic()
         now = datetime.now(UTC)
         window_start = now - timedelta(days=_WINDOW_DAYS)

@@ -62,10 +62,23 @@ variable "foundry_model" {
   default     = "gpt-4o"
 }
 
+variable "encryption_key" {
+  description = "Base64-encoded 32-byte AES-256-GCM key for encrypting stored credentials"
+  type        = string
+  sensitive   = true
+}
+
+variable "scan_function_key" {
+  description = "Function-level auth key for the scan Function App"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "cors_origin_regex" {
   description = "Regex for allowed browser origins for the frontend"
   type        = string
-  default     = "^https://ca-entraperm-frontend-prod\\.[a-z0-9-]+\\.[a-z]+\\.azurecontainerapps\\.io$"
+  default     = "^https://(ca-entraperm-frontend-prod\\.[a-z0-9-]+\\.[a-z]+\\.azurecontainerapps\\.io|[a-z0-9-]+\\.jatinmadan\\.com)$"
 }
 
 variable "tags" {

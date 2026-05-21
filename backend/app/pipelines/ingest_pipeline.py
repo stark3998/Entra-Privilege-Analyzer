@@ -11,10 +11,12 @@ from app.config import get_settings
 from app.models.action import ActionEvent
 from app.models.identity import IdentityProfile, IdentityType, ObservedAction
 from app.models.project import ScanRecord
+from app.observability import get_tracer, scan_duration_histogram, scan_events_counter, scan_identities_counter
 from app.services.graph_ingest import GraphIngestService
 from app.services.graph_roles import GraphRolesService
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 _IDENTITY_PROGRESS_INTERVAL = 25
 
@@ -124,6 +126,22 @@ class IngestPipeline:
         previous_items: int = 0,
     ) -> int:
         """Stream audit logs page-by-page, parsing and storing incrementally."""
+        with tracer.start_as_current_span("ingest.audit_logs", attributes={"tenant_id": tenant_id}):
+            return await self._stream_audit_logs_inner(
+                tenant_id, scan_record, all_events, actor_registry,
+                resume_next_link=resume_next_link, previous_items=previous_items,
+            )
+
+    async def _stream_audit_logs_inner(
+        self,
+        tenant_id: str,
+        scan_record: ScanRecord | None,
+        all_events: list[ActionEvent],
+        actor_registry: dict[str, tuple[str, str]],
+        *,
+        resume_next_link: str | None = None,
+        previous_items: int = 0,
+    ) -> int:
         total = previous_items
         async for page_items, next_link in self._graph.stream_audit_logs(
             tenant_id,
@@ -155,6 +173,22 @@ class IngestPipeline:
         previous_items: int = 0,
     ) -> int:
         """Stream sign-in logs page-by-page, parsing and storing incrementally."""
+        with tracer.start_as_current_span("ingest.sign_in_logs", attributes={"tenant_id": tenant_id}):
+            return await self._stream_sign_in_logs_inner(
+                tenant_id, scan_record, all_events, actor_registry,
+                resume_next_link=resume_next_link, previous_items=previous_items,
+            )
+
+    async def _stream_sign_in_logs_inner(
+        self,
+        tenant_id: str,
+        scan_record: ScanRecord | None,
+        all_events: list[ActionEvent],
+        actor_registry: dict[str, tuple[str, str]],
+        *,
+        resume_next_link: str | None = None,
+        previous_items: int = 0,
+    ) -> int:
         total = previous_items
         async for page_items, next_link in self._graph.stream_sign_in_logs(
             tenant_id,
@@ -208,6 +242,20 @@ class IngestPipeline:
         full_sync: bool = False,
         scan_record: ScanRecord | None = None,
         resume_from: ScanRecord | None = None,
+    ) -> dict[str, Any]:
+        with tracer.start_as_current_span(
+            "ingest_pipeline.run",
+            attributes={"tenant_id": tenant_id, "full_sync": full_sync, "resumed": resume_from is not None},
+        ) as span:
+            return await self._run_inner(tenant_id, full_sync, scan_record, resume_from, span)
+
+    async def _run_inner(
+        self,
+        tenant_id: str,
+        full_sync: bool,
+        scan_record: ScanRecord | None,
+        resume_from: ScanRecord | None,
+        span: Any,
     ) -> dict[str, Any]:
         start_time = time.monotonic()
         now = datetime.now(UTC)
@@ -706,6 +754,17 @@ class IngestPipeline:
                 await self._update_phase(scan_record, "access_paths", "failed")
 
         duration_ms = int((time.monotonic() - start_time) * 1000)
+
+        span.set_attribute("events_ingested", len(all_events))
+        span.set_attribute("identities_processed", identities_processed)
+        span.set_attribute("duration_ms", duration_ms)
+        attrs = {"tenant_id": tenant_id}
+        if scan_duration_histogram is not None:
+            scan_duration_histogram.record(duration_ms, attributes=attrs)
+        if scan_events_counter is not None:
+            scan_events_counter.add(len(all_events), attributes=attrs)
+        if scan_identities_counter is not None:
+            scan_identities_counter.add(identities_processed, attributes=attrs)
 
         summary: dict[str, Any] = {
             "tenant_id": tenant_id,

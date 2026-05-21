@@ -19,6 +19,7 @@ from app.models.pim_session import (
 from app.models.project import ScanRecord
 from app.services.azure_rm_pim import AzureRmPimService
 from app.services.graph_ingest import GraphIngestService
+from app.observability import get_tracer
 from app.services.pim_session_anomaly_detector import (
     PimSessionAnomalyDetector,
     compute_risk_score,
@@ -26,6 +27,7 @@ from app.services.pim_session_anomaly_detector import (
 )
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 
 def _deterministic_id(
@@ -113,6 +115,16 @@ class PimSessionPipeline:
         subscription_ids: list[str] | None = None,
         scan_record: ScanRecord | None = None,
         backfill_days: int = 30,
+    ) -> dict[str, Any]:
+        with tracer.start_as_current_span("pim_session_pipeline.run", attributes={"tenant_id": tenant_id}):
+            return await self._run_inner(tenant_id, subscription_ids, scan_record, backfill_days)
+
+    async def _run_inner(
+        self,
+        tenant_id: str,
+        subscription_ids: list[str] | None,
+        scan_record: ScanRecord | None,
+        backfill_days: int,
     ) -> dict[str, Any]:
         start_time = time.monotonic()
         now = datetime.now(UTC)

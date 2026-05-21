@@ -215,7 +215,7 @@ async def _poll_orchestration_status(
     except asyncio.CancelledError:
         pass
     except Exception as exc:
-        logger.error("Poll loop crashed for scan %s: %s", scan_id, exc)
+        logger.error("Poll loop crashed for scan %s: %s", scan_id, exc, exc_info=True)
 
 
 async def _emit_history_event(
@@ -429,7 +429,7 @@ async def trigger_scan(
     try:
         result = await _start_function_app_scan(settings, function_payload)
     except Exception as exc:
-        logger.error("Failed to start function app scan: %s", exc)
+        logger.error("Failed to start function app scan: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to start scan orchestration. Check function app availability.",

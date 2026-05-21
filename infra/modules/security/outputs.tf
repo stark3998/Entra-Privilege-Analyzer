@@ -23,5 +23,7 @@ output "secret_uris" {
     redis_password          = azurerm_key_vault_secret.redis_password.versionless_id
     foundry_key             = azurerm_key_vault_secret.foundry_key.versionless_id
     appinsights_conn_string = azurerm_key_vault_secret.appinsights_connection_string.versionless_id
+    encryption_key          = azurerm_key_vault_secret.encryption_key.versionless_id
+    scan_function_key       = azurerm_key_vault_secret.scan_function_key.versionless_id
   }
 }

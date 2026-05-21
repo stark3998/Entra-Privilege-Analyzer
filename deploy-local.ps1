@@ -85,13 +85,27 @@ function Set-EnvFile {
         }
     }
 
-    Set-EnvDefault "LOCAL_MODE"        "true"
-    Set-EnvDefault "VITE_LOCAL_MODE"   "true"
-    Set-EnvDefault "VITE_API_BASE_URL" "http://localhost:8000"
-    Set-EnvDefault "CORS_ORIGINS"      "http://localhost:5173"
-    Set-EnvDefault "REDIS_SSL"         "false"
-    Set-EnvDefault "REDIS_PASSWORD"    ""
-    Set-EnvDefault "SCAN_FUNCTION_KEY" "local-dev-function-key"
+    Set-EnvDefault "LOCAL_MODE"             "true"
+    Set-EnvDefault "DEBUG_MODE"             "true"
+    Set-EnvDefault "LOG_FORMAT"             "text"
+    Set-EnvDefault "VITE_LOCAL_MODE"        "true"
+    Set-EnvDefault "VITE_API_BASE_URL"      "http://localhost:8000"
+    Set-EnvDefault "CORS_ORIGINS"           "http://localhost:5173"
+    Set-EnvDefault "REDIS_SSL"              "false"
+    Set-EnvDefault "REDIS_PASSWORD"         ""
+    Set-EnvDefault "COSMOS_MASTER_DATABASE" "entra-master"
+    Set-EnvDefault "SCAN_FUNCTION_APP_URL"  "http://functions:80"
+    Set-EnvDefault "SCAN_FUNCTION_KEY"      "local-dev-function-key"
+
+    # Generate ENCRYPTION_KEY if not already set
+    $content = Get-Content .env -Raw
+    if ($content -notmatch "(?m)^ENCRYPTION_KEY=.+") {
+        $bytes = New-Object byte[] 32
+        [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+        $key = [Convert]::ToBase64String($bytes)
+        Add-Content .env "ENCRYPTION_KEY=$key"
+        Write-Log "Generated ENCRYPTION_KEY"
+    }
 
     Write-Ok ".env is configured for local Docker deployment"
 }

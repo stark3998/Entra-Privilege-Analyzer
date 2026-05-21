@@ -14,8 +14,10 @@ from azure.cosmos.exceptions import CosmosHttpResponseError, CosmosResourceNotFo
 from app.config import Settings
 from app.models.alert_rules import AlertRule, ScanSchedule
 from app.models.project import Project, ProjectMember, ScanLogEntry, ScanRecord
+from app.observability import cosmos_ru_counter, get_tracer
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 _repo: MasterRepo | None = None
 
@@ -115,19 +117,27 @@ class MasterRepo:
         body: dict[str, Any],
         op_name: str,
     ) -> dict[str, Any]:
-        t0 = time.monotonic()
-        ru: float = 0.0
+        with tracer.start_as_current_span(
+            "cosmos.upsert",
+            attributes={"db.system": "cosmosdb", "db.operation": op_name, "db.cosmosdb.container": container.id},
+        ) as span:
+            t0 = time.monotonic()
+            ru: float = 0.0
 
-        def _hook(_: Any, headers: dict[str, str]) -> None:
-            nonlocal ru
-            ru = float(headers.get("x-ms-request-charge", 0))
+            def _hook(_: Any, headers: dict[str, str]) -> None:
+                nonlocal ru
+                ru = float(headers.get("x-ms-request-charge", 0))
 
-        result: dict[str, Any] = await container.upsert_item(
-            body=body, response_hook=_hook,
-        )
-        elapsed = (time.monotonic() - t0) * 1000
-        self._log_op(op_name, container.id, duration_ms=elapsed, ru=ru)
-        return result
+            result: dict[str, Any] = await container.upsert_item(
+                body=body, response_hook=_hook,
+            )
+            elapsed = (time.monotonic() - t0) * 1000
+            span.set_attribute("db.cosmosdb.request_units", ru)
+            span.set_attribute("duration_ms", elapsed)
+            if cosmos_ru_counter is not None:
+                cosmos_ru_counter.add(ru, attributes={"operation": op_name})
+            self._log_op(op_name, container.id, duration_ms=elapsed, ru=ru)
+            return result
 
     async def _tracked_query(
         self,
@@ -137,22 +147,31 @@ class MasterRepo:
         op_name: str,
         **kwargs: Any,
     ) -> list[dict[str, Any]]:
-        t0 = time.monotonic()
-        ru: float = 0.0
+        with tracer.start_as_current_span(
+            "cosmos.query",
+            attributes={"db.system": "cosmosdb", "db.operation": op_name, "db.cosmosdb.container": container.id},
+        ) as span:
+            t0 = time.monotonic()
+            ru: float = 0.0
 
-        def _hook(_: Any, headers: dict[str, str]) -> None:
-            nonlocal ru
-            ru += float(headers.get("x-ms-request-charge", 0))
+            def _hook(_: Any, headers: dict[str, str]) -> None:
+                nonlocal ru
+                ru += float(headers.get("x-ms-request-charge", 0))
 
-        results: list[dict[str, Any]] = [
-            item async for item in container.query_items(
-                query=query, parameters=parameters,
-                response_hook=_hook, **kwargs,
-            )
-        ]
-        elapsed = (time.monotonic() - t0) * 1000
-        self._log_op(op_name, container.id, items=len(results), duration_ms=elapsed, ru=ru)
-        return results
+            results: list[dict[str, Any]] = [
+                item async for item in container.query_items(
+                    query=query, parameters=parameters,
+                    response_hook=_hook, **kwargs,
+                )
+            ]
+            elapsed = (time.monotonic() - t0) * 1000
+            span.set_attribute("db.cosmosdb.request_units", ru)
+            span.set_attribute("db.cosmosdb.items_returned", len(results))
+            span.set_attribute("duration_ms", elapsed)
+            if cosmos_ru_counter is not None:
+                cosmos_ru_counter.add(ru, attributes={"operation": op_name})
+            self._log_op(op_name, container.id, items=len(results), duration_ms=elapsed, ru=ru)
+            return results
 
     # ------------------------------------------------------------------
     # Project operations

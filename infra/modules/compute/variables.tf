@@ -43,6 +43,8 @@ variable "secret_uris" {
     redis_password          = string
     foundry_key             = string
     appinsights_conn_string = string
+    encryption_key          = string
+    scan_function_key       = string
   })
 }
 
@@ -94,6 +96,12 @@ variable "redis_hostname" {
 variable "redis_port" {
   description = "Redis cache SSL port"
   type        = number
+}
+
+variable "scan_function_app_url" {
+  description = "Base URL of the scan Function App (e.g., https://func-entraperm-scan-prod.azurewebsites.net)"
+  type        = string
+  default     = ""
 }
 
 variable "foundry_endpoint" {

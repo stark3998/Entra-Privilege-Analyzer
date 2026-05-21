@@ -10,10 +10,12 @@ from typing import Any
 
 from app.models.drift import DriftAlert
 from app.models.identity import IdentityProfile
+from app.observability import get_tracer
 from app.services.drift_detector import DriftDetector
 from app.services.risk_scorer import RiskScorer
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 _ALERT_FLUSH_THRESHOLD = 500
 
@@ -36,6 +38,11 @@ class DriftPipeline:
 
         Returns a summary with counts and timing.
         """
+        with tracer.start_as_current_span("drift_pipeline.run", attributes={"tenant_id": tenant_id}) as span:
+            result = await self._run_inner(tenant_id, span)
+            return result
+
+    async def _run_inner(self, tenant_id: str, span: Any) -> dict[str, Any]:
         start = time.monotonic()
 
         # Paginate through all identities
@@ -107,6 +114,10 @@ class DriftPipeline:
             await self._repo.batch_upsert_identities(updated_identities)
 
         duration_ms = int((time.monotonic() - start) * 1000)
+        span.set_attribute("identities_processed", identities_processed)
+        span.set_attribute("alerts_created", alerts_created)
+        span.set_attribute("errors", errors)
+        span.set_attribute("duration_ms", duration_ms)
 
         summary: dict[str, Any] = {
             "tenant_id": tenant_id,

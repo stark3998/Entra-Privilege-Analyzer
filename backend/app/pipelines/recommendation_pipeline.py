@@ -8,9 +8,11 @@ import time
 from typing import Any
 
 from app.models.role import RoleRecommendation
+from app.observability import get_tracer
 from app.services.role_recommender import RoleRecommender
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 
 class RecommendationPipeline:
@@ -25,6 +27,10 @@ class RecommendationPipeline:
 
         Returns a summary dict with counts and timing.
         """
+        with tracer.start_as_current_span("recommendation_pipeline.run", attributes={"tenant_id": tenant_id}):
+            return await self._run_inner(tenant_id)
+
+    async def _run_inner(self, tenant_id: str) -> dict[str, Any]:
         start = time.monotonic()
 
         # Fetch all identities (paginate through everything)

@@ -12,9 +12,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.models.project import ScanLogEntry
+from app.observability import get_tracer
 from app.services.redis_cache import RedisCache
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 _RECENT_EVENTS_MAX = 200
 
@@ -246,6 +248,29 @@ class ScanEventBroker:
             )
 
     async def publish(
+        self,
+        project_id: str,
+        *,
+        type: str,
+        message: str,
+        scan_id: str | None = None,
+        level: str = "info",
+        phase: str | None = None,
+        status: str | None = None,
+        items_processed: int | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        with tracer.start_as_current_span(
+            "scan_events.publish",
+            attributes={"project_id": project_id, "event.type": type, "scan_id": scan_id or ""},
+        ):
+            await self._publish_inner(
+                project_id, type=type, message=message, scan_id=scan_id,
+                level=level, phase=phase, status=status,
+                items_processed=items_processed, details=details,
+            )
+
+    async def _publish_inner(
         self,
         project_id: str,
         *,

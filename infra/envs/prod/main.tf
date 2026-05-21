@@ -62,6 +62,7 @@ module "identity" {
 
   spa_redirect_uris = [
     "http://localhost:5173",
+    "https://access.jatinmadan.com",
   ]
 
   tags = local.common_tags
@@ -108,6 +109,8 @@ module "security" {
   redis_primary_key             = module.data.redis_primary_key
   foundry_key                   = var.foundry_key
   appinsights_connection_string = module.observability.app_insights_connection_string
+  encryption_key                = var.encryption_key
+  scan_function_key             = var.scan_function_key
 
   tags = local.common_tags
 }
@@ -140,6 +143,7 @@ module "compute" {
   redis_port            = module.data.redis_port
   foundry_endpoint      = var.foundry_endpoint
   foundry_model         = var.foundry_model
+  scan_function_app_url = "https://${module.functions.function_app_hostname}"
 
   tags = local.common_tags
 }

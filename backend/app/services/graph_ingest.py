@@ -15,8 +15,10 @@ import msal
 
 from app.config import Settings
 from app.models.action import ActionEvent, ActionSource
+from app.observability import get_tracer, graph_api_request_counter
 
 logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
 
 _GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
 _GRAPH_MAX_RETRIES = 3
@@ -158,59 +160,70 @@ class GraphIngestService:
         params: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Issue a Graph GET with bounded retry handling for throttling."""
-        for attempt in range(_GRAPH_MAX_RETRIES + 1):
-            resp = await client.get(
-                url,
-                headers={"Authorization": f"Bearer {token}"},
-                params=params,
-            )
-            if resp.status_code == 429 and attempt < _GRAPH_MAX_RETRIES:
-                delay = _retry_delay_seconds(resp, attempt)
-                logger.warning(
-                    "Graph throttled request to %s; retrying in %.2fs (attempt %s/%s)",
+        with tracer.start_as_current_span("graph_api.request", attributes={"graph.url": url}) as span:
+            for attempt in range(_GRAPH_MAX_RETRIES + 1):
+                span.set_attribute("graph.attempt", attempt)
+                resp = await client.get(
                     url,
-                    delay,
-                    attempt + 1,
-                    _GRAPH_MAX_RETRIES,
+                    headers={"Authorization": f"Bearer {token}"},
+                    params=params,
                 )
-                await self._emit_progress(
-                    {
-                        "type": "graph.retry",
-                        "level": "warning",
-                        "message": f"Microsoft Graph throttled {url}. Retrying in {delay:.2f}s.",
-                        "details": {
-                            "attempt": attempt + 1,
-                            "max_retries": _GRAPH_MAX_RETRIES,
-                            "delay_seconds": delay,
-                        },
-                    }
-                )
-                await asyncio.sleep(delay)
-                continue
+                span.set_attribute("graph.status_code", resp.status_code)
+                if graph_api_request_counter is not None:
+                    graph_api_request_counter.add(
+                        1, attributes={"endpoint": url.split("?")[0], "status_code": str(resp.status_code)}
+                    )
 
-            if resp.is_success:
-                return resp.json()
+                if resp.status_code == 429 and attempt < _GRAPH_MAX_RETRIES:
+                    delay = _retry_delay_seconds(resp, attempt)
+                    logger.warning(
+                        "Graph throttled request to %s; retrying in %.2fs (attempt %s/%s)",
+                        url,
+                        delay,
+                        attempt + 1,
+                        _GRAPH_MAX_RETRIES,
+                    )
+                    await self._emit_progress(
+                        {
+                            "type": "graph.retry",
+                            "level": "warning",
+                            "message": f"Microsoft Graph throttled {url}. Retrying in {delay:.2f}s.",
+                            "details": {
+                                "attempt": attempt + 1,
+                                "max_retries": _GRAPH_MAX_RETRIES,
+                                "delay_seconds": delay,
+                            },
+                        }
+                    )
+                    await asyncio.sleep(delay)
+                    continue
 
-            self._raise_graph_error(resp, endpoint=url)
+                if resp.is_success:
+                    return resp.json()
 
-        raise GraphThrottledError(
-            f"Microsoft Graph throttled requests to {url} after retrying.",
-            status_code=429,
-            endpoint=url,
-        )
+                self._raise_graph_error(resp, endpoint=url)
+
+            raise GraphThrottledError(
+                f"Microsoft Graph throttled requests to {url} after retrying.",
+                status_code=429,
+                endpoint=url,
+            )
 
     async def _get_client_credential_token(self, tenant_id: str) -> str:
         """Get a token for a specific tenant using client credentials flow."""
-        app = msal.ConfidentialClientApplication(
-            self._client_id,
-            authority=f"https://login.microsoftonline.com/{tenant_id}",
-            client_credential=self._client_secret,
-        )
-        result: dict[str, Any] = app.acquire_token_for_client(scopes=_GRAPH_SCOPE)
-        if "access_token" not in result:
-            error = result.get("error_description", "Unknown error")
-            raise RuntimeError(f"Client credential token acquisition failed: {error}")
-        return result["access_token"]
+        with tracer.start_as_current_span(
+            "graph_api.token_acquisition", attributes={"tenant_id": tenant_id}
+        ):
+            app = msal.ConfidentialClientApplication(
+                self._client_id,
+                authority=f"https://login.microsoftonline.com/{tenant_id}",
+                client_credential=self._client_secret,
+            )
+            result: dict[str, Any] = app.acquire_token_for_client(scopes=_GRAPH_SCOPE)
+            if "access_token" not in result:
+                error = result.get("error_description", "Unknown error")
+                raise RuntimeError(f"Client credential token acquisition failed: {error}")
+            return result["access_token"]
 
     async def _get_token(self, tenant_id: str) -> str:
         """Get a Graph API token — delegates to the token provider if set,
