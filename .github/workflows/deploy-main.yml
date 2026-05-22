@@ -218,11 +218,10 @@ jobs:
 
       - name: Deploy to Function App
         run: |
-          az functionapp deploy \
+          az functionapp deployment source config-zip \
             --name ${{ env.FUNCTION_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --src-path function-app.zip \
-            --type zip
+            --src function-app.zip
 
       - name: Smoke test function app
         run: |
