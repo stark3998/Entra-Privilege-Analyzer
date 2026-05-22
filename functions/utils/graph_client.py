@@ -46,7 +46,7 @@ def graph_get(
     """Issue a Graph GET with bounded retry handling for 429 throttling."""
     safe_url = _sanitize_url(url)
 
-    with httpx.Client(timeout=timeout) as client:
+    with httpx.Client(timeout=httpx.Timeout(timeout, read=timeout * 2)) as client:
         for attempt in range(_MAX_RETRIES + 1):
             start = time.monotonic()
             resp = client.get(

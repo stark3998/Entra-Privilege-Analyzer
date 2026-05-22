@@ -27,9 +27,16 @@ def orchestrate_sign_in_logs(context: df.DurableOrchestrationContext):
     payload: dict[str, Any] = context.get_input()
 
     page = 0
-    total = 0
-    next_link = None
+    total = payload.get("resume_items_processed", 0)
+    next_link = payload.get("resume_next_link")
     all_actor_entries: list[list[str]] = []
+
+    if next_link:
+        context.set_custom_status({
+            "step": "resuming_sign_in_logs",
+            "message": f"Resuming sign-in logs from checkpoint ({total} events already collected)...",
+            "count": total,
+        })
 
     while True:
         context.set_custom_status({
@@ -63,12 +70,14 @@ def orchestrate_sign_in_logs(context: df.DurableOrchestrationContext):
         all_actor_entries.extend(result.get("actor_entries", []))
         page += 1
 
+        next_link = result.get("next_link")
+
         yield context.call_activity("update_scan_phase_activity", {
             **payload, "phase_name": "sign_in_logs", "phase_status": "running",
             "items_processed": total,
+            "checkpoint_next_link": next_link,
         })
 
-        next_link = result.get("next_link")
         if not next_link:
             break
 
@@ -115,11 +124,11 @@ def fetch_sign_in_log_page_activity(payload: dict) -> dict:
 
     try:
         if next_link:
-            data = graph_get(token, next_link)
+            data = graph_get(token, next_link, timeout=60.0)
         else:
             cutoff = (datetime.now(UTC) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
             url = f"https://graph.microsoft.com/{graph_version}/auditLogs/signIns"
-            data = graph_get(token, url, {"$filter": f"createdDateTime ge {cutoff}", "$top": "999"})
+            data = graph_get(token, url, {"$filter": f"createdDateTime ge {cutoff}", "$top": "999"}, timeout=60.0)
     except Exception as exc:
         logger.error(
             "fetch_sign_in_log_page FAILED (graph) | scan=%s | page=%d | error=%s",

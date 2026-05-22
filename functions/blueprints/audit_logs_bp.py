@@ -27,9 +27,16 @@ def orchestrate_audit_logs(context: df.DurableOrchestrationContext):
     payload: dict[str, Any] = context.get_input()
 
     page = 0
-    total = 0
-    next_link = None
+    total = payload.get("resume_items_processed", 0)
+    next_link = payload.get("resume_next_link")
     all_actor_entries: list[list[str]] = []
+
+    if next_link:
+        context.set_custom_status({
+            "step": "resuming_audit_logs",
+            "message": f"Resuming audit logs from checkpoint ({total} events already collected)...",
+            "count": total,
+        })
 
     while True:
         context.set_custom_status({
@@ -63,12 +70,14 @@ def orchestrate_audit_logs(context: df.DurableOrchestrationContext):
         all_actor_entries.extend(result.get("actor_entries", []))
         page += 1
 
+        next_link = result.get("next_link")
+
         yield context.call_activity("update_scan_phase_activity", {
             **payload, "phase_name": "audit_logs", "phase_status": "running",
             "items_processed": total,
+            "checkpoint_next_link": next_link,
         })
 
-        next_link = result.get("next_link")
         if not next_link:
             break
 

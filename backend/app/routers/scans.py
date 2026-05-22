@@ -653,6 +653,7 @@ async def resume_scan(
         "cosmos_endpoint": settings.cosmos_endpoint,
         "cosmos_key": settings.cosmos_key,
         "cosmos_database": cosmos_database,
+        "cosmos_master_database": settings.cosmos_master_database,
         "graph_api_version": settings.graph_api_version,
         "resume_from_scan_id": failed_scan.id,
     }

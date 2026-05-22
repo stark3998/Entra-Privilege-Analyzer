@@ -56,6 +56,7 @@ def update_scan_phase(
     phase_name: str,
     status: str,
     items_processed: int = 0,
+    checkpoint_next_link: str | None = None,
 ) -> None:
     container = _get_scan_container(endpoint, key, database)
     scan = container.read_item(item=scan_id, partition_key=project_id)
@@ -69,9 +70,24 @@ def update_scan_phase(
             if status in ("completed", "failed", "skipped"):
                 phase["completed_at"] = now
             phase["items_processed"] = items_processed
+            if checkpoint_next_link is not None:
+                phase["checkpoint_next_link"] = checkpoint_next_link
             break
 
     container.upsert_item(scan)
+
+
+def get_previous_scan_phases(
+    endpoint: str,
+    key: str,
+    database: str,
+    project_id: str,
+    scan_id: str,
+) -> list[dict[str, Any]]:
+    scan = get_scan_record(endpoint, key, database, project_id, scan_id)
+    if scan is None:
+        return []
+    return scan.get("phases", [])
 
 
 def finalize_scan(
