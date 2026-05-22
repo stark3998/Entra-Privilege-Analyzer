@@ -878,8 +878,8 @@ async def get_function_logs(
     try:
         from datetime import timedelta
 
-        result = logs_client.query_workspace(
-            workspace_id=settings.log_analytics_workspace_id,
+        result = logs_client.query_resource(
+            resource_id=settings.log_analytics_workspace_id,
             query=kql,
             timespan=timedelta(hours=6),
         )
