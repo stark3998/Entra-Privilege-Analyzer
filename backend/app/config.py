@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     scan_function_app_url: str = ""
     scan_function_key: str = ""
 
+    # Managed identity (user-assigned) client ID for Azure SDK auth
+    managed_identity_client_id: str = ""
+
     # Log Analytics workspace ID for querying Function App logs
     log_analytics_workspace_id: str = ""
 

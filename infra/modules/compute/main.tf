@@ -234,6 +234,11 @@ resource "azurerm_container_app" "backend" {
       }
 
       env {
+        name  = "MANAGED_IDENTITY_CLIENT_ID"
+        value = var.managed_identity_client_id
+      }
+
+      env {
         name  = "LOG_FORMAT"
         value = "json"
       }

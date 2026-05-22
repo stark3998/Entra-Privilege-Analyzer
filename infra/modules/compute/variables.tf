@@ -33,6 +33,11 @@ variable "managed_identity_principal_id" {
   type        = string
 }
 
+variable "managed_identity_client_id" {
+  description = "User-assigned managed identity client ID for Azure SDK auth"
+  type        = string
+}
+
 # Key Vault secret URIs for Container App secretRef
 variable "secret_uris" {
   description = "Map of Key Vault secret URIs for Container App secret references"

@@ -129,6 +129,7 @@ module "compute" {
   log_analytics_workspace_id    = module.observability.log_analytics_workspace_id
   managed_identity_id           = module.identity.managed_identity_id
   managed_identity_principal_id = module.identity.managed_identity_principal_id
+  managed_identity_client_id    = module.identity.managed_identity_client_id
 
   # Key Vault secret URIs for Container App secretRef
   secret_uris   = module.security.secret_uris

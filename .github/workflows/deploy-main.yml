@@ -480,7 +480,7 @@ jobs:
             APPLICATIONINSIGHTS_CONNECTION_STRING
             ENCRYPTION_KEY
             SCAN_FUNCTION_APP_URL SCAN_FUNCTION_KEY
-            LOG_ANALYTICS_WORKSPACE_ID
+            LOG_ANALYTICS_WORKSPACE_ID MANAGED_IDENTITY_CLIENT_ID
             LOG_FORMAT
           )
           check_env_vars "containerapp" "${{ env.BACKEND_CONTAINER_APP_NAME }}" "${BACKEND_VARS[@]}"

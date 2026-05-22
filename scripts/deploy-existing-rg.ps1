@@ -779,6 +779,7 @@ $frontendUrl = "https://$frontendFqdn"
 $keyVaultUrl = "https://$keyVaultName.vault.azure.net/"
 $scanFunctionAppUrl = "https://$functionAppHostname"
 $logAnalyticsWorkspaceId = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "log_analytics_workspace_id"
+$managedIdentityClientId = Invoke-AzCli -Arguments @("identity", "show", "--resource-group", $ResourceGroupName, "--name", $managedIdentityName, "--query", "clientId", "--output", "tsv")
 
 Write-Step "Updating backend runtime settings"
 $envVars = @(
@@ -793,7 +794,8 @@ $envVars = @(
     "KEYVAULT_URL=$keyVaultUrl",
     "ENCRYPTION_KEY=$EncryptionKey",
     "SCAN_FUNCTION_APP_URL=$scanFunctionAppUrl",
-    "LOG_ANALYTICS_WORKSPACE_ID=$logAnalyticsWorkspaceId"
+    "LOG_ANALYTICS_WORKSPACE_ID=$logAnalyticsWorkspaceId",
+    "MANAGED_IDENTITY_CLIENT_ID=$managedIdentityClientId"
 )
 # AZURE_CLIENT_SECRET, AZURE_FOUNDRY_KEY, COSMOS_KEY, COSMOS_ENDPOINT,
 # REDIS_PASSWORD, SCAN_FUNCTION_KEY, APPLICATIONINSIGHTS_CONNECTION_STRING,

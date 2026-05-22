@@ -853,10 +853,15 @@ async def get_function_logs(
     logs_client = getattr(request.app.state, "logs_query_client", None)
     if logs_client is None:
         try:
-            from azure.identity import DefaultAzureCredential
+            from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
             from azure.monitor.query import LogsQueryClient
 
-            credential = DefaultAzureCredential()
+            if settings.managed_identity_client_id:
+                credential = ManagedIdentityCredential(
+                    client_id=settings.managed_identity_client_id
+                )
+            else:
+                credential = DefaultAzureCredential()
             logs_client = LogsQueryClient(credential)
             request.app.state.logs_query_client = logs_client
         except Exception as exc:
