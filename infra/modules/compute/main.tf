@@ -229,6 +229,11 @@ resource "azurerm_container_app" "backend" {
       }
 
       env {
+        name  = "LOG_ANALYTICS_WORKSPACE_ID"
+        value = var.log_analytics_workspace_id
+      }
+
+      env {
         name  = "LOG_FORMAT"
         value = "json"
       }

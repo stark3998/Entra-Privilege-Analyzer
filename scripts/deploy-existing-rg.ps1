@@ -778,6 +778,7 @@ $backendUrl = "https://$backendFqdn"
 $frontendUrl = "https://$frontendFqdn"
 $keyVaultUrl = "https://$keyVaultName.vault.azure.net/"
 $scanFunctionAppUrl = "https://$functionAppHostname"
+$logAnalyticsWorkspaceId = Get-TerraformOutputValue -WorkingDirectory $tfWorkDir -Name "log_analytics_workspace_id"
 
 Write-Step "Updating backend runtime settings"
 $envVars = @(
@@ -791,7 +792,8 @@ $envVars = @(
     "AZURE_FOUNDRY_MODEL=$FoundryModel",
     "KEYVAULT_URL=$keyVaultUrl",
     "ENCRYPTION_KEY=$EncryptionKey",
-    "SCAN_FUNCTION_APP_URL=$scanFunctionAppUrl"
+    "SCAN_FUNCTION_APP_URL=$scanFunctionAppUrl",
+    "LOG_ANALYTICS_WORKSPACE_ID=$logAnalyticsWorkspaceId"
 )
 # AZURE_CLIENT_SECRET, AZURE_FOUNDRY_KEY, COSMOS_KEY, COSMOS_ENDPOINT,
 # REDIS_PASSWORD, SCAN_FUNCTION_KEY, APPLICATIONINSIGHTS_CONNECTION_STRING,

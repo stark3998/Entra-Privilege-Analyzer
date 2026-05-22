@@ -62,3 +62,8 @@ output "function_app_hostname" {
   description = "Scan Function App hostname"
   value       = module.functions.function_app_hostname
 }
+
+output "log_analytics_workspace_id" {
+  description = "Log Analytics workspace resource ID (for KQL queries)"
+  value       = module.observability.log_analytics_workspace_id
+}

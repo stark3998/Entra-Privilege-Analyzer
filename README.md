@@ -631,39 +631,195 @@ See [Infrastructure](#infrastructure) for Terraform-based Azure deployment.
 
 ## Configuration
 
-### Backend Environment Variables
+All environment variables are documented below per service. Copy `.env.example` to `.env` for local development — `deploy-local.ps1` auto-generates missing values like `ENCRYPTION_KEY`.
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `LOCAL_MODE` | No | `false` | Skip authentication, return mock user (dev only) |
-| `BACKEND_PORT` | No | `8000` | Server listen port |
-| `CORS_ORIGINS` | No | `http://localhost:5173` | Comma-separated allowed origins |
-| `AZURE_CLIENT_ID` | Prod | `""` | Entra ID application (client) ID |
-| `AZURE_CLIENT_SECRET` | Prod | `""` | Entra ID client secret |
-| `AZURE_TENANT_ID` | Prod | `""` | Entra ID tenant ID (for OBO flow) |
-| `COSMOS_ENDPOINT` | Prod | `https://localhost:8081` | Cosmos DB account endpoint |
-| `COSMOS_KEY` | Prod | `""` | Cosmos DB access key |
-| `COSMOS_DATABASE` | No | `entra-analyzer` | Cosmos DB database name |
-| `REDIS_HOST` | No | `localhost` | Redis hostname |
+**Legend:** **Mandatory** = the service will not start or will critically malfunction without it. **Optional** = has a sensible default or enables a non-critical feature.
+
+### Backend (FastAPI)
+
+Defined in [config.py](backend/app/config.py). Loaded via Pydantic `BaseSettings` from env vars or `.env` file.
+
+#### Core / App Mode
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `LOCAL_MODE` | No | `false` | `true`, `false` | Skip Entra ID auth and return a mock user. **Dev only — never enable in production.** |
+| `DEBUG_MODE` | No | `false` | `true`, `false` | Detailed error responses with tracebacks, DEBUG-level logging |
+| `BACKEND_PORT` | No | `8000` | Any valid port | Server listen port |
+| `LOG_FORMAT` | No | `text` | `text`, `json` | `text` for local dev, `json` for production (structured logs for App Insights) |
+
+#### Authentication (Entra ID)
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `AZURE_CLIENT_ID` | **Yes** (prod) | `""` | GUID | Entra ID application (client) ID for JWT validation and OBO flow |
+| `AZURE_CLIENT_SECRET` | **Yes** (prod) | `""` | String | Entra ID client secret (stored in Key Vault in production) |
+| `AZURE_TENANT_ID` | **Yes** (prod) | `""` | GUID | Entra ID tenant ID for the OBO flow authority |
+
+#### CORS
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `CORS_ORIGINS` | No | `http://localhost:5173` | Comma-separated URLs | Explicit allowed origins for CORS |
+| `CORS_ORIGIN_REGEX` | No | Container Apps pattern | Regex string | Regex pattern for dynamic origin matching (e.g., Azure Container Apps hostnames) |
+
+#### Cosmos DB
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `COSMOS_ENDPOINT` | **Yes** | `https://localhost:8081` | URL | Cosmos DB account endpoint. Defaults to emulator for local dev |
+| `COSMOS_KEY` | **Yes** | `""` | String | Cosmos DB access key. Use the [emulator well-known key](https://learn.microsoft.com/en-us/azure/cosmos-db/emulator) for local dev |
+| `COSMOS_MASTER_DATABASE` | No | `entra-master` | String | Name of the master database for platform metadata |
+
+#### Redis
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `REDIS_HOST` | No | `localhost` | Hostname | Redis server hostname |
+| `REDIS_PORT` | No | `6379` | Port number | Redis server port |
+| `REDIS_PASSWORD` | **Yes** (prod) | `""` | String | Redis password. Empty for local dev, required for Azure Cache for Redis |
+| `REDIS_SSL` | No | `false` | `true`, `false` | Enable TLS for Redis. Must be `true` for Azure Cache for Redis |
+
+#### Azure Key Vault
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `KEYVAULT_URL` | **Yes** (prod) | `""` | URL (`https://<name>.vault.azure.net`) | Key Vault URL for secret resolution at startup |
+
+#### Microsoft Foundry (AI Narratives)
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `AZURE_FOUNDRY_ENDPOINT` | No | `""` | URL (`https://<name>.openai.azure.com`) | Azure AI Foundry endpoint. AI features are disabled when empty |
+| `AZURE_FOUNDRY_KEY` | No | `""` | String | Azure AI Foundry API key (stored in Key Vault in production) |
+| `AZURE_FOUNDRY_MODEL` | No | `gpt-4o` | Model deployment name | AI model deployment name for narrative generation |
+| `AZURE_OPENAI_API_VERSION` | No | `2024-02-01` | API version string | Azure OpenAI API version |
+
+#### Microsoft Graph
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `GRAPH_API_VERSION` | No | `beta` | `beta`, `v1.0` | Graph API version. `beta` for latest features (PIM, risk), `v1.0` for GA stability |
+
+#### Scan Function App
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `SCAN_FUNCTION_APP_URL` | **Yes** (prod) | `""` | URL | Durable Functions scan orchestrator URL (e.g., `https://func-entraperm-scan-prod.azurewebsites.net`) |
+| `SCAN_FUNCTION_KEY` | **Yes** (prod) | `""` | String | Function-level auth key for triggering scans (stored in Key Vault in production) |
+
+#### Observability
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | No | `""` | Connection string | App Insights connection string. Enables distributed tracing and telemetry when set |
+| `LOG_ANALYTICS_WORKSPACE_ID` | No | `""` | Azure resource ID | Log Analytics workspace resource ID. Enables the Function App Logs endpoint for KQL queries |
+| `OTEL_SERVICE_NAME` | No | `entra-permissions-analyzer` | String | OpenTelemetry service name for traces |
+
+#### Encryption
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `ENCRYPTION_KEY` | **Yes** (prod) | `""` | Base64-encoded 32-byte key | AES-256-GCM key for encrypting project client secrets at rest. `deploy-local.ps1` auto-generates one for local dev |
+
+#### PIM Session Tracking
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `PIM_SESSION_ENABLED` | No | `true` | `true`, `false` | Enable PIM privileged session tracking |
+| `PIM_SESSION_POLL_INTERVAL_MINUTES` | No | `15` | Integer | Polling interval for PIM session checks |
+| `PIM_SESSION_BACKFILL_DAYS` | No | `30` | Integer | Number of days to backfill PIM session data |
+| `PIM_SESSION_BUSINESS_HOURS_START` | No | `7` | 0-23 | Start of business hours (hour, 24h format) |
+| `PIM_SESSION_BUSINESS_HOURS_END` | No | `19` | 0-23 | End of business hours (hour, 24h format) |
+
+### Frontend (React + Vite)
+
+Build-time variables prefixed with `VITE_` — baked into the JavaScript bundle at build. For Azure deployments, pass as Docker `--build-arg` values.
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `VITE_APP_CLIENT_ID` | **Yes** (prod) | `""` | GUID | Entra ID application client ID for MSAL authentication |
+| `VITE_TENANT_ID` | No | `common` | GUID or `common` | Entra ID tenant for MSAL authority. `common` enables multi-tenant sign-in |
+| `VITE_API_BASE_URL` | No | `""` | URL or empty | API base URL override. Leave empty for same-origin `/api/*` through the nginx reverse proxy (recommended for production) |
+| `VITE_LOCAL_MODE` | No | `false` | `true`, `false` | Skip MSAL authentication. **Dev only — never enable in production.** |
+
+#### Frontend Container (nginx, runtime)
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `BACKEND_URL` | No | `http://backend:8000` | URL | Backend origin for nginx reverse proxy (`/api/*` upstream). Set at Docker build time via `--build-arg` |
+
+### Function App (Azure Durable Functions)
+
+The Function App receives most configuration via the orchestration payload from the backend (Cosmos credentials, tenant credentials, etc.). Only a few env vars are set directly.
+
+#### Azure Functions Runtime
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `AzureWebJobsStorage` | **Yes** | — | Connection string or `UseDevelopmentStorage=true` | Storage account for Durable Functions task hub (orchestration state, history) |
+| `AzureWebJobsSecretStorageType` | No | `files` (local) | `files`, `blob` | Where the Functions host stores auth keys. `files` for local dev |
+| `FUNCTIONS_WORKER_RUNTIME` | **Yes** | — | `python` | Must be `python` |
+| `WEBSITE_HOSTNAME` | No | Auto-set by Azure | Hostname string | Functions host hostname. Set to `localhost:7071` in docker-compose |
+
+#### Data Access
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `COSMOS_ENDPOINT` | **Yes** | — | URL | Cosmos DB endpoint. In production, uses Key Vault reference: `@Microsoft.KeyVault(SecretUri=...)` |
+| `COSMOS_KEY` | **Yes** | — | String | Cosmos DB access key. In production, uses Key Vault reference |
+| `COSMOS_DATABASE` | No | — | String | Cosmos DB database name (set by Terraform from `cosmos_database_name`) |
+| `COSMOS_MASTER_DATABASE` | No | Same as `COSMOS_DATABASE` | String | Master database name for scan records |
+
+#### Observability
+
+| Variable | Mandatory | Default | Accepted Values | Description |
+|----------|-----------|---------|-----------------|-------------|
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | No | `""` | Connection string | Enables log forwarding to App Insights. Shared resource with the backend |
+
+#### Local Dev Only (docker-compose)
+
+These are set in `docker-compose.yml` for the Functions container but managed by the Azure platform in production:
+
+| Variable | Mandatory | Default | Description |
+|----------|-----------|---------|-------------|
+| `REDIS_HOST` | No | `localhost` | Redis hostname (passed in orchestration payload in prod) |
 | `REDIS_PORT` | No | `6379` | Redis port |
-| `REDIS_PASSWORD` | Prod | `""` | Redis password |
-| `REDIS_SSL` | No | `false` | Enable TLS for Redis |
-| `KEYVAULT_URL` | Prod | `""` | Azure Key Vault URL |
-| `AZURE_FOUNDRY_ENDPOINT` | No | `""` | Azure AI Foundry endpoint |
-| `AZURE_FOUNDRY_KEY` | No | `""` | Azure AI Foundry API key |
-| `AZURE_FOUNDRY_MODEL` | No | `gpt-4o` | AI model deployment name |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | No | `""` | Application Insights connection string |
+| `REDIS_PASSWORD` | No | `""` | Redis password |
+| `REDIS_SSL` | No | `false` | Redis TLS |
+| `ENCRYPTION_KEY` | No | `""` | Decryption key for project credentials |
+| `LOCAL_MODE` | No | `false` | Skip auth in function triggers |
 
-### Frontend Environment Variables
+### Scheduled Jobs (Container App Jobs)
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `VITE_APP_CLIENT_ID` | Prod | --- | Entra ID application client ID |
-| `VITE_TENANT_ID` | Prod | `common` | Entra ID tenant for MSAL authority |
-| `VITE_API_BASE_URL` | No | `""` | Optional frontend API override. Leave empty to use same-origin `/api/*` requests through the frontend reverse proxy. |
-| `VITE_LOCAL_MODE` | No | `false` | Skip MSAL authentication (dev only) |
+Jobs share the backend Docker image and receive the same env vars via Terraform. They use a subset of the backend configuration:
 
-Backend CORS defaults to `http://localhost:5173` for local development and also allows the app's Azure Container Apps frontend hostname pattern by default. Azure deployments can still override that with `CORS_ORIGIN_REGEX` when needed.
+| Category | Variables Used |
+|----------|---------------|
+| **Cosmos DB** | `COSMOS_ENDPOINT`, `COSMOS_KEY`, `COSMOS_MASTER_DATABASE` |
+| **Redis** | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_SSL` |
+| **AI** | `AZURE_FOUNDRY_ENDPOINT`, `AZURE_FOUNDRY_KEY`, `AZURE_FOUNDRY_MODEL` |
+| **Encryption** | `ENCRYPTION_KEY` |
+| **Observability** | `APPLICATIONINSIGHTS_CONNECTION_STRING` |
+
+Jobs do **not** receive: `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`, `KEYVAULT_URL`, `CORS_*`, `SCAN_FUNCTION_*`, `LOG_ANALYTICS_WORKSPACE_ID`.
+
+### Production Secret Management
+
+In production, sensitive values are stored in Azure Key Vault and injected as Container App secret references. The following env vars are **never** set as plain text in production:
+
+| Env Var | Key Vault Secret Name | Container App Secret |
+|---------|----------------------|---------------------|
+| `COSMOS_KEY` | `cosmos-key` | `cosmos-key` |
+| `COSMOS_ENDPOINT` | `cosmos-endpoint` | `cosmos-endpoint` |
+| `REDIS_PASSWORD` | `redis-password` | `redis-password` |
+| `AZURE_FOUNDRY_KEY` | `foundry-key` | `foundry-key` |
+| `AZURE_CLIENT_SECRET` | `app-client-secret` | `app-client-secret` |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | `appinsights-conn-string` | `appinsights-connection-string` |
+| `ENCRYPTION_KEY` | `encryption-key` | `encryption-key` |
+| `SCAN_FUNCTION_KEY` | `scan-function-key` | `scan-function-key` |
+
+The Function App uses Key Vault references (`@Microsoft.KeyVault(SecretUri=...)`) for `COSMOS_ENDPOINT`, `COSMOS_KEY`, and `APPLICATIONINSIGHTS_CONNECTION_STRING`.
 
 ---
 

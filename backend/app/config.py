@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     scan_function_app_url: str = ""
     scan_function_key: str = ""
 
+    # Log Analytics workspace ID for querying Function App logs
+    log_analytics_workspace_id: str = ""
+
     # PIM Privileged Session Tracking
     pim_session_enabled: bool = True
     pim_session_poll_interval_minutes: int = 15

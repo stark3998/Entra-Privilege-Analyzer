@@ -9,6 +9,7 @@ import {
   useResumeScan,
   useDelegatedPermissionsCheck,
   useScanLogs,
+  useFunctionLogs,
   pollScanEvents,
 } from "@/api/projectHooks";
 import { useProjectContext } from "@/store/projectContext";
@@ -410,6 +411,11 @@ export function ScanPage() {
   const [activeTab, setActiveTab] = useState<PhaseTabId>("all");
   const liveScrollRef = useRef<HTMLDivElement>(null);
   const [liveAutoScroll, setLiveAutoScroll] = useState(true);
+  const [showFunctionLogs, setShowFunctionLogs] = useState(false);
+  const [functionLogCursor, setFunctionLogCursor] = useState<string | null>(null);
+  const [functionLogItems, setFunctionLogItems] = useState<ScanStreamEvent[]>([]);
+  const functionLogScrollRef = useRef<HTMLDivElement>(null);
+  const [functionLogAutoScroll, setFunctionLogAutoScroll] = useState(true);
 
   const phaseProgress = useMemo(() => {
     const map: Record<string, { activities: number; items: number; errors: number }> = {};
@@ -433,6 +439,42 @@ export function ScanPage() {
 
   const isRunning =
     latestScan?.status === "running" || latestScan?.status === "queued";
+
+  const { data: functionLogsData } = useFunctionLogs(
+    projectId,
+    latestScan?.id,
+    {
+      after: functionLogCursor,
+      enabled: showFunctionLogs && !!latestScan?.id,
+    },
+  );
+
+  useEffect(() => {
+    if (!functionLogsData?.items?.length) return;
+    setFunctionLogItems((prev) => {
+      const seen = new Set(prev.map((e) => e.id));
+      const newItems = functionLogsData.items.filter((e) => !seen.has(e.id));
+      if (newItems.length === 0) return prev;
+      return [...prev, ...newItems].slice(-500);
+    });
+    if (functionLogsData.cursor) {
+      setFunctionLogCursor(functionLogsData.cursor);
+    }
+  }, [functionLogsData]);
+
+  useEffect(() => {
+    if (functionLogAutoScroll && functionLogScrollRef.current) {
+      functionLogScrollRef.current.scrollTop = functionLogScrollRef.current.scrollHeight;
+    }
+  }, [functionLogItems, functionLogAutoScroll]);
+
+  // Reset function log state when a new scan starts
+  useEffect(() => {
+    if (latestScan?.id) {
+      setFunctionLogItems([]);
+      setFunctionLogCursor(null);
+    }
+  }, [latestScan?.id]);
 
   // Ref keeps the cursor across poll ticks without triggering re-renders.
   const cursorRef = useRef<string | null>(null);
@@ -835,6 +877,116 @@ export function ScanPage() {
           </div>
         )}
       </div>
+
+      {/* Function App Logs */}
+      {latestScan && (
+        <div className="rounded-xl border border-slate-200 bg-slate-950 text-slate-100 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={() => setShowFunctionLogs(!showFunctionLogs)}
+            className="flex w-full items-center justify-between px-4 py-3"
+          >
+            <div className="flex items-center gap-2">
+              <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span className="text-sm font-semibold text-white">Function App Logs</span>
+              <span className="text-xs text-slate-500">App Insights traces (2-5 min delay)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {functionLogItems.length > 0 && (
+                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-300">
+                  {functionLogItems.length}
+                </span>
+              )}
+              {functionLogsData?.available === false && (
+                <span className="text-[10px] text-amber-400">Not configured</span>
+              )}
+              <svg
+                className={clsx(
+                  "h-4 w-4 text-slate-400 transition-transform",
+                  showFunctionLogs && "rotate-180",
+                )}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </button>
+
+          {showFunctionLogs && (
+            <div className="border-t border-slate-800 px-4 pb-3">
+              {functionLogsData?.error && (
+                <div className="mt-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                  Query error: {functionLogsData.error}
+                </div>
+              )}
+              <div
+                ref={functionLogScrollRef}
+                onScroll={() => {
+                  const el = functionLogScrollRef.current;
+                  if (el) {
+                    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+                    setFunctionLogAutoScroll(atBottom);
+                  }
+                }}
+                className="mt-2 max-h-96 space-y-0.5 overflow-y-auto font-mono"
+              >
+                {functionLogItems.length === 0 ? (
+                  <div className="py-4 text-center text-xs text-slate-500">
+                    {functionLogsData?.available === false
+                      ? "Log Analytics workspace not configured. Set LOG_ANALYTICS_WORKSPACE_ID on the backend."
+                      : "Waiting for logs from App Insights... (logs appear after 2-5 min ingestion delay)"}
+                  </div>
+                ) : (
+                  functionLogItems.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-start gap-2 rounded px-2 py-0.5 text-[11px] leading-relaxed hover:bg-slate-900"
+                    >
+                      <span className="w-20 shrink-0 tabular-nums text-slate-500">
+                        {new Date(entry.timestamp).toLocaleTimeString()}
+                      </span>
+                      {entry.level === "error" ? (
+                        <span className="shrink-0 text-red-400">ERR</span>
+                      ) : entry.level === "warning" ? (
+                        <span className="shrink-0 text-amber-400">WRN</span>
+                      ) : (
+                        <span className="shrink-0 text-slate-500">INF</span>
+                      )}
+                      <span
+                        className={clsx(
+                          "flex-1 break-all",
+                          entry.level === "error" && "text-red-300",
+                          entry.level === "warning" && "text-amber-200",
+                          entry.level === "info" && "text-slate-300",
+                        )}
+                      >
+                        {entry.message}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+              {!functionLogAutoScroll && functionLogItems.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = functionLogScrollRef.current;
+                    if (el) {
+                      el.scrollTop = el.scrollHeight;
+                      setFunctionLogAutoScroll(true);
+                    }
+                  }}
+                  className="mt-1 rounded-full bg-brand-600 px-3 py-1 text-xs font-medium text-white shadow-lg hover:bg-brand-500"
+                >
+                  Jump to latest
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Scan History */}
       <div className="card">

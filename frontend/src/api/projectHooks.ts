@@ -302,3 +302,33 @@ export async function pollScanEvents(
   const path = `/api/projects/${projectId}/scans/events/poll${qs ? `?${qs}` : ""}`;
   return client.get<PollScanEventsResponse>(path);
 }
+
+export interface FunctionLogsResponse {
+  items: ScanStreamEvent[];
+  cursor: string | null;
+  available: boolean;
+  error?: string;
+}
+
+export function useFunctionLogs(
+  projectId: string,
+  scanId: string | undefined,
+  options: { after?: string | null; enabled?: boolean } = {},
+) {
+  const client = getApiClient();
+  const after = options.after;
+  return useQuery({
+    queryKey: ["functionLogs", projectId, scanId, after],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (after) params.set("after", after);
+      params.set("size", "100");
+      const qs = params.toString();
+      return client.get<FunctionLogsResponse>(
+        `/api/projects/${projectId}/scans/${scanId}/function-logs${qs ? `?${qs}` : ""}`,
+      );
+    },
+    enabled: !!projectId && !!scanId && (options.enabled !== false),
+    refetchInterval: 10_000,
+  });
+}

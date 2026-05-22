@@ -96,6 +96,7 @@ function Set-EnvFile {
     Set-EnvDefault "COSMOS_MASTER_DATABASE" "entra-master"
     Set-EnvDefault "SCAN_FUNCTION_APP_URL"  "http://functions:80"
     Set-EnvDefault "SCAN_FUNCTION_KEY"      "local-dev-function-key"
+    Set-EnvDefault "LOG_ANALYTICS_WORKSPACE_ID" ""
 
     # Generate ENCRYPTION_KEY if not already set
     $content = Get-Content .env -Raw

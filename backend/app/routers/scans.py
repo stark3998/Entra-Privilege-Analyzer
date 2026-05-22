@@ -65,6 +65,14 @@ _SUB_ORCH_PHASE_MAP: dict[str, str] = {
     "orchestrate_role_assignments": "directory",
 }
 
+_SUB_ORCH_SUFFIXES: dict[str, str] = {
+    "_audit": "audit_logs",
+    "_signin": "sign_in_logs",
+    "_users": "directory",
+    "_sps": "directory",
+    "_roles": "directory",
+}
+
 _SKIP_ACTIVITIES = {"update_scan_phase_activity", "finalize_scan_activity"}
 
 _RELEVANT_EVENT_TYPES = {
@@ -72,6 +80,8 @@ _RELEVANT_EVENT_TYPES = {
     "SubOrchestrationInstanceCompleted",
     "TaskFailed",
     "SubOrchestrationInstanceFailed",
+    "TaskScheduled",
+    "SubOrchestrationInstanceCreated",
 }
 
 _FRIENDLY_NAMES: dict[str, str] = {
@@ -120,6 +130,41 @@ async def _terminate_orchestration(settings: Settings, instance_id: str) -> None
             logger.warning("Terminate request failed for %s: %s %s", instance_id, resp.status_code, resp.text)
 
 
+def _derive_sub_orchestrator_uri(main_status_uri: str, main_instance_id: str, sub_suffix: str) -> str:
+    """Replace the main instance ID in the status URI with the sub-orchestrator's."""
+    sub_instance_id = main_instance_id + sub_suffix
+    return main_status_uri.replace(f"/instances/{main_instance_id}?", f"/instances/{sub_instance_id}?")
+
+
+async def _fetch_sub_orchestrator_statuses(
+    scan_id: str,
+    main_status_uri: str,
+    main_instance_id: str,
+    headers: dict[str, str],
+    client: httpx.AsyncClient,
+    active_suffixes: set[str],
+) -> dict[str, dict[str, Any]]:
+    """Fetch customStatus from active sub-orchestrators in parallel."""
+    results: dict[str, dict[str, Any]] = {}
+
+    async def _fetch_one(suffix: str) -> tuple[str, dict[str, Any]]:
+        sub_uri = _derive_sub_orchestrator_uri(main_status_uri, main_instance_id, suffix)
+        try:
+            resp = await client.get(sub_uri, headers=headers, timeout=10.0)
+            if resp.status_code == 200:
+                return suffix, resp.json()
+            return suffix, {}
+        except Exception:
+            return suffix, {}
+
+    tasks = [_fetch_one(suffix) for suffix in active_suffixes]
+    for coro in asyncio.as_completed(tasks):
+        suffix, data = await coro
+        results[suffix] = data
+
+    return results
+
+
 async def _poll_orchestration_status(
     app: Any,
     repo: MasterRepo,
@@ -138,79 +183,125 @@ async def _poll_orchestration_status(
     last_history_index: int = 0
     history_uri = status_uri + "&showHistory=true"
 
-    try:
-        while True:
-            await asyncio.sleep(_POLL_INTERVAL_SECONDS)
+    # Extract the main orchestration instance ID from the status URI path.
+    instance_id = parsed_status_uri.path.rstrip("/").rsplit("/", 1)[-1]
 
-            try:
-                async with httpx.AsyncClient(timeout=60.0) as client:
+    # Sub-orchestrator polling state
+    last_sub_status: dict[str, str | None] = {s: None for s in _SUB_ORCH_SUFFIXES}
+    terminal_subs: set[str] = set()
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            while True:
+                await asyncio.sleep(_POLL_INTERVAL_SECONDS)
+
+                try:
                     resp = await client.get(history_uri, headers=headers)
                     if resp.status_code >= 400:
                         logger.warning("Status poll failed: %s", resp.status_code)
                         continue
                     data = resp.json()
-            except Exception as exc:
-                logger.warning("Status poll error for scan %s: %s", scan_id, exc)
-                continue
+                except Exception as exc:
+                    logger.warning("Status poll error for scan %s: %s", scan_id, exc)
+                    continue
 
-            runtime_status = data.get("runtimeStatus", "")
-            custom_status = data.get("customStatus") or {}
+                runtime_status = data.get("runtimeStatus", "")
+                custom_status = data.get("customStatus") or {}
 
-            # Emit high-level orchestrator status changes
-            message = custom_status.get("message", f"Orchestration {runtime_status}")
-            if message != last_message and broker is not None:
-                step = custom_status.get("step", runtime_status.lower())
-                await broker.publish(
-                    project_id,
-                    scan_id=scan_id,
-                    type="scan.progress",
-                    message=message,
-                    level="info",
-                    phase=step,
-                    status="running" if runtime_status == "Running" else runtime_status.lower(),
-                )
-                last_message = message
-
-            # Parse per-activity events from orchestration history
-            if broker is not None:
-                history_events = data.get("historyEvents") or []
-                new_events = history_events[last_history_index:]
-                for idx, hist in enumerate(new_events):
-                    global_idx = last_history_index + idx
-                    await _emit_history_event(broker, project_id, scan_id, hist, global_idx)
-                last_history_index = len(history_events)
-
-            if runtime_status in ("Completed", "Failed", "Terminated"):
-                scan = await repo.get_scan(project_id, scan_id)
-                if scan is not None and scan.status in ("queued", "running"):
-                    now = datetime.now(UTC)
-                    if runtime_status == "Completed":
-                        scan.status = "completed"
-                        scan.completed_at = now
-                    else:
-                        scan.status = "failed"
-                        scan.error_message = custom_status.get("message", f"Orchestration {runtime_status}")
-                        scan.completed_at = now
-                        for phase in scan.phases:
-                            if phase.status in ("pending", "running"):
-                                phase.status = "failed"
-                                phase.completed_at = now
-                    scan.owner_instance_id = None
-                    scan.heartbeat_at = None
-                    scan.lease_expires_at = None
-                    await repo.upsert_scan(scan)
-
-                if broker is not None:
-                    event_type = "scan.finished" if runtime_status == "Completed" else "scan.failed"
+                # Emit high-level orchestrator status changes
+                message = custom_status.get("message", f"Orchestration {runtime_status}")
+                if message != last_message and broker is not None:
+                    step = custom_status.get("step", runtime_status.lower())
                     await broker.publish(
                         project_id,
                         scan_id=scan_id,
-                        type=event_type,
+                        type="scan.progress",
                         message=message,
-                        level="info" if runtime_status == "Completed" else "error",
-                        status="completed" if runtime_status == "Completed" else "failed",
+                        level="info",
+                        phase=step,
+                        status="running" if runtime_status == "Running" else runtime_status.lower(),
                     )
-                break
+                    last_message = message
+
+                # Parse per-activity events from orchestration history
+                if broker is not None:
+                    history_events = data.get("historyEvents") or []
+                    new_events = history_events[last_history_index:]
+                    for idx, hist in enumerate(new_events):
+                        global_idx = last_history_index + idx
+                        await _emit_history_event(broker, project_id, scan_id, hist, global_idx)
+                    last_history_index = len(history_events)
+
+                # Poll sub-orchestrator statuses for per-page progress
+                active_suffixes = set(_SUB_ORCH_SUFFIXES) - terminal_subs
+                if active_suffixes and runtime_status == "Running" and broker is not None:
+                    sub_statuses = await _fetch_sub_orchestrator_statuses(
+                        scan_id, status_uri, instance_id, headers, client, active_suffixes,
+                    )
+                    for suffix, sub_data in sub_statuses.items():
+                        if not sub_data:
+                            continue
+                        sub_runtime = sub_data.get("runtimeStatus", "")
+                        sub_custom = sub_data.get("customStatus") or {}
+                        sub_message = sub_custom.get("message")
+
+                        if sub_runtime in ("Completed", "Failed", "Terminated"):
+                            terminal_subs.add(suffix)
+
+                        if sub_message and sub_message != last_sub_status.get(suffix):
+                            last_sub_status[suffix] = sub_message
+                            phase = _SUB_ORCH_SUFFIXES[suffix]
+                            step = sub_custom.get("step", "")
+                            await broker.publish(
+                                project_id,
+                                scan_id=scan_id,
+                                type="scan.activity",
+                                message=sub_message,
+                                level="error" if step == "failed" else "info",
+                                phase=phase,
+                                status="running" if sub_runtime == "Running" else sub_runtime.lower(),
+                                items_processed=sub_custom.get("count"),
+                                details={
+                                    k: v for k, v in {
+                                        "page": sub_custom.get("page"),
+                                        "count": sub_custom.get("count"),
+                                        "step": step,
+                                        "sub_orchestrator": suffix.lstrip("_"),
+                                    }.items() if v is not None
+                                },
+                            )
+
+                if runtime_status in ("Completed", "Failed", "Terminated"):
+                    scan = await repo.get_scan(project_id, scan_id)
+                    if scan is not None and scan.status in ("queued", "running"):
+                        now = datetime.now(UTC)
+                        if runtime_status == "Completed":
+                            scan.status = "completed"
+                            scan.completed_at = now
+                        else:
+                            scan.status = "failed"
+                            scan.error_message = custom_status.get("message", f"Orchestration {runtime_status}")
+                            scan.completed_at = now
+                            for phase in scan.phases:
+                                if phase.status in ("pending", "running"):
+                                    phase.status = "failed"
+                                    phase.completed_at = now
+                        scan.owner_instance_id = None
+                        scan.heartbeat_at = None
+                        scan.lease_expires_at = None
+                        await repo.upsert_scan(scan)
+
+                    if broker is not None:
+                        event_type = "scan.finished" if runtime_status == "Completed" else "scan.failed"
+                        await broker.publish(
+                            project_id,
+                            scan_id=scan_id,
+                            type=event_type,
+                            message=message,
+                            level="info" if runtime_status == "Completed" else "error",
+                            status="completed" if runtime_status == "Completed" else "failed",
+                        )
+                    break
 
     except asyncio.CancelledError:
         pass
@@ -230,7 +321,7 @@ async def _emit_history_event(
     if event_type not in _RELEVANT_EVENT_TYPES:
         return
 
-    func_name = hist.get("FunctionName", "")
+    func_name = hist.get("FunctionName", "") or hist.get("Name", "")
     if func_name in _SKIP_ACTIVITIES or not func_name:
         return
 
@@ -239,10 +330,11 @@ async def _emit_history_event(
         return
 
     is_failure = event_type in ("TaskFailed", "SubOrchestrationInstanceFailed")
+    is_scheduled = event_type in ("TaskScheduled", "SubOrchestrationInstanceCreated")
     friendly = _FRIENDLY_NAMES.get(func_name, func_name)
 
     result: dict[str, Any] = {}
-    if not is_failure:
+    if not is_failure and not is_scheduled:
         raw = hist.get("Result", "")
         try:
             result = json.loads(raw) if raw else {}
@@ -252,11 +344,13 @@ async def _emit_history_event(
     has_error = is_failure or bool(result.get("error"))
     level = "error" if has_error else "info"
     items = result.get("count") or result.get("processed")
-    timestamp = hist.get("Timestamp", datetime.now(UTC).isoformat())
 
     if is_failure:
         reason = hist.get("Reason", "Unknown error")
         msg = f"{friendly} failed: {reason}"
+    elif is_scheduled:
+        msg = f"{friendly} started"
+        items = None
     elif has_error:
         msg = f"{friendly} error: {result['error']}"
     elif items is not None:
@@ -732,6 +826,112 @@ async def get_scan_logs(
         "page": page,
         "size": size,
     }
+
+
+@router.get("/{scan_id}/function-logs")
+async def get_function_logs(
+    project_id: str,
+    scan_id: str,
+    request: Request,
+    after: str | None = Query(
+        default=None, description="ISO timestamp cursor; only logs newer than this are returned"
+    ),
+    size: int = Query(default=50, ge=1, le=200),
+    user: CurrentUser = Depends(get_current_user),
+    repo: MasterRepo = Depends(get_master_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Query Function App logs from Application Insights for a scan."""
+    await validate_project_access(project_id, user, repo, settings)
+    scan = await repo.get_scan(project_id, scan_id)
+    if scan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+
+    if not settings.log_analytics_workspace_id:
+        return {"items": [], "cursor": None, "available": False}
+
+    logs_client = getattr(request.app.state, "logs_query_client", None)
+    if logs_client is None:
+        try:
+            from azure.identity import DefaultAzureCredential
+            from azure.monitor.query import LogsQueryClient
+
+            credential = DefaultAzureCredential()
+            logs_client = LogsQueryClient(credential)
+            request.app.state.logs_query_client = logs_client
+        except Exception as exc:
+            logger.warning("Failed to create LogsQueryClient: %s", exc)
+            return {"items": [], "cursor": None, "available": False}
+
+    from azure.monitor.query import LogsQueryStatus
+
+    time_filter = f"| where timestamp > datetime('{after}')" if after else ""
+    kql = (
+        "traces"
+        f" | where customDimensions.scan_id == '{scan_id}'"
+        f" {time_filter}"
+        " | project timestamp, message, severityLevel, customDimensions"
+        " | order by timestamp asc"
+        f" | take {size}"
+    )
+
+    try:
+        from datetime import timedelta
+
+        result = logs_client.query_workspace(
+            workspace_id=settings.log_analytics_workspace_id,
+            query=kql,
+            timespan=timedelta(hours=6),
+        )
+    except Exception as exc:
+        logger.warning("App Insights query failed for scan %s: %s", scan_id, exc)
+        return {"items": [], "cursor": None, "available": True, "error": str(exc)}
+
+    items: list[dict[str, Any]] = []
+    if result.status == LogsQueryStatus.SUCCESS and result.tables:
+        table = result.tables[0]
+        col_names = [c.name for c in table.columns]
+        for row in table.rows:
+            row_dict = dict(zip(col_names, row))
+            ts = row_dict.get("timestamp", "")
+            ts_str = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+            dims = row_dict.get("customDimensions") or {}
+            if isinstance(dims, str):
+                try:
+                    dims = json.loads(dims)
+                except (json.JSONDecodeError, TypeError):
+                    dims = {}
+            severity = row_dict.get("severityLevel", 1)
+            level = "error" if severity >= 3 else "warning" if severity == 2 else "info"
+            items.append({
+                "id": f"appinsights:{scan_id}:{ts_str}:{len(items)}",
+                "type": "function.log",
+                "message": row_dict.get("message", ""),
+                "timestamp": ts_str,
+                "level": level,
+                "phase": dims.get("phase") or _infer_phase_from_message(row_dict.get("message", "")),
+                "details": {
+                    k: v for k, v in dims.items()
+                    if k not in ("scan_id", "project_id", "tenant_id")
+                },
+            })
+
+    cursor = items[-1]["timestamp"] if items else after
+    return {"items": items, "cursor": cursor, "available": True}
+
+
+def _infer_phase_from_message(message: str) -> str | None:
+    """Best-effort phase inference from Function App log messages."""
+    msg_lower = message.lower()
+    if "audit_log" in msg_lower or "audit log" in msg_lower:
+        return "audit_logs"
+    if "sign_in_log" in msg_lower or "sign-in log" in msg_lower or "signin" in msg_lower:
+        return "sign_in_logs"
+    if "users_page" in msg_lower or "sps_page" in msg_lower or "role_assignment" in msg_lower:
+        return "directory"
+    if "identity" in msg_lower or "identity_batch" in msg_lower:
+        return "identity_profiles"
+    return None
 
 
 @router.get("/events")
