@@ -225,11 +225,7 @@ jobs:
 
       - name: Smoke test function app
         run: |
-          HOSTNAME=$(az functionapp show \
-            --name ${{ env.FUNCTION_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query "defaultHostName" -o tsv)
-
+          HOSTNAME="${{ env.FUNCTION_APP_NAME }}.azurewebsites.net"
           echo "Function App: https://${HOSTNAME}"
 
           for i in $(seq 1 12); do
@@ -247,12 +243,7 @@ jobs:
 
       - name: Export function app URL
         id: function-url
-        run: |
-          HOSTNAME=$(az functionapp show \
-            --name ${{ env.FUNCTION_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query "defaultHostName" -o tsv)
-          echo "value=https://${HOSTNAME}" >> "$GITHUB_OUTPUT"
+        run: echo "value=https://${{ env.FUNCTION_APP_NAME }}.azurewebsites.net" >> "$GITHUB_OUTPUT"
 
   deploy-frontend:
     name: Deploy Frontend
