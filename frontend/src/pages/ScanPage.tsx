@@ -935,7 +935,7 @@ export function ScanPage() {
                 {functionLogItems.length === 0 ? (
                   <div className="py-4 text-center text-xs text-slate-500">
                     {functionLogsData?.available === false
-                      ? "Log Analytics workspace not configured. Set LOG_ANALYTICS_WORKSPACE_ID on the backend."
+                      ? (functionLogsData?.reason || "Log Analytics workspace not configured. Set LOG_ANALYTICS_WORKSPACE_ID on the backend.")
                       : "Waiting for logs from App Insights... (logs appear after 2-5 min ingestion delay)"}
                   </div>
                 ) : (

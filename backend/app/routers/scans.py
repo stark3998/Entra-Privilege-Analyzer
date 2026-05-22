@@ -848,7 +848,7 @@ async def get_function_logs(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
 
     if not settings.log_analytics_workspace_id:
-        return {"items": [], "cursor": None, "available": False}
+        return {"items": [], "cursor": None, "available": False, "reason": "LOG_ANALYTICS_WORKSPACE_ID not configured"}
 
     logs_client = getattr(request.app.state, "logs_query_client", None)
     if logs_client is None:
@@ -861,7 +861,7 @@ async def get_function_logs(
             request.app.state.logs_query_client = logs_client
         except Exception as exc:
             logger.warning("Failed to create LogsQueryClient: %s", exc)
-            return {"items": [], "cursor": None, "available": False}
+            return {"items": [], "cursor": None, "available": False, "reason": str(exc)}
 
     from azure.monitor.query import LogsQueryStatus
 
