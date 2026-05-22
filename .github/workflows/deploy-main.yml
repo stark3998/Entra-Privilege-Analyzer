@@ -411,3 +411,113 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Verify environment variables on all services
+        shell: bash
+        run: |
+          FAILED=0
+
+          check_env_vars() {
+            local service_type="$1"
+            local service_name="$2"
+            shift 2
+            local expected_vars=("$@")
+            local actual_vars
+
+            echo ""
+            echo "=== ${service_name} ==="
+
+            if [ "$service_type" = "containerapp" ]; then
+              actual_vars=$(az containerapp show \
+                --name "${service_name}" \
+                --resource-group ${{ env.RESOURCE_GROUP }} \
+                --query "properties.template.containers[0].env[].name" \
+                -o tsv 2>/dev/null || echo "")
+            elif [ "$service_type" = "job" ]; then
+              actual_vars=$(az containerapp job show \
+                --name "${service_name}" \
+                --resource-group ${{ env.RESOURCE_GROUP }} \
+                --query "properties.template.containers[0].env[].name" \
+                -o tsv 2>/dev/null || echo "")
+            elif [ "$service_type" = "functionapp" ]; then
+              actual_vars=$(az functionapp config appsettings list \
+                --name "${service_name}" \
+                --resource-group ${{ env.RESOURCE_GROUP }} \
+                --query "[].name" \
+                -o tsv 2>/dev/null || echo "")
+            fi
+
+            if [ -z "$actual_vars" ]; then
+              echo "::error::Could not retrieve env vars for ${service_name}"
+              FAILED=1
+              return
+            fi
+
+            local missing=()
+            for var in "${expected_vars[@]}"; do
+              if ! echo "$actual_vars" | grep -qx "$var"; then
+                missing+=("$var")
+              fi
+            done
+
+            if [ ${#missing[@]} -gt 0 ]; then
+              echo "::error::${service_name} missing env vars: ${missing[*]}"
+              FAILED=1
+            else
+              echo "All ${#expected_vars[@]} required env vars present"
+            fi
+          }
+
+          # --- Backend Container App ---
+          BACKEND_VARS=(
+            COSMOS_KEY COSMOS_ENDPOINT COSMOS_MASTER_DATABASE
+            REDIS_HOST REDIS_PORT REDIS_PASSWORD REDIS_SSL
+            AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_CLIENT_SECRET
+            CORS_ORIGIN_REGEX
+            AZURE_FOUNDRY_ENDPOINT AZURE_FOUNDRY_KEY AZURE_FOUNDRY_MODEL
+            KEYVAULT_URL
+            APPLICATIONINSIGHTS_CONNECTION_STRING
+            ENCRYPTION_KEY
+            SCAN_FUNCTION_APP_URL SCAN_FUNCTION_KEY
+            LOG_FORMAT
+          )
+          check_env_vars "containerapp" "${{ env.BACKEND_CONTAINER_APP_NAME }}" "${BACKEND_VARS[@]}"
+
+          # --- Frontend Container App ---
+          FRONTEND_VARS=(
+            BACKEND_URL
+          )
+          check_env_vars "containerapp" "${{ env.FRONTEND_CONTAINER_APP_NAME }}" "${FRONTEND_VARS[@]}"
+
+          # --- Scheduled Jobs ---
+          declare -A JOBS=(
+            [sync-tenant]="sync-ten"
+            [compute-baselines]="comp-base"
+            [detect-drift]="det-drift"
+            [generate-recommendations]="gen-reco"
+            [generate-narratives]="gen-narr"
+          )
+
+          JOB_VARS=(
+            COSMOS_KEY COSMOS_ENDPOINT COSMOS_MASTER_DATABASE
+            REDIS_HOST REDIS_PORT REDIS_PASSWORD REDIS_SSL
+            AZURE_FOUNDRY_ENDPOINT AZURE_FOUNDRY_KEY AZURE_FOUNDRY_MODEL
+            APPLICATIONINSIGHTS_CONNECTION_STRING
+            ENCRYPTION_KEY
+          )
+
+          for JOB_SUFFIX in "${!JOBS[@]}"; do
+            JOB_NAME="job-entraperm-${JOBS[$JOB_SUFFIX]}-prod"
+            check_env_vars "job" "${JOB_NAME}" "${JOB_VARS[@]}"
+          done
+
+          # --- Function App ---
+          FUNC_VARS=(
+            COSMOS_ENDPOINT COSMOS_KEY COSMOS_DATABASE
+            DEPLOYMENT_STORAGE_CONNECTION_STRING
+            APPLICATIONINSIGHTS_CONNECTION_STRING
+            AzureWebJobsFeatureFlags
+          )
+          check_env_vars "functionapp" "${{ env.FUNCTION_APP_NAME }}" "${FUNC_VARS[@]}"
+
+          exit "${FAILED}"
