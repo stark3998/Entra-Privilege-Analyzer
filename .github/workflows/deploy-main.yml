@@ -1,5 +1,6 @@
 # -----------------------------------------------------------------------------
-# Main CD Pipeline: deploy backend + frontend and run post-deploy verification.
+# Main CD Pipeline: deploy backend, functions, and frontend, then run
+# post-deploy verification.
 # This is the only workflow that runs automatically on push to main.
 # -----------------------------------------------------------------------------
 name: Deploy Main
@@ -25,6 +26,7 @@ env:
   BACKEND_CONTAINER_APP_NAME: ${{ vars.BACKEND_CONTAINER_APP_NAME }}
   FRONTEND_CONTAINER_APP_NAME: ${{ vars.FRONTEND_CONTAINER_APP_NAME }}
   APP_CLIENT_ID: ${{ vars.APP_CLIENT_ID }}
+  FUNCTION_APP_NAME: ${{ vars.FUNCTION_APP_NAME }}
   BACKEND_IMAGE_NAME: entraperm-backend
   FRONTEND_IMAGE_NAME: entraperm-frontend
 
@@ -177,6 +179,82 @@ jobs:
             -o tsv)
           echo "value=${FQDN}" >> "$GITHUB_OUTPUT"
 
+  deploy-functions:
+    name: Deploy Function App
+    runs-on: ubuntu-latest
+    environment: prod
+
+    outputs:
+      function-app-url: ${{ steps.function-url.outputs.value }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies into package
+        run: |
+          cd functions
+          pip install --target .python_packages/lib/site-packages -r requirements.txt
+
+      - name: Create deployment package
+        run: |
+          cd functions
+          zip -r ../function-app.zip . \
+            -x ".git*" ".vscode/*" "__azurite_db*" "__pycache__/*" \
+               "local.settings.json" "test/*" ".env" "*.pyc" \
+               "secrets/*" "Dockerfile"
+
+      - name: Deploy to Function App
+        run: |
+          az functionapp deploy \
+            --name ${{ env.FUNCTION_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --src-path function-app.zip \
+            --type zip
+
+      - name: Smoke test function app
+        run: |
+          HOSTNAME=$(az functionapp show \
+            --name ${{ env.FUNCTION_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "defaultHostName" -o tsv)
+
+          echo "Function App: https://${HOSTNAME}"
+
+          for i in $(seq 1 12); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${HOSTNAME}/api/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Function app health check passed"
+              exit 0
+            fi
+            echo "Attempt ${i}/12: HTTP ${STATUS}, waiting 10s..."
+            sleep 10
+          done
+
+          echo "Function app health check failed"
+          exit 1
+
+      - name: Export function app URL
+        id: function-url
+        run: |
+          HOSTNAME=$(az functionapp show \
+            --name ${{ env.FUNCTION_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "defaultHostName" -o tsv)
+          echo "value=https://${HOSTNAME}" >> "$GITHUB_OUTPUT"
+
   deploy-frontend:
     name: Deploy Frontend
     runs-on: ubuntu-latest
@@ -265,7 +343,7 @@ jobs:
   post-deploy-validation:
     name: Post-deploy Validation
     runs-on: ubuntu-latest
-    needs: [deploy-backend, deploy-frontend]
+    needs: [deploy-backend, deploy-functions, deploy-frontend]
     environment: prod
 
     steps:
@@ -281,9 +359,11 @@ jobs:
         run: |
           BACKEND_FQDN="${{ needs.deploy-backend.outputs.backend-fqdn }}"
           FRONTEND_FQDN="${{ needs.deploy-frontend.outputs.frontend-fqdn }}"
+          FUNCTION_URL="${{ needs.deploy-functions.outputs.function-app-url }}"
 
           echo "Backend URL: https://${BACKEND_FQDN}"
           echo "Frontend URL: https://${FRONTEND_FQDN}"
+          echo "Function App URL: ${FUNCTION_URL}"
 
           check_url() {
             local url="$1"
@@ -299,6 +379,7 @@ jobs:
           check_url "https://${BACKEND_FQDN}/healthz" "200"
           check_url "https://${BACKEND_FQDN}/readyz" "200"
           check_url "https://${BACKEND_FQDN}/openapi.json" "200"
+          check_url "${FUNCTION_URL}/api/health" "200"
 
       - name: Verify backend and job images are aligned
         shell: bash
