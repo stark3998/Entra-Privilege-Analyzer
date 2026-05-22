@@ -308,6 +308,7 @@ export interface FunctionLogsResponse {
   cursor: string | null;
   available: boolean;
   error?: string;
+  reason?: string;
 }
 
 export function useFunctionLogs(
