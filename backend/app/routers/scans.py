@@ -136,14 +136,14 @@ async def _poll_orchestration_status(
     headers = {} if has_embedded_code else {"x-functions-key": function_key}
     last_message: str | None = None
     last_history_index: int = 0
-    history_uri = status_uri + "&showHistory=true&showHistoryOutput=true"
+    history_uri = status_uri + "&showHistory=true"
 
     try:
         while True:
             await asyncio.sleep(_POLL_INTERVAL_SECONDS)
 
             try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
+                async with httpx.AsyncClient(timeout=60.0) as client:
                     resp = await client.get(history_uri, headers=headers)
                     if resp.status_code >= 400:
                         logger.warning("Status poll failed: %s", resp.status_code)
