@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     cosmos_endpoint: str = "https://localhost:8081"
     cosmos_key: str = ""
     cosmos_master_database: str = "entra-master"
+    tenant_evidence_raw_ttl_seconds: int = 31536000
 
     # Redis
     redis_host: str = "localhost"
@@ -51,6 +52,8 @@ class Settings(BaseSettings):
     # Scan Function App
     scan_function_app_url: str = ""
     scan_function_key: str = ""
+    agent_function_app_url: str = ""
+    agent_function_key: str = ""
 
     # Managed identity (user-assigned) client ID for Azure SDK auth
     managed_identity_client_id: str = ""

@@ -9,7 +9,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from azure.cosmos.aio import ContainerProxy, DatabaseProxy
-from azure.cosmos.exceptions import CosmosHttpResponseError, CosmosResourceNotFoundError
+from azure.cosmos.exceptions import (
+    CosmosHttpResponseError,
+    CosmosResourceExistsError,
+    CosmosResourceNotFoundError,
+)
 
 from app.models.access_path import AccessPathAnalysis, AccessPathSummary
 from app.models.access_review import AccessReviewDefinition
@@ -25,7 +29,7 @@ from app.models.mfa_status import MfaRegistrationRecord
 from app.models.narrative import Narrative
 from app.models.pim_session import PimSession
 from app.models.project import ScanLogEntry
-from app.models.remediation import RemediationAction
+from app.models.remediation import RemediationAction, RemediationAuditEvent
 from app.models.role import RoleRecommendation
 from app.models.sod_policy import SodConflictRule
 from app.models.tenant import TenantConfig
@@ -61,6 +65,7 @@ class ProjectRepo:
         sod_rules: ContainerProxy,
         custom_roles: ContainerProxy,
         remediation_actions: ContainerProxy,
+        remediation_audit_events: ContainerProxy,
         pim_sessions: ContainerProxy,
         access_path_analyses: ContainerProxy,
         scan_events: ContainerProxy,
@@ -84,6 +89,7 @@ class ProjectRepo:
         self._sod_rules = sod_rules
         self._custom_roles = custom_roles
         self._remediation_actions = remediation_actions
+        self._remediation_audit_events = remediation_audit_events
         self._pim_sessions = pim_sessions
         self._access_path_analyses = access_path_analyses
         self._scan_events = scan_events
@@ -114,6 +120,10 @@ class ProjectRepo:
     @property
     def total_ru(self) -> float:
         return self._total_ru
+
+    @property
+    def database(self) -> DatabaseProxy:
+        return self._db
 
     @property
     def op_count(self) -> int:
@@ -149,6 +159,7 @@ class ProjectRepo:
             sod_rules=db.get_container_client("sod_rules"),
             custom_roles=db.get_container_client("custom_roles"),
             remediation_actions=db.get_container_client("remediation_actions"),
+            remediation_audit_events=db.get_container_client("remediation_audit_events"),
             pim_sessions=db.get_container_client("pim_sessions"),
             access_path_analyses=db.get_container_client("access_path_analyses"),
             scan_events=db.get_container_client("scan_events"),
@@ -996,6 +1007,21 @@ class ProjectRepo:
         except CosmosResourceNotFoundError:
             return None
 
+    async def get_remediation_action_by_idempotency_key(
+        self,
+        idempotency_key: str,
+    ) -> RemediationAction | None:
+        query = "SELECT TOP 1 * FROM c WHERE c.idempotency_key = @key"
+        params = [{"name": "@key", "value": idempotency_key}]
+        items = [
+            RemediationAction.model_validate(item)
+            async for item in self._remediation_actions.query_items(
+                query=query,
+                parameters=params,
+            )
+        ]
+        return items[0] if items else None
+
     async def upsert_remediation_action(self, action: RemediationAction) -> RemediationAction:
         return await self.create_remediation_action(action)
 
@@ -1033,6 +1059,58 @@ class ProjectRepo:
             )
         ]
         return items, total
+
+    async def create_remediation_audit_event(
+        self,
+        event: RemediationAuditEvent,
+    ) -> RemediationAuditEvent:
+        """Create immutable evidence; existing event IDs are never replaced."""
+        try:
+            result: dict[str, Any] = await self._remediation_audit_events.create_item(
+                body=event.model_dump(mode="json")
+            )
+            return RemediationAuditEvent.model_validate(result)
+        except CosmosResourceExistsError as exc:
+            raise ValueError(
+                f"Remediation audit sequence {event.sequence} already exists"
+            ) from exc
+
+    async def get_latest_remediation_audit_event(
+        self,
+        action_id: str,
+    ) -> RemediationAuditEvent | None:
+        query = (
+            "SELECT TOP 1 * FROM c WHERE c.action_id = @actionId "
+            "ORDER BY c.sequence DESC"
+        )
+        params = [{"name": "@actionId", "value": action_id}]
+        items = [
+            RemediationAuditEvent.model_validate(item)
+            async for item in self._remediation_audit_events.query_items(
+                query=query,
+                parameters=params,
+                partition_key=action_id,
+            )
+        ]
+        return items[0] if items else None
+
+    async def list_remediation_audit_events(
+        self,
+        action_id: str,
+    ) -> list[RemediationAuditEvent]:
+        query = (
+            "SELECT * FROM c WHERE c.action_id = @actionId "
+            "ORDER BY c.sequence ASC"
+        )
+        params = [{"name": "@actionId", "value": action_id}]
+        return [
+            RemediationAuditEvent.model_validate(item)
+            async for item in self._remediation_audit_events.query_items(
+                query=query,
+                parameters=params,
+                partition_key=action_id,
+            )
+        ]
 
     # ------------------------------------------------------------------
     # PIM Session operations (PK: /identity_id)

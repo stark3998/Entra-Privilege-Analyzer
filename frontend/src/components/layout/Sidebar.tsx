@@ -2,6 +2,7 @@ import { useLocation, Link } from "react-router-dom";
 import clsx from "clsx";
 import { Tooltip } from "@/components/common/Tooltip";
 import { useProjectContext } from "@/store/projectContext";
+import { useAuth } from "@/auth/useAuth";
 
 interface NavItem {
   label: string;
@@ -9,6 +10,7 @@ interface NavItem {
   hint: string;
   icon: React.ReactNode;
   section: "analyze" | "manage";
+  roles?: string[];
 }
 
 function useNavItems(): NavItem[] {
@@ -35,6 +37,55 @@ function useNavItems(): NavItem[] {
       icon: (
         <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+        </svg>
+      ),
+    },
+    {
+      label: "Workflow Inbox",
+      path: `${base}/workflows`,
+      hint: "Triage governance workflows, approvals, and escalations",
+      section: "analyze",
+      roles: ["SecurityEngineer", "IAMAdmin"],
+      icon: (
+        <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" />
+        </svg>
+      ),
+    },
+    {
+      label: "Evidence Explorer",
+      path: `${base}/evidence`,
+      hint: "Inspect evidence coverage and workflow linkage",
+      section: "analyze",
+      roles: ["SecurityEngineer", "IAMAdmin", "Executive"],
+      icon: (
+        <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-8.625a2.625 2.625 0 00-2.625-2.625H7.125A2.625 2.625 0 004.5 5.625v12.75A2.625 2.625 0 007.125 21h5.625m6.75-6.75H15a2.25 2.25 0 00-2.25 2.25V21m6.75-6.75L12.75 21" />
+        </svg>
+      ),
+    },
+    {
+      label: "Persona Catalog",
+      path: `${base}/personas`,
+      hint: "Review governance personas, guardrails, and SLA expectations",
+      section: "analyze",
+      roles: ["IAMAdmin", "Executive"],
+      icon: (
+        <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6.75a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75a17.933 17.933 0 01-7.499-1.632z" />
+        </svg>
+      ),
+    },
+    {
+      label: "Scoped Copilot",
+      path: `${base}/copilot`,
+      hint: "Run governed copilot prompts with explicit scope boundaries",
+      section: "analyze",
+      roles: ["SecurityEngineer", "IAMAdmin"],
+      icon: (
+        <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-2.844.813a1.125 1.125 0 000 2.124L9 22.5l.813 2.844a1.125 1.125 0 002.124 0L12.75 22.5l2.844-.813a1.125 1.125 0 000-2.124L12.75 18.75l-.813-2.846a1.125 1.125 0 00-2.124 0z" transform="translate(3 -3)" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 9.75L6 12l2.25.75L6 13.5l-.75 2.25L4.5 13.5l-2.25-.75L4.5 12l.75-2.25zM18 4.5l.375 1.125L19.5 6l-1.125.375L18 7.5l-.375-1.125L16.5 6l1.125-.375L18 4.5z" />
         </svg>
       ),
     },
@@ -149,6 +200,18 @@ function useNavItems(): NavItem[] {
       ),
     },
     {
+      label: "Connectors",
+      path: `${base}/connectors`,
+      hint: "Inspect configured governance connectors and their stored settings",
+      section: "manage",
+      roles: ["IAMAdmin"],
+      icon: (
+        <svg className="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 12h12M6 12a2.25 2.25 0 100-4.5A2.25 2.25 0 006 12zm12 4.5A2.25 2.25 0 1018 12a2.25 2.25 0 000 4.5zM6 21a2.25 2.25 0 100-4.5A2.25 2.25 0 006 21z" />
+        </svg>
+      ),
+    },
+    {
       label: "Scans",
       path: `${base}/scan`,
       hint: "Run and monitor permission scans",
@@ -217,10 +280,14 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export function Sidebar() {
   const location = useLocation();
+  const { roles } = useAuth();
   const navItems = useNavItems();
+  const visibleItems = navItems.filter(
+    (item) => !item.roles || item.roles.some((role) => roles.includes(role)),
+  );
 
-  const analyzeItems = navItems.filter((i) => i.section === "analyze");
-  const manageItems = navItems.filter((i) => i.section === "manage");
+  const analyzeItems = visibleItems.filter((i) => i.section === "analyze");
+  const manageItems = visibleItems.filter((i) => i.section === "manage");
 
   return (
     <aside className="flex min-h-0 w-60 flex-col border-r border-slate-200/80 bg-white dark:border-slate-700/80 dark:bg-slate-900">
@@ -236,79 +303,87 @@ export function Sidebar() {
           All Projects
         </Link>
 
-        <SectionLabel>Analyze</SectionLabel>
-        <div className="space-y-0.5">
-          {analyzeItems.map((item) => {
-            const isActive =
-              location.pathname === item.path ||
-              (item.path !== "/" && location.pathname.startsWith(item.path + "/"));
-            return (
-              <Tooltip key={item.path} content={item.hint} position="right" delay={400}>
-                <Link
-                  to={item.path}
-                  className={clsx(
-                    "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-200",
-                    isActive
-                      ? "bg-brand-50 text-brand-700 shadow-sm dark:bg-brand-950/50 dark:text-brand-300"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200",
-                  )}
-                >
-                  <span
-                    className={clsx(
-                      "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-                      isActive
-                        ? "bg-brand-100 text-brand-600 dark:bg-brand-900/40 dark:text-brand-400"
-                        : "bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:group-hover:bg-slate-700 dark:group-hover:text-slate-300",
-                    )}
-                  >
-                    {item.icon}
-                  </span>
-                  <span>{item.label}</span>
-                  {isActive && (
-                    <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-500" />
-                  )}
-                </Link>
-              </Tooltip>
-            );
-          })}
-        </div>
+        {analyzeItems.length > 0 && (
+          <>
+            <SectionLabel>Analyze</SectionLabel>
+            <div className="space-y-0.5">
+              {analyzeItems.map((item) => {
+                const isActive =
+                  location.pathname === item.path ||
+                  (item.path !== "/" && location.pathname.startsWith(item.path + "/"));
+                return (
+                  <Tooltip key={item.path} content={item.hint} position="right" delay={400}>
+                    <Link
+                      to={item.path}
+                      className={clsx(
+                        "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-200",
+                        isActive
+                          ? "bg-brand-50 text-brand-700 shadow-sm dark:bg-brand-950/50 dark:text-brand-300"
+                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200",
+                      )}
+                    >
+                      <span
+                        className={clsx(
+                          "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+                          isActive
+                            ? "bg-brand-100 text-brand-600 dark:bg-brand-900/40 dark:text-brand-400"
+                            : "bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:group-hover:bg-slate-700 dark:group-hover:text-slate-300",
+                        )}
+                      >
+                        {item.icon}
+                      </span>
+                      <span>{item.label}</span>
+                      {isActive && (
+                        <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-500" />
+                      )}
+                    </Link>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </>
+        )}
 
-        <SectionLabel>Manage</SectionLabel>
-        <div className="space-y-0.5">
-          {manageItems.map((item) => {
-            const isActive =
-              location.pathname === item.path ||
-              (item.path !== "/" && location.pathname.startsWith(item.path + "/"));
-            return (
-              <Tooltip key={item.path} content={item.hint} position="right" delay={400}>
-                <Link
-                  to={item.path}
-                  className={clsx(
-                    "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-200",
-                    isActive
-                      ? "bg-brand-50 text-brand-700 shadow-sm dark:bg-brand-950/50 dark:text-brand-300"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200",
-                  )}
-                >
-                  <span
-                    className={clsx(
-                      "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-                      isActive
-                        ? "bg-brand-100 text-brand-600 dark:bg-brand-900/40 dark:text-brand-400"
-                        : "bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:group-hover:bg-slate-700 dark:group-hover:text-slate-300",
-                    )}
-                  >
-                    {item.icon}
-                  </span>
-                  <span>{item.label}</span>
-                  {isActive && (
-                    <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-500" />
-                  )}
-                </Link>
-              </Tooltip>
-            );
-          })}
-        </div>
+        {manageItems.length > 0 && (
+          <>
+            <SectionLabel>Manage</SectionLabel>
+            <div className="space-y-0.5">
+              {manageItems.map((item) => {
+                const isActive =
+                  location.pathname === item.path ||
+                  (item.path !== "/" && location.pathname.startsWith(item.path + "/"));
+                return (
+                  <Tooltip key={item.path} content={item.hint} position="right" delay={400}>
+                    <Link
+                      to={item.path}
+                      className={clsx(
+                        "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-200",
+                        isActive
+                          ? "bg-brand-50 text-brand-700 shadow-sm dark:bg-brand-950/50 dark:text-brand-300"
+                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200",
+                      )}
+                    >
+                      <span
+                        className={clsx(
+                          "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+                          isActive
+                            ? "bg-brand-100 text-brand-600 dark:bg-brand-900/40 dark:text-brand-400"
+                            : "bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:group-hover:bg-slate-700 dark:group-hover:text-slate-300",
+                        )}
+                      >
+                        {item.icon}
+                      </span>
+                      <span>{item.label}</span>
+                      {isActive && (
+                        <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-500" />
+                      )}
+                    </Link>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </>
+        )}
 
       </nav>
 

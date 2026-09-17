@@ -25,5 +25,8 @@ output "secret_uris" {
     appinsights_conn_string = azurerm_key_vault_secret.appinsights_connection_string.versionless_id
     encryption_key          = azurerm_key_vault_secret.encryption_key.versionless_id
     scan_function_key       = azurerm_key_vault_secret.scan_function_key.versionless_id
+    agent_function_key      = azurerm_key_vault_secret.agent_function_key.versionless_id
+    collection_app_secret   = azurerm_key_vault_secret.collection_app_client_secret.versionless_id
+    mutation_app_secret     = azurerm_key_vault_secret.mutation_app_client_secret.versionless_id
   }
 }

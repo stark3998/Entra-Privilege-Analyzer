@@ -64,7 +64,7 @@ resource "azurerm_container_app" "backend" {
 
   identity {
     type         = "UserAssigned"
-    identity_ids = [var.managed_identity_id]
+    identity_ids = local.runtime_identity_ids
   }
 
   registry {
@@ -118,6 +118,12 @@ resource "azurerm_container_app" "backend" {
   secret {
     name                = "scan-function-key"
     key_vault_secret_id = var.secret_uris.scan_function_key
+    identity            = var.managed_identity_id
+  }
+
+  secret {
+    name                = "agent-function-key"
+    key_vault_secret_id = var.secret_uris.agent_function_key
     identity            = var.managed_identity_id
   }
 
@@ -229,6 +235,16 @@ resource "azurerm_container_app" "backend" {
       }
 
       env {
+        name  = "AGENT_FUNCTION_APP_URL"
+        value = var.agent_function_app_url
+      }
+
+      env {
+        name        = "AGENT_FUNCTION_KEY"
+        secret_name = "agent-function-key"
+      }
+
+      env {
         name  = "LOG_ANALYTICS_WORKSPACE_ID"
         value = var.log_analytics_workspace_id
       }
@@ -236,6 +252,111 @@ resource "azurerm_container_app" "backend" {
       env {
         name  = "MANAGED_IDENTITY_CLIENT_ID"
         value = var.managed_identity_client_id
+      }
+
+      env {
+        name  = "COLLECTION_MANAGED_IDENTITY_CLIENT_ID"
+        value = coalesce(var.collection_managed_identity_client_id, "")
+      }
+
+      env {
+        name  = "MUTATION_MANAGED_IDENTITY_CLIENT_ID"
+        value = coalesce(var.mutation_managed_identity_client_id, "")
+      }
+
+      env {
+        name  = "COLLECTION_CLIENT_ID"
+        value = coalesce(var.collection_application_client_id, "")
+      }
+
+      env {
+        name  = "COLLECTION_CREDENTIAL_REFERENCE"
+        value = coalesce(var.collection_credential_reference, "")
+      }
+
+      env {
+        name  = "MUTATION_CLIENT_ID"
+        value = coalesce(var.mutation_application_client_id, "")
+      }
+
+      env {
+        name  = "MUTATION_CREDENTIAL_REFERENCE"
+        value = coalesce(var.mutation_credential_reference, "")
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_RAW_TTL_SECONDS"
+        value = tostring(var.tenant_evidence_raw_ttl_seconds)
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_STORAGE_ACCOUNT"
+        value = var.tenant_evidence_storage_account_name
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_BLOB_ENDPOINT"
+        value = var.tenant_evidence_blob_endpoint
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_QUEUE_ENDPOINT"
+        value = var.tenant_evidence_queue_endpoint
+      }
+
+      env {
+        name  = "ACCESS_SNAPSHOT_CONTAINER"
+        value = var.tenant_evidence_snapshot_container_name
+      }
+
+      env {
+        name  = "AUDIT_ARCHIVE_CONTAINER"
+        value = var.tenant_evidence_audit_container_name
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_CONTAINER"
+        value = var.tenant_evidence_raw_container_name
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_QUEUE"
+        value = var.tenant_evidence_queue_names.collection
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_DEAD_LETTER_QUEUE"
+        value = var.tenant_evidence_queue_names.collection_deadletter
+      }
+
+      env {
+        name  = "MUTATION_QUEUE"
+        value = var.tenant_evidence_queue_names.mutation
+      }
+
+      env {
+        name  = "MUTATION_DEAD_LETTER_QUEUE"
+        value = var.tenant_evidence_queue_names.mutation_deadletter
+      }
+
+      env {
+        name  = "AGENT_WORK_QUEUE"
+        value = var.tenant_evidence_queue_names.agent
+      }
+
+      env {
+        name  = "AGENT_WORK_DEAD_LETTER_QUEUE"
+        value = var.tenant_evidence_queue_names.agent_deadletter
+      }
+
+      env {
+        name  = "OTEL_SERVICE_NAME"
+        value = "entra-permissions-analyzer-backend"
+      }
+
+      env {
+        name  = "OTEL_RESOURCE_ATTRIBUTES"
+        value = local.telemetry_resource_attributes
       }
 
       env {
@@ -356,6 +477,16 @@ resource "azurerm_container_app" "frontend" {
 # ---------------------
 
 locals {
+  runtime_identity_ids = compact([
+    var.managed_identity_id,
+    var.collection_managed_identity_id,
+    var.mutation_managed_identity_id,
+  ])
+  telemetry_resource_attributes = join(",", [
+    "service.namespace=entra-privilege-analyzer",
+    "cloud.provider=azure",
+    "deployment.environment=${var.environment}",
+  ])
   scheduled_jobs = {
     sync-tenant = {
       schedule = "0 */6 * * *"
@@ -397,7 +528,7 @@ resource "azurerm_container_app_job" "scheduled" {
 
   identity {
     type         = "UserAssigned"
-    identity_ids = [var.managed_identity_id]
+    identity_ids = local.runtime_identity_ids
   }
 
   registry {
@@ -514,6 +645,111 @@ resource "azurerm_container_app_job" "scheduled" {
       env {
         name        = "ENCRYPTION_KEY"
         secret_name = "encryption-key"
+      }
+
+      env {
+        name  = "COLLECTION_MANAGED_IDENTITY_CLIENT_ID"
+        value = coalesce(var.collection_managed_identity_client_id, "")
+      }
+
+      env {
+        name  = "MUTATION_MANAGED_IDENTITY_CLIENT_ID"
+        value = coalesce(var.mutation_managed_identity_client_id, "")
+      }
+
+      env {
+        name  = "COLLECTION_CLIENT_ID"
+        value = coalesce(var.collection_application_client_id, "")
+      }
+
+      env {
+        name  = "COLLECTION_CREDENTIAL_REFERENCE"
+        value = coalesce(var.collection_credential_reference, "")
+      }
+
+      env {
+        name  = "MUTATION_CLIENT_ID"
+        value = coalesce(var.mutation_application_client_id, "")
+      }
+
+      env {
+        name  = "MUTATION_CREDENTIAL_REFERENCE"
+        value = coalesce(var.mutation_credential_reference, "")
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_RAW_TTL_SECONDS"
+        value = tostring(var.tenant_evidence_raw_ttl_seconds)
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_STORAGE_ACCOUNT"
+        value = var.tenant_evidence_storage_account_name
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_BLOB_ENDPOINT"
+        value = var.tenant_evidence_blob_endpoint
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_QUEUE_ENDPOINT"
+        value = var.tenant_evidence_queue_endpoint
+      }
+
+      env {
+        name  = "ACCESS_SNAPSHOT_CONTAINER"
+        value = var.tenant_evidence_snapshot_container_name
+      }
+
+      env {
+        name  = "AUDIT_ARCHIVE_CONTAINER"
+        value = var.tenant_evidence_audit_container_name
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_CONTAINER"
+        value = var.tenant_evidence_raw_container_name
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_QUEUE"
+        value = var.tenant_evidence_queue_names.collection
+      }
+
+      env {
+        name  = "TENANT_EVIDENCE_DEAD_LETTER_QUEUE"
+        value = var.tenant_evidence_queue_names.collection_deadletter
+      }
+
+      env {
+        name  = "MUTATION_QUEUE"
+        value = var.tenant_evidence_queue_names.mutation
+      }
+
+      env {
+        name  = "MUTATION_DEAD_LETTER_QUEUE"
+        value = var.tenant_evidence_queue_names.mutation_deadletter
+      }
+
+      env {
+        name  = "AGENT_WORK_QUEUE"
+        value = var.tenant_evidence_queue_names.agent
+      }
+
+      env {
+        name  = "AGENT_WORK_DEAD_LETTER_QUEUE"
+        value = var.tenant_evidence_queue_names.agent_deadletter
+      }
+
+      env {
+        name  = "OTEL_SERVICE_NAME"
+        value = "entra-permissions-analyzer-job"
+      }
+
+      env {
+        name  = "OTEL_RESOURCE_ATTRIBUTES"
+        value = local.telemetry_resource_attributes
       }
     }
   }

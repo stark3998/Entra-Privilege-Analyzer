@@ -20,6 +20,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from fastapi.responses import Response, StreamingResponse
 
 from app.auth.deps import CurrentUser, get_current_user, validate_project_access
+from app.auth.obo import OboTokenProvider
 from app.config import Settings, get_settings
 from app.models.best_practice import ViolationPriority, ViolationType
 from app.models.drift import DriftAlertUpdate, DriftSeverity, DriftStatus
@@ -34,6 +35,11 @@ from app.models.narrative import (
 )
 from app.pipelines.drift_pipeline import DriftPipeline
 from app.pipelines.recommendation_pipeline import RecommendationPipeline
+from app.services.access_providers import (
+    ArmAccessProvider,
+    CompositeAccessProvider,
+    GraphAccessProvider,
+)
 from app.services.best_practice_analyzer import BestPracticeAnalyzer
 from app.services.drift_detector import DriftDetector
 from app.services.foundry import FoundryClient, get_foundry_client
@@ -43,6 +49,7 @@ from app.services.narrative_engine import NarrativeEngine
 from app.services.project_repo import ProjectRepo
 from app.services.project_repo_cache import ProjectRepoCache
 from app.services.redis_cache import RedisCache, get_redis_cache
+from app.services.remediation_audit import verify_event_chain
 from app.services.report_generator import ReportGenerator
 from app.services.risk_scorer import RiskScorer
 from app.services.role_mapper import RoleMapper
@@ -950,8 +957,36 @@ async def request_remediation(
         target_resource_id=body.get("target_resource_id"),
         justification=body.get("justification", ""),
         requested_by=user.email,
+        idempotency_key=body.get("idempotency_key"),
+        correlation_id=body.get("correlation_id"),
+        provider=body.get("provider", "microsoft_graph"),
+        provider_payload=body.get("provider_payload"),
+        preconditions=body.get("preconditions"),
+        postconditions=body.get("postconditions"),
+        compensation=body.get("compensation"),
+        dry_run=bool(body.get("dry_run", False)),
     )
     return action.model_dump(mode="json")
+
+
+@router.get("/remediation/{action_id}/events")
+async def list_remediation_audit_events(
+    project_id: str,
+    action_id: str,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+    repo: MasterRepo = Depends(get_master_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid, project_repo = await _get_project_context(project_id, user, repo, request, settings)
+    action = await project_repo.get_remediation_action(action_id)
+    if action is None or action.tenant_id != tid:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action not found")
+    events = await project_repo.list_remediation_audit_events(action_id)
+    return {
+        "items": [event.model_dump(mode="json") for event in events],
+        "chain_valid": verify_event_chain(events),
+    }
 
 
 @router.post("/remediation/{action_id}/approve")
@@ -992,6 +1027,55 @@ async def reject_remediation(
     reason = (body or {}).get("reason", "")
     action = await engine.reject_action(tid, action_id, user.email, reason)
     return action.model_dump(mode="json")
+
+
+@router.post("/remediation/{action_id}/execute")
+async def execute_remediation(
+    project_id: str,
+    action_id: str,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+    repo: MasterRepo = Depends(get_master_repo),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    tid, project_repo = await _get_project_context(
+        project_id,
+        user,
+        repo,
+        request,
+        settings,
+        required_role="admin",
+    )
+    assertion = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    if not assertion:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="A delegated user token is required for direct execution",
+        )
+    action = await project_repo.get_remediation_action(action_id)
+    if action is None or action.tenant_id != tid:
+        raise HTTPException(status_code=404, detail="Action not found")
+    token_provider = OboTokenProvider(settings)
+    if action.provider == "azure_resource_manager":
+        token = await token_provider.get_arm_token(assertion, tid)
+    elif action.provider == "microsoft_graph":
+        token = await token_provider.get_graph_token(assertion, tid)
+    else:
+        raise HTTPException(status_code=422, detail="Unsupported remediation provider")
+    from app.services.remediation_engine import RemediationEngine
+
+    provider = CompositeAccessProvider(
+        {
+            "microsoft_graph": GraphAccessProvider(),
+            "azure_resource_manager": ArmAccessProvider(),
+        }
+    )
+    completed = await RemediationEngine(project_repo, provider).execute_action(
+        tid,
+        action_id,
+        token,
+    )
+    return completed.model_dump(mode="json")
 
 
 # ------------------------------------------------------------------

@@ -48,6 +48,43 @@ variable "existing_application_client_secret" {
   sensitive   = true
 }
 
+variable "provision_split_authorization_apps" {
+  description = "Whether to create dedicated collection and mutation application registrations for split-privilege workflows."
+  type        = bool
+  default     = true
+}
+
+variable "collection_graph_application_permissions" {
+  description = "Microsoft Graph application permissions granted to the collection app registration."
+  type        = list(string)
+  default = [
+    "AccessReview.Read.All",
+    "Application.Read.All",
+    "AuditLog.Read.All",
+    "Directory.Read.All",
+    "GroupMember.Read.All",
+    "IdentityRiskEvent.Read.All",
+    "IdentityRiskyServicePrincipal.Read.All",
+    "Policy.Read.All",
+    "RoleManagement.Read.All",
+    "RoleManagement.Read.Directory",
+    "User.Read.All",
+  ]
+}
+
+variable "mutation_graph_application_permissions" {
+  description = "Microsoft Graph application permissions granted to the mutation app registration."
+  type        = list(string)
+  default = [
+    "Application.Read.All",
+    "Application.ReadWrite.All",
+    "Directory.Read.All",
+    "PrivilegedAccess.ReadWrite.AzureAD",
+    "RoleManagement.Read.Directory",
+    "RoleManagement.ReadWrite.Directory",
+  ]
+}
+
 variable "tags" {
   description = "Tags applied to all resources"
   type        = map(string)

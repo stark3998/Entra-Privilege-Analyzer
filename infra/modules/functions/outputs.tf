@@ -21,3 +21,8 @@ output "storage_account_name" {
   description = "Name of the storage account used for Durable Functions Task Hub"
   value       = azurerm_storage_account.functions.name
 }
+
+output "storage_account_id" {
+  description = "Resource ID of the storage account used for Durable Functions Task Hub"
+  value       = azurerm_storage_account.functions.id
+}

@@ -5,6 +5,7 @@ from collections import OrderedDict
 
 from azure.cosmos.aio import CosmosClient
 
+from app.services.project_db_manager import ProjectDatabaseManager
 from app.services.project_repo import ProjectRepo
 
 _DEFAULT_MAX_SIZE = 50
@@ -24,6 +25,7 @@ class ProjectRepoCache:
             self._cache.move_to_end(database_name)
             return self._cache[database_name]
 
+        await ProjectDatabaseManager(self._client).ensure_project_database(database_name)
         db = self._client.get_database_client(database_name)
         repo = await ProjectRepo.create(db)
         self._cache[database_name] = repo

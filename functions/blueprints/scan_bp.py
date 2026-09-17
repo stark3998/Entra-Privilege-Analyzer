@@ -8,17 +8,45 @@ from typing import Any
 
 import azure.durable_functions as df
 import azure.functions as func
-
-from blueprints.shared import RETRY_OPTIONS, cosmos_config
 from utils.cosmos_writer import cleanup_scan_staging
 from utils.log_context import set_scan_context
 from utils.scan_state import finalize_scan, get_previous_scan_phases, update_scan_phase
+
+from blueprints.shared import RETRY_OPTIONS, cosmos_config
 
 logger = logging.getLogger(__name__)
 
 bp = df.Blueprint()
 
 _IDENTITY_BATCH_SIZE = 50
+_FORBIDDEN_ORCHESTRATION_FIELDS = {
+    "client_secret",
+    "cosmos_endpoint",
+    "cosmos_key",
+    "cosmos_master_database",
+    "encryption_key",
+}
+_REQUIRED_ORCHESTRATION_FIELDS = {
+    "tenant_id",
+    "project_id",
+    "scan_id",
+    "cosmos_database",
+}
+
+
+def validate_scan_payload(body: dict[str, Any]) -> str | None:
+    """Return a validation error without copying credentials into durable history."""
+    present_forbidden = sorted(_FORBIDDEN_ORCHESTRATION_FIELDS.intersection(body))
+    if present_forbidden:
+        return (
+            "Secrets and connection settings must not be included in "
+            f"orchestration input: {', '.join(present_forbidden)}"
+        )
+
+    missing = sorted(field for field in _REQUIRED_ORCHESTRATION_FIELDS if not body.get(field))
+    if missing:
+        return f"Missing fields: {', '.join(missing)}"
+    return None
 
 
 # ------------------------------------------------------------------
@@ -38,17 +66,19 @@ async def start_scan(req: func.HttpRequest, client) -> func.HttpResponse:
             mimetype="application/json",
         )
 
-    required = ["tenant_id", "client_id", "client_secret", "project_id", "scan_id",
-                 "cosmos_endpoint", "cosmos_key", "cosmos_database"]
-    missing = [f for f in required if not body.get(f)]
-    if missing:
+    validation_error = validate_scan_payload(body)
+    if validation_error:
         return func.HttpResponse(
-            json.dumps({"error": f"Missing fields: {', '.join(missing)}"}),
+            json.dumps({"error": validation_error}),
             status_code=400,
             mimetype="application/json",
         )
 
-    instance_id = await client.start_new("orchestrate_scan", client_input=body)
+    instance_id = await client.start_new(
+        "orchestrate_scan",
+        instance_id=body["scan_id"],
+        client_input=body,
+    )
 
     return client.create_check_status_response(req, instance_id)
 
@@ -60,7 +90,6 @@ async def start_scan(req: func.HttpRequest, client) -> func.HttpResponse:
 @bp.orchestration_trigger(context_name="context")
 def orchestrate_scan(context: df.DurableOrchestrationContext):
     payload: dict[str, Any] = context.get_input()
-    project_id = payload["project_id"]
     scan_id = payload["scan_id"]
     resume_from = payload.get("resume_from_scan_id")
 

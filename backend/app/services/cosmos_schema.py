@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -98,6 +98,17 @@ _REMEDIATION_ACTIONS_INDEX: dict[str, Any] = {
     "excludedPaths": [{"path": "/*"}, {"path": "/\"_etag\"/?"}],
 }
 
+_REMEDIATION_AUDIT_INDEX: dict[str, Any] = {
+    "indexingMode": "consistent",
+    "includedPaths": [
+        {"path": "/sequence/?"},
+        {"path": "/event_type/?"},
+        {"path": "/occurred_at/?"},
+        {"path": "/correlation_id/?"},
+    ],
+    "excludedPaths": [{"path": "/*"}, {"path": "/\"_etag\"/?"}],
+}
+
 _RISK_DETECTIONS_INDEX: dict[str, Any] = {
     "indexingMode": "consistent",
     "includedPaths": [
@@ -143,10 +154,30 @@ _ACCESS_PATH_ANALYSES_INDEX: dict[str, Any] = {
 
 MASTER_CONTAINERS: list[ContainerDef] = [
     ContainerDef(name="projects", partition_key_path="/ownerId"),
+    ContainerDef(name="tenant_registry", partition_key_path="/id"),
     ContainerDef(name="project_members", partition_key_path="/projectId"),
     ContainerDef(name="scan_history", partition_key_path="/projectId"),
     ContainerDef(name="scan_schedules", partition_key_path="/projectId"),
     ContainerDef(name="alert_rules", partition_key_path="/projectId"),
+]
+
+TENANT_EVIDENCE_CONTAINERS: list[ContainerDef] = [
+    ContainerDef(name="identity_nodes", partition_key_path="/tenant_id"),
+    ContainerDef(name="resource_nodes", partition_key_path="/tenant_id"),
+    ContainerDef(name="entitlement_nodes", partition_key_path="/tenant_id"),
+    ContainerDef(name="entitlement_edges", partition_key_path="/principal_id"),
+    ContainerDef(
+        name="activity_events",
+        partition_key_path="/principal_id",
+        default_ttl=31536000,
+        indexing_policy=_ACTION_EVENTS_INDEX,
+    ),
+    ContainerDef(name="action_features", partition_key_path="/principal_id"),
+    ContainerDef(name="risk_signals", partition_key_path="/principal_id"),
+    ContainerDef(name="evidence_lineage", partition_key_path="/evidence_id"),
+    ContainerDef(name="collection_cursors", partition_key_path="/source"),
+    ContainerDef(name="data_quality", partition_key_path="/source"),
+    ContainerDef(name="persona_catalog", partition_key_path="/tenant_id"),
 ]
 
 
@@ -208,11 +239,25 @@ PROJECT_CONTAINERS: list[ContainerDef] = [
     ContainerDef(name="access_reviews", partition_key_path="/id", indexing_policy=_MINIMAL_INDEX),
     ContainerDef(name="sod_rules", partition_key_path="/id", indexing_policy=_MINIMAL_INDEX),
     ContainerDef(name="custom_roles", partition_key_path="/id", indexing_policy=_MINIMAL_INDEX),
+    ContainerDef(name="personas", partition_key_path="/tenant_id"),
+    ContainerDef(name="risk_assessments", partition_key_path="/identity_id"),
+    ContainerDef(name="governance_workflows", partition_key_path="/identity_id"),
+    ContainerDef(name="approval_policies", partition_key_path="/project_id"),
+    ContainerDef(name="authorization_configs", partition_key_path="/project_id"),
+    ContainerDef(name="safety_gate_decisions", partition_key_path="/project_id"),
+    ContainerDef(name="access_snapshots", partition_key_path="/identity_id"),
+    ContainerDef(name="connector_configs", partition_key_path="/project_id"),
+    ContainerDef(name="connector_deliveries", partition_key_path="/project_id"),
     ContainerDef(
         name="remediation_actions",
         partition_key_path="/id",
         default_ttl=15552000,
         indexing_policy=_REMEDIATION_ACTIONS_INDEX,
+    ),
+    ContainerDef(
+        name="remediation_audit_events",
+        partition_key_path="/action_id",
+        indexing_policy=_REMEDIATION_AUDIT_INDEX,
     ),
     ContainerDef(
         name="pim_sessions",
@@ -225,4 +270,5 @@ PROJECT_CONTAINERS: list[ContainerDef] = [
         indexing_policy=_ACCESS_PATH_ANALYSES_INDEX,
     ),
     ContainerDef(name="scan_events", partition_key_path="/scanId", default_ttl=7776000, indexing_policy=_MINIMAL_INDEX),
+    ContainerDef(name="scan_staging", partition_key_path="/scanId", default_ttl=604800, indexing_policy=_MINIMAL_INDEX),
 ]

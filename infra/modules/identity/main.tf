@@ -24,13 +24,14 @@ data "azuread_client_config" "current" {}
 
 locals {
   create_application_registration = var.existing_application_client_id == null
+  microsoft_graph_app_id          = data.azuread_application_published_app_ids.well_known.result["MicrosoftGraph"]
 }
 
 # Microsoft Graph well-known app ID
 data "azuread_application_published_app_ids" "well_known" {}
 
 data "azuread_service_principal" "msgraph" {
-  client_id = data.azuread_application_published_app_ids.well_known.result["MicrosoftGraph"]
+  client_id = local.microsoft_graph_app_id
 }
 
 data "azuread_service_principal" "existing" {
@@ -52,7 +53,7 @@ resource "azuread_application" "app" {
   # App roles for RBAC
   app_role {
     allowed_member_types = ["User"]
-    description          = "Security engineers — drift alerts, identity deep-dive, action timeline"
+    description          = "Security engineers - drift alerts, identity deep-dive, action timeline"
     display_name         = "SecurityEngineer"
     enabled              = true
     id                   = "a1b2c3d4-e5f6-7890-abcd-100000000001"
@@ -61,7 +62,7 @@ resource "azuread_application" "app" {
 
   app_role {
     allowed_member_types = ["User"]
-    description          = "IAM administrators — recommendations, exports, best practices, settings"
+    description          = "IAM administrators - recommendations, exports, best practices, settings"
     display_name         = "IAMAdmin"
     enabled              = true
     id                   = "a1b2c3d4-e5f6-7890-abcd-100000000002"
@@ -70,7 +71,7 @@ resource "azuread_application" "app" {
 
   app_role {
     allowed_member_types = ["User"]
-    description          = "Executives — dashboard, summary views, reports"
+    description          = "Executives - dashboard, summary views, reports"
     display_name         = "Executive"
     enabled              = true
     id                   = "a1b2c3d4-e5f6-7890-abcd-100000000003"
@@ -79,7 +80,7 @@ resource "azuread_application" "app" {
 
   # Required Microsoft Graph API permissions (delegated + application)
   required_resource_access {
-    resource_app_id = data.azuread_application_published_app_ids.well_known.result["MicrosoftGraph"]
+    resource_app_id = local.microsoft_graph_app_id
 
     # Delegated: User.Read (sign-in)
     resource_access {
@@ -139,6 +140,92 @@ resource "azuread_application" "app" {
   }
 }
 
+resource "azuread_application" "collection" {
+  count            = var.provision_split_authorization_apps ? 1 : 0
+  display_name     = "${var.project_name}-${var.environment}-collection"
+  sign_in_audience = "AzureADMultipleOrgs"
+
+  owners = [data.azuread_client_config.current.object_id]
+
+  required_resource_access {
+    resource_app_id = local.microsoft_graph_app_id
+
+    dynamic "resource_access" {
+      for_each = toset(var.collection_graph_application_permissions)
+      content {
+        id   = data.azuread_service_principal.msgraph.app_role_ids[resource_access.value]
+        type = "Role"
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [owners]
+  }
+}
+
+resource "azuread_service_principal" "collection" {
+  count                        = var.provision_split_authorization_apps ? 1 : 0
+  client_id                    = azuread_application.collection[0].client_id
+  app_role_assignment_required = false
+
+  owners = [data.azuread_client_config.current.object_id]
+}
+
+resource "azuread_application_password" "collection" {
+  count          = var.provision_split_authorization_apps ? 1 : 0
+  application_id = azuread_application.collection[0].id
+  display_name   = "terraform-managed-${var.environment}"
+  end_date       = timeadd(timestamp(), "8760h")
+
+  lifecycle {
+    ignore_changes = [end_date]
+  }
+}
+
+resource "azuread_application" "mutation" {
+  count            = var.provision_split_authorization_apps ? 1 : 0
+  display_name     = "${var.project_name}-${var.environment}-mutation"
+  sign_in_audience = "AzureADMultipleOrgs"
+
+  owners = [data.azuread_client_config.current.object_id]
+
+  required_resource_access {
+    resource_app_id = local.microsoft_graph_app_id
+
+    dynamic "resource_access" {
+      for_each = toset(var.mutation_graph_application_permissions)
+      content {
+        id   = data.azuread_service_principal.msgraph.app_role_ids[resource_access.value]
+        type = "Role"
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [owners]
+  }
+}
+
+resource "azuread_service_principal" "mutation" {
+  count                        = var.provision_split_authorization_apps ? 1 : 0
+  client_id                    = azuread_application.mutation[0].client_id
+  app_role_assignment_required = false
+
+  owners = [data.azuread_client_config.current.object_id]
+}
+
+resource "azuread_application_password" "mutation" {
+  count          = var.provision_split_authorization_apps ? 1 : 0
+  application_id = azuread_application.mutation[0].id
+  display_name   = "terraform-managed-${var.environment}"
+  end_date       = timeadd(timestamp(), "8760h")
+
+  lifecycle {
+    ignore_changes = [end_date]
+  }
+}
+
 # ---------------------
 # Service Principal
 # ---------------------
@@ -172,6 +259,22 @@ resource "azuread_application_password" "app" {
 
 resource "azurerm_user_assigned_identity" "app" {
   name                = "id-${var.project_name}-${var.environment}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+
+  tags = var.tags
+}
+
+resource "azurerm_user_assigned_identity" "collection" {
+  name                = "id-${var.project_name}-collection-${var.environment}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+
+  tags = var.tags
+}
+
+resource "azurerm_user_assigned_identity" "mutation" {
+  name                = "id-${var.project_name}-mutation-${var.environment}"
   location            = var.location
   resource_group_name = var.resource_group_name
 

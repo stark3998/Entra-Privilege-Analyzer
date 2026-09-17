@@ -8,6 +8,8 @@ from typing import Any
 
 import msal
 
+from utils.project_credentials import load_project_graph_credentials
+
 logger = logging.getLogger(__name__)
 
 _GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
@@ -47,3 +49,9 @@ def acquire_graph_token(tenant_id: str, client_id: str, client_secret: str) -> s
         tenant_id, elapsed_ms,
     )
     return result["access_token"]
+
+
+def acquire_project_graph_token(payload: dict[str, Any]) -> str:
+    """Acquire a Graph token from credentials resolved inside the activity."""
+    client_id, client_secret = load_project_graph_credentials(payload)
+    return acquire_graph_token(str(payload["tenant_id"]), client_id, client_secret)

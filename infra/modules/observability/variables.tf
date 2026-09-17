@@ -24,6 +24,18 @@ variable "log_retention_days" {
   default     = 30
 }
 
+variable "monthly_budget_amount" {
+  description = "Optional monthly budget amount for the deployment resource group. Set to null to disable."
+  type        = number
+  default     = null
+}
+
+variable "budget_contact_emails" {
+  description = "Optional email recipients for budget threshold notifications."
+  type        = list(string)
+  default     = []
+}
+
 variable "tags" {
   description = "Tags applied to all resources"
   type        = map(string)

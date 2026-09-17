@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import azure.durable_functions as df
 
 RETRY_OPTIONS = df.RetryOptions(
@@ -13,11 +15,20 @@ DEFAULT_GRAPH_API_VERSION = "beta"
 
 
 def cosmos_config(payload: dict) -> dict:
-    """Extract Cosmos connection params from the orchestration payload."""
+    """Resolve Cosmos settings without persisting credentials in orchestration history."""
+    endpoint = os.environ.get("COSMOS_ENDPOINT")
+    key = os.environ.get("COSMOS_KEY")
+    master_database = os.environ.get("COSMOS_MASTER_DATABASE") or os.environ.get(
+        "COSMOS_DATABASE"
+    )
+    if not endpoint or not key or not master_database:
+        raise RuntimeError(
+            "COSMOS_ENDPOINT, COSMOS_KEY, and COSMOS_MASTER_DATABASE must be configured"
+        )
+
     return {
-        "endpoint": payload["cosmos_endpoint"],
-        "key": payload["cosmos_key"],
+        "endpoint": endpoint,
+        "key": key,
         "database": payload["cosmos_database"],
-        # ScanRecord/ScanPhase docs live in master DB scan_history.
-        "master_database": payload.get("cosmos_master_database", payload["cosmos_database"]),
+        "master_database": master_database,
     }

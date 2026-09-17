@@ -22,6 +22,7 @@ from app.observability import (
     setup_observability,
 )
 from app.routers import (
+    governance,
     health,
     project_api,
     projects,
@@ -69,9 +70,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     from app.services.master_repo import init_master_repo
     from app.services.project_repo_cache import ProjectRepoCache
+    from app.services.tenant_evidence_repo_cache import TenantEvidenceRepoCache
 
     master_repo = None
     project_repo_cache = None
+    tenant_evidence_repo_cache = None
     cosmos_client = None
     if settings.cosmos_endpoint and settings.cosmos_key:
         try:
@@ -80,10 +83,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
             master_repo = await init_master_repo(settings)
             project_repo_cache = ProjectRepoCache(cosmos_client)
+            tenant_evidence_repo_cache = TenantEvidenceRepoCache(
+                cosmos_client,
+                raw_activity_ttl=settings.tenant_evidence_raw_ttl_seconds,
+            )
             app.state.cosmos_client = cosmos_client
             app.state.master_repo = master_repo
             app.state.project_repo_cache = project_repo_cache
-            logger.info("Cosmos DB initialised — master repo + project repo cache ready")
+            app.state.tenant_evidence_repo_cache = tenant_evidence_repo_cache
+            logger.info(
+                "Cosmos DB initialised — master, project, and tenant evidence repos ready"
+            )
         except Exception as exc:
             logger.error("Failed to initialise Cosmos DB: %s", exc)
             logger.warning("App starting WITHOUT Cosmos DB — /readyz will report not_ready")
@@ -151,6 +161,7 @@ def create_app() -> FastAPI:
     app.state.scan_event_broker = None
     app.state.master_repo = None
     app.state.project_repo_cache = None
+    app.state.tenant_evidence_repo_cache = None
     app.state.cosmos_client = None
     app.state.instance_id = str(uuid.uuid4())
 
@@ -178,13 +189,13 @@ def create_app() -> FastAPI:
                         )
                     message = {
                         **message,
-                        "headers": list(message.get("headers", [])) + extra,
+                        "headers": [*message.get("headers", []), *extra],
                     }
                 await send(message)
 
             await self.app(scope, receive, send_with_headers)
 
-    _PROJECT_PATH_RE = re.compile(r"/api/projects/([^/]+)")
+    _project_path_re = re.compile(r"/api/projects/([^/]+)")
 
     class RequestIdMiddleware:
         """Pure ASGI middleware — injects request ID into context, logs, and spans."""
@@ -208,7 +219,7 @@ def create_app() -> FastAPI:
                 if span.is_recording():
                     span.set_attribute("request.id", rid)
                     path = scope.get("path", "")
-                    m = _PROJECT_PATH_RE.search(path)
+                    m = _project_path_re.search(path)
                     if m:
                         span.set_attribute("project.id", m.group(1))
             except Exception:
@@ -218,8 +229,10 @@ def create_app() -> FastAPI:
                 if message["type"] == "http.response.start":
                     message = {
                         **message,
-                        "headers": list(message.get("headers", []))
-                        + [(b"x-request-id", rid.encode())],
+                        "headers": [
+                            *message.get("headers", []),
+                            (b"x-request-id", rid.encode()),
+                        ],
                     }
                 await send(message)
 
@@ -246,6 +259,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(projects.router)
     app.include_router(project_api.router)
+    app.include_router(governance.router)
     app.include_router(scans.router)
 
     @app.exception_handler(Exception)

@@ -24,3 +24,8 @@ output "app_insights_connection_string" {
   value       = azurerm_application_insights.main.connection_string
   sensitive   = true
 }
+
+output "budget_name" {
+  description = "Resource group budget name when budget monitoring is enabled"
+  value       = try(azurerm_consumption_budget_resource_group.main[0].name, null)
+}

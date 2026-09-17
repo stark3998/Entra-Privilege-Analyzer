@@ -9,11 +9,16 @@ from typing import Any
 from azure.core import MatchConditions
 from azure.cosmos import PartitionKey
 from azure.cosmos.aio import ContainerProxy, CosmosClient, DatabaseProxy
-from azure.cosmos.exceptions import CosmosHttpResponseError, CosmosResourceNotFoundError
+from azure.cosmos.exceptions import (
+    CosmosHttpResponseError,
+    CosmosResourceExistsError,
+    CosmosResourceNotFoundError,
+)
 
 from app.config import Settings
 from app.models.alert_rules import AlertRule, ScanSchedule
 from app.models.project import Project, ProjectMember, ScanLogEntry, ScanRecord
+from app.models.tenant_evidence import TenantRegistryEntry
 from app.observability import cosmos_ru_counter, get_tracer
 
 logger = logging.getLogger(__name__)
@@ -40,6 +45,7 @@ class MasterRepo:
         client: CosmosClient,
         db: DatabaseProxy,
         projects: ContainerProxy,
+        tenant_registry: ContainerProxy,
         project_members: ContainerProxy,
         scan_history: ContainerProxy,
         scan_schedules: ContainerProxy,
@@ -48,6 +54,7 @@ class MasterRepo:
         self._client = client
         self._db = db
         self._projects = projects
+        self._tenant_registry = tenant_registry
         self._project_members = project_members
         self._scan_history = scan_history
         self._scan_schedules = scan_schedules
@@ -60,6 +67,9 @@ class MasterRepo:
 
         projects = await db.create_container_if_not_exists(
             id="projects", partition_key=PartitionKey(path="/ownerId"),
+        )
+        tenant_registry = await db.create_container_if_not_exists(
+            id="tenant_registry", partition_key=PartitionKey(path="/id"),
         )
         project_members = await db.create_container_if_not_exists(
             id="project_members", partition_key=PartitionKey(path="/projectId"),
@@ -76,18 +86,105 @@ class MasterRepo:
 
         logger.info(
             "Master DB initialised — database=%s, containers="
-            "projects,project_members,scan_history,scan_schedules,alert_rules",
+            "projects,tenant_registry,project_members,scan_history,scan_schedules,alert_rules",
             settings.cosmos_master_database,
         )
         return cls(
             client=client,
             db=db,
             projects=projects,
+            tenant_registry=tenant_registry,
             project_members=project_members,
             scan_history=scan_history,
             scan_schedules=scan_schedules,
             alert_rules=alert_rules,
         )
+
+    async def get_tenant_registry_entry(
+        self,
+        tenant_id: str,
+    ) -> TenantRegistryEntry | None:
+        try:
+            item = await self._tenant_registry.read_item(
+                item=tenant_id,
+                partition_key=tenant_id,
+            )
+            return TenantRegistryEntry.model_validate(item)
+        except CosmosResourceNotFoundError:
+            return None
+
+    async def register_tenant_project(
+        self,
+        entry: TenantRegistryEntry,
+        project_id: str,
+    ) -> TenantRegistryEntry:
+        """Register a project without losing concurrent tenant membership updates."""
+        for attempt in range(3):
+            try:
+                current = await self._tenant_registry.read_item(
+                    item=entry.id,
+                    partition_key=entry.id,
+                )
+            except CosmosResourceNotFoundError:
+                initial = entry.model_copy(
+                    update={"project_ids": sorted({*entry.project_ids, project_id})}
+                )
+                try:
+                    result = await self._tenant_registry.create_item(
+                        body=initial.model_dump(mode="json")
+                    )
+                    return TenantRegistryEntry.model_validate(result)
+                except CosmosResourceExistsError:
+                    continue
+
+            project_ids = sorted({*current.get("project_ids", []), project_id})
+            current.update(
+                {
+                    "display_name": entry.display_name or current.get("display_name", ""),
+                    "database_name": entry.database_name,
+                    "project_ids": project_ids,
+                    "updated_at": entry.updated_at.isoformat(),
+                }
+            )
+            try:
+                result = await self._tenant_registry.replace_item(
+                    item=entry.id,
+                    body=current,
+                    etag=current["_etag"],
+                    match_condition=MatchConditions.IfNotModified,
+                )
+                return TenantRegistryEntry.model_validate(result)
+            except CosmosHttpResponseError as exc:
+                if exc.status_code != 412 or attempt == 2:
+                    raise
+        raise RuntimeError(f"Could not register project for tenant {entry.id}")
+
+    async def set_tenant_legal_hold(
+        self,
+        tenant_id: str,
+        enabled: bool,
+        updated_at: datetime,
+    ) -> TenantRegistryEntry:
+        for attempt in range(3):
+            current = await self._tenant_registry.read_item(
+                item=tenant_id,
+                partition_key=tenant_id,
+            )
+            current.update(
+                {"legal_hold": enabled, "updated_at": updated_at.isoformat()}
+            )
+            try:
+                result = await self._tenant_registry.replace_item(
+                    item=tenant_id,
+                    body=current,
+                    etag=current["_etag"],
+                    match_condition=MatchConditions.IfNotModified,
+                )
+                return TenantRegistryEntry.model_validate(result)
+            except CosmosHttpResponseError as exc:
+                if exc.status_code != 412 or attempt == 2:
+                    raise
+        raise RuntimeError(f"Could not update legal hold for tenant {tenant_id}")
 
     # ------------------------------------------------------------------
     # Internal helpers for logging + RU tracking

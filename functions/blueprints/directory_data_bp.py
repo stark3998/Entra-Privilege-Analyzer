@@ -12,13 +12,12 @@ import time
 from typing import Any
 
 import azure.durable_functions as df
+from utils.cosmos_writer import write_scan_staging
+from utils.graph_auth import acquire_project_graph_token
+from utils.graph_client import graph_get
+from utils.log_context import set_scan_context
 
 from blueprints.shared import RETRY_OPTIONS, cosmos_config
-from utils.graph_auth import acquire_graph_token
-from utils.graph_client import graph_get
-from utils.cosmos_writer import write_scan_staging
-from utils.log_context import set_scan_context
-from utils.scan_state import update_scan_phase
 
 logger = logging.getLogger(__name__)
 
@@ -193,9 +192,7 @@ def fetch_users_page_activity(payload: dict) -> dict:
     activity_start = time.monotonic()
 
     try:
-        token = acquire_graph_token(
-            tenant_id, payload["client_id"], payload["client_secret"],
-        )
+        token = acquire_project_graph_token(payload)
     except Exception as exc:
         logger.error(
             "fetch_users_page FAILED (auth) | scan=%s | page=%d | error=%s",
@@ -271,9 +268,7 @@ def fetch_sps_page_activity(payload: dict) -> dict:
     activity_start = time.monotonic()
 
     try:
-        token = acquire_graph_token(
-            tenant_id, payload["client_id"], payload["client_secret"],
-        )
+        token = acquire_project_graph_token(payload)
     except Exception as exc:
         logger.error(
             "fetch_sps_page FAILED (auth) | scan=%s | page=%d | error=%s",
@@ -353,9 +348,7 @@ def fetch_role_assignments_activity(payload: dict) -> dict:
     activity_start = time.monotonic()
 
     try:
-        token = acquire_graph_token(
-            tenant_id, payload["client_id"], payload["client_secret"],
-        )
+        token = acquire_project_graph_token(payload)
     except Exception as exc:
         logger.error(
             "fetch_role_assignments FAILED (auth) | scan=%s | error=%s",

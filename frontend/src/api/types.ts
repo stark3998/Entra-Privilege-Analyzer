@@ -719,3 +719,413 @@ export interface AccessPathSummary {
   medium_count: number;
   top_path_types: { path_type: string; count: number }[];
 }
+
+// --- Governance UX ---
+
+export type GovernanceWorkflowType =
+  | "least_privilege_migration"
+  | "continuous_drift"
+  | "jit_access"
+  | "incident_containment"
+  | "access_review"
+  | "restore";
+
+export type GovernanceWorkflowStatus =
+  | "draft"
+  | "analyzing"
+  | "waiting_approval"
+  | "approved"
+  | "executing"
+  | "canary"
+  | "grace_period"
+  | "verifying"
+  | "completed"
+  | "failed"
+  | "compensating"
+  | "restored"
+  | "cancelled";
+
+export type GovernanceWorkflowDecision =
+  | "approve"
+  | "transition";
+
+export type AuthorizationMode =
+  | "split_applications"
+  | "combined_application"
+  | "delegated_obo";
+
+export interface WorkflowStep {
+  id: string;
+  name: string;
+  status: string;
+  action_id: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error: string | null;
+  details: Record<string, unknown>;
+}
+
+export interface GovernanceWorkflow {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  identity_id: string;
+  kind: GovernanceWorkflowType;
+  status: GovernanceWorkflowStatus;
+  correlation_id: string;
+  idempotency_key: string;
+  requested_by: string;
+  persona_id: string | null;
+  risk_assessment_id: string | null;
+  snapshot_id: string | null;
+  steps: WorkflowStep[];
+  approvals: Record<string, unknown>[];
+  completed_action_ids: string[];
+  policy_decision: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  next_wake_at: string | null;
+  error: string | null;
+}
+
+export interface WorkflowApprovalStep {
+  step: number;
+  label: string;
+  owner: string | null;
+  status: string;
+  completed_at: string | null;
+}
+
+export interface WorkflowEvidenceRef {
+  id: string;
+  title: string;
+  coverage_status: EvidenceCoverageStatus;
+  source: string;
+  collected_at: string | null;
+}
+
+export interface WorkflowActivity {
+  id: string;
+  actor: string;
+  actor_role: string | null;
+  action: string;
+  message: string;
+  created_at: string;
+}
+
+export type WorkflowInboxItem = GovernanceWorkflow;
+export interface WorkflowInboxResponse extends PaginatedResponse<GovernanceWorkflow> {}
+export type WorkflowDetail = GovernanceWorkflow;
+
+export interface WorkflowDecisionRequest {
+  target: GovernanceWorkflowStatus;
+}
+
+export type EvidenceCoverageStatus =
+  | "covered"
+  | "partial"
+  | "missing"
+  | "expired";
+
+export interface EvidenceRecord {
+  id: string;
+  title: string;
+  evidence_type: string;
+  source: string;
+  coverage_status: EvidenceCoverageStatus;
+  control_family: string;
+  linked_workflow_id: string | null;
+  collected_at: string | null;
+  expires_at: string | null;
+  coverage_pct: number;
+  owners: string[];
+  summary: string;
+}
+
+export interface EvidenceCoverageFamily {
+  family: string;
+  covered: number;
+  total: number;
+  coverage_pct: number;
+}
+
+export interface DataQualityStatus {
+  id: string;
+  source: string;
+  tenant_id: string;
+  assessed_at: string;
+  coverage_start: string | null;
+  coverage_end: string | null;
+  completeness: number;
+  confidence: number;
+  gaps: string[];
+}
+
+export interface EvidenceCoverageSummary {
+  tenant_id: string;
+  sources: DataQualityStatus[];
+  complete: boolean;
+}
+
+export interface EvidenceAccessRecord {
+  id: string;
+  tenant_id: string;
+  principal_id: string;
+  entitlement_id: string;
+  edge_type: string;
+  scope_id: string | null;
+  assignment_id: string | null;
+  source: string;
+  provenance: string[];
+  condition: string | null;
+  valid_from: string;
+  valid_to: string | null;
+  observed_at: string;
+  confidence: number;
+}
+
+export interface IdentityEvidenceAccess {
+  tenant_id: string;
+  identity_id: string;
+  items: EvidenceAccessRecord[];
+}
+
+export type PersonaRiskTolerance = "strict" | "balanced" | "expedited";
+export type PersonaStatus =
+  | "draft"
+  | "evaluating"
+  | "approved"
+  | "published"
+  | "superseded"
+  | "retired";
+
+export interface PersonaCatalogEntry {
+  id: string;
+  tenant_id: string;
+  name: string;
+  version: number;
+  status: PersonaStatus;
+  member_identity_ids: string[];
+  common_permissions: string[];
+  justified_rare_permissions: string[];
+  builtin_role_id: string | null;
+  builtin_role_name: string | null;
+  custom_role_definition: Record<string, unknown> | null;
+  match_score: number;
+  escalation_findings: string[];
+  sod_findings: string[];
+  created_at: string;
+  updated_at: string;
+  approved_by: string | null;
+}
+
+export interface GovernancePolicyScope {
+  id: string;
+  name: string;
+  scope_type: string;
+  description: string;
+  item_count: number;
+  default_persona: string | null;
+  constraints: string[];
+  suggested_prompts: string[];
+}
+
+export interface GovernancePolicy {
+  id: string;
+  project_id: string;
+  authorization_mode: AuthorizationMode;
+  autonomous_max_impact: number;
+  autonomous_min_confidence: number;
+  autonomous_role_tiers: string[];
+  high_impact_threshold: number;
+  required_human_approvals: number;
+  break_glass_identity_ids: string[];
+  last_global_admin_protection: boolean;
+  require_access_owner: boolean;
+  created_at: string;
+  updated_at: string;
+  updated_by: string;
+}
+
+export interface AuthorizationReadiness {
+  mode: AuthorizationMode;
+  ready: boolean;
+  collection_ready: boolean;
+  mutation_ready: boolean;
+  delegated_ready: boolean;
+  missing: string[];
+  warnings: string[];
+  checked_at: string;
+}
+
+export type RoleChangeStatus =
+  | "proposed"
+  | "approved"
+  | "canary_running"
+  | "canary_failed"
+  | "rolled_back"
+  | "completed";
+
+export type RoleChangeType = "add" | "remove" | "retain";
+
+export type CanaryStageStatus =
+  | "queued"
+  | "running"
+  | "passed"
+  | "failed"
+  | "rolled_back";
+
+export interface RoleDiffSummary {
+  id: string;
+  identity_id: string;
+  identity_display_name: string;
+  identity_type: IdentityType;
+  status: RoleChangeStatus;
+  blast_radius: DriftSeverity;
+  reduction_score: number;
+  removed_permissions: number;
+  added_permissions: number;
+  current_role_count: number;
+  proposed_role_count: number;
+  canary_event_count: number;
+  linked_workflow_id: string | null;
+  proposed_by: string;
+  proposed_at: string;
+  canary_started_at: string | null;
+}
+
+export interface RoleDiffChange {
+  role_name: string;
+  scope: string;
+  change_type: RoleChangeType;
+  current_permissions: string[];
+  proposed_permissions: string[];
+  rationale: string | null;
+}
+
+export interface CanaryTimelineEvent {
+  id: string;
+  stage: string;
+  status: CanaryStageStatus;
+  timestamp: string;
+  summary: string;
+  metric_name: string | null;
+  metric_value: number | null;
+  threshold: string | null;
+}
+
+export interface RoleDiffDetail extends RoleDiffSummary {
+  summary: string;
+  change_set: RoleDiffChange[];
+  canary_timeline: CanaryTimelineEvent[];
+  rollback_window_minutes: number | null;
+  rollback_reasons: string[];
+  evidence_ids: string[];
+}
+
+export type RestoreConflictStatus =
+  | "open"
+  | "in_review"
+  | "accepted_risk"
+  | "resolved";
+
+export interface RestoreConflict {
+  id: string;
+  title: string;
+  conflict_type: string;
+  severity: DriftSeverity;
+  status: RestoreConflictStatus;
+  source_connector: string;
+  restore_point_label: string;
+  identity_display_name: string | null;
+  resource_scope: string;
+  detected_at: string;
+  summary: string;
+  proposed_resolution: string | null;
+  reviewer: string | null;
+  evidence_count: number;
+}
+
+export interface RestoreConflictReviewRequest {
+  status: Exclude<RestoreConflictStatus, "open">;
+  resolution_note?: string;
+}
+
+export type GovernanceConnectorHealth =
+  | "healthy"
+  | "warning"
+  | "degraded"
+  | "offline";
+
+export type GovernanceConnectorSyncMode = "scheduled" | "manual" | "paused";
+export type GovernanceConnectorType =
+  | "servicenow"
+  | "teams"
+  | "azure_devops";
+
+export interface GovernanceConnector {
+  id: string;
+  project_id: string;
+  connector_type: GovernanceConnectorType;
+  endpoint: string;
+  enabled: boolean;
+  secret_reference: string | null;
+  settings: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConnectorSyncJob {
+  connector_id: string;
+  job_id: string;
+  status: string;
+  queued_at: string;
+}
+
+export type ScopedCopilotRunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed";
+
+export interface ScopedCopilotScope {
+  id: string;
+  name: string;
+  scope_type: string;
+  description: string;
+  item_count: number;
+  default_persona: string | null;
+  constraints: string[];
+  suggested_prompts: string[];
+}
+
+export interface ScopedCopilotCitation {
+  label: string;
+  target_type: string;
+  target_id: string;
+}
+
+export interface ScopedCopilotRun {
+  id: string;
+  scope_id: string;
+  scope_name: string;
+  persona_id: string | null;
+  prompt: string;
+  status: ScopedCopilotRunStatus;
+  created_at: string;
+  completed_at: string | null;
+  output_summary: string | null;
+  citations: ScopedCopilotCitation[];
+  error_message: string | null;
+  output_markdown?: string | null;
+}
+
+export interface CreateScopedCopilotRunPayload {
+  query: string;
+  scope: Record<string, unknown>;
+}
+
+export interface GovernanceCopilotResponse {
+  answer: string;
+  [key: string]: unknown;
+}

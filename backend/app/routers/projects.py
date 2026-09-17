@@ -16,10 +16,12 @@ from app.auth.deps import (
 )
 from app.config import Settings, get_settings
 from app.models.project import Project, ProjectMember
-from app.services.master_repo import MasterRepo, get_master_repo
+from app.models.tenant_evidence import TenantRegistryEntry
 from app.services.crypto import CryptoService
+from app.services.master_repo import MasterRepo, get_master_repo
 from app.services.permission_validator import PermissionValidator
 from app.services.project_db_manager import ProjectDatabaseManager
+from app.services.tenant_evidence_db_manager import TenantEvidenceDatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -160,9 +162,17 @@ async def create_project(
 
     cosmos_client = request.app.state.cosmos_client
     database_name = ""
+    tenant_database_name = ""
     if cosmos_client is not None:
         db_manager = ProjectDatabaseManager(cosmos_client)
         database_name = await db_manager.provision_project_database(project_id)
+        tenant_db_manager = TenantEvidenceDatabaseManager(
+            cosmos_client,
+            settings.tenant_evidence_raw_ttl_seconds,
+        )
+        tenant_database_name = await tenant_db_manager.provision_tenant_database(
+            payload.target_tenant_id
+        )
 
     now = datetime.now(UTC)
     project = Project(
@@ -181,6 +191,22 @@ async def create_project(
         updated_at=now,
     )
     saved = await repo.upsert_project(project)
+    if tenant_database_name:
+        await repo.register_tenant_project(
+            TenantRegistryEntry(
+                id=payload.target_tenant_id,
+                display_name=payload.target_tenant_name,
+                database_name=tenant_database_name,
+                status="active",
+                project_ids=[project_id],
+                raw_activity_retention_days=(
+                    settings.tenant_evidence_raw_ttl_seconds // 86400
+                ),
+                created_at=now,
+                updated_at=now,
+            ),
+            project_id,
+        )
     logger.info("Project created: %s (db=%s) by user %s", saved.id, database_name, user.oid)
     return _project_response(saved)
 

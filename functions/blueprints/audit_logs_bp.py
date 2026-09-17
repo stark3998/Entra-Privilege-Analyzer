@@ -8,14 +8,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import azure.durable_functions as df
+from utils.cosmos_writer import upsert_action_events
+from utils.event_parser import parse_audit_event
+from utils.graph_auth import acquire_project_graph_token
+from utils.graph_client import graph_get
+from utils.log_context import set_scan_context
 
 from blueprints.shared import RETRY_OPTIONS, cosmos_config
-from utils.event_parser import parse_audit_event
-from utils.graph_auth import acquire_graph_token
-from utils.graph_client import graph_get
-from utils.cosmos_writer import upsert_action_events
-from utils.log_context import set_scan_context
-from utils.scan_state import update_scan_phase
 
 logger = logging.getLogger(__name__)
 
@@ -109,9 +108,7 @@ def fetch_audit_log_page_activity(payload: dict) -> dict:
     activity_start = time.monotonic()
 
     try:
-        token = acquire_graph_token(
-            tenant_id, payload["client_id"], payload["client_secret"],
-        )
+        token = acquire_project_graph_token(payload)
     except Exception as exc:
         logger.error(
             "fetch_audit_log_page FAILED (auth) | scan=%s | page=%d | error=%s",

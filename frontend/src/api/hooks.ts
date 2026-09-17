@@ -38,6 +38,16 @@ import type {
   AccessPathSummary,
   ScanRecord,
   ScanStreamEvent,
+  GovernanceWorkflow,
+  WorkflowDecisionRequest,
+  EvidenceCoverageSummary,
+  IdentityEvidenceAccess,
+  PersonaCatalogEntry,
+  GovernancePolicy,
+  AuthorizationReadiness,
+  GovernanceConnector,
+  GovernanceCopilotResponse,
+  CreateScopedCopilotRunPayload,
 } from "./types";
 
 /**
@@ -1016,5 +1026,167 @@ export function useScanLogs(
         `/api/projects/${projectId}/scans/${scanId}/logs?${qs.toString()}`,
       ),
     enabled: !!projectId && !!scanId,
+  });
+}
+
+// ------------------------------------------------------------------
+// Governance UX
+// ------------------------------------------------------------------
+
+export function useWorkflowInbox() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["workflowInbox", projectId],
+    queryFn: () =>
+      client.get<GovernanceWorkflow[]>(
+        `/api/projects/${projectId}/governance/workflows`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export function useWorkflowDetail(workflowId: string) {
+  const workflowsQuery = useWorkflowInbox();
+
+  return {
+    data:
+      workflowsQuery.data?.find((workflow) => workflow.id === workflowId) ??
+      undefined,
+    isLoading: workflowsQuery.isLoading,
+    isError: workflowsQuery.isError,
+    error: workflowsQuery.error,
+  };
+}
+
+export function useApproveWorkflow(workflowId: string) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      client.post<GovernanceWorkflow>(
+        `/api/projects/${projectId}/governance/workflows/${workflowId}/approve`,
+        {},
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workflowInbox", projectId] });
+    },
+  });
+}
+
+export function useTransitionWorkflow(workflowId: string) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: WorkflowDecisionRequest) =>
+      client.post<GovernanceWorkflow>(
+        `/api/projects/${projectId}/governance/workflows/${workflowId}/transition?target=${encodeURIComponent(payload.target)}`,
+        {},
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workflowInbox", projectId] });
+    },
+  });
+}
+
+export function useEvidenceCoverage() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["evidenceCoverage", projectId],
+    queryFn: () =>
+      client.get<EvidenceCoverageSummary>(
+        `/api/projects/${projectId}/governance/evidence/health`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export function useIdentityEvidenceAccess(identityId: string) {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["identityEvidenceAccess", projectId, identityId],
+    queryFn: () =>
+      client.get<IdentityEvidenceAccess>(
+        `/api/projects/${projectId}/governance/evidence/identities/${identityId}/access`,
+      ),
+    enabled: !!projectId && !!identityId,
+  });
+}
+
+export function usePersonaCatalog() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["personaCatalog", projectId],
+    queryFn: () =>
+      client.get<PersonaCatalogEntry[]>(
+        `/api/projects/${projectId}/governance/personas`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export function useGovernanceConnectors() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["governanceConnectors", projectId],
+    queryFn: () =>
+      client.get<GovernanceConnector[]>(
+        `/api/projects/${projectId}/governance/connectors`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export function useGovernancePolicy() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["governancePolicy", projectId],
+    queryFn: () =>
+      client.get<GovernancePolicy | null>(
+        `/api/projects/${projectId}/governance/policy`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export function useAuthorizationReadiness() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useQuery({
+    queryKey: ["authorizationReadiness", projectId],
+    queryFn: () =>
+      client.get<AuthorizationReadiness>(
+        `/api/projects/${projectId}/governance/authorization/readiness`,
+      ),
+    enabled: !!projectId,
+  });
+}
+
+export function useRunScopedCopilot() {
+  const { projectId } = useProjectContext();
+  const client = getApiClient();
+
+  return useMutation({
+    mutationFn: (payload: CreateScopedCopilotRunPayload) =>
+      client.post<GovernanceCopilotResponse>(
+        `/api/projects/${projectId}/governance/copilot/query`,
+        payload,
+      ),
   });
 }

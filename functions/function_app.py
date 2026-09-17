@@ -20,6 +20,7 @@ from blueprints import (
     sign_in_logs_blueprint,
     directory_data_blueprint,
     identity_profiles_blueprint,
+    agent_workflows_blueprint,
 )
 from utils.log_context import ScanContextFilter
 
@@ -45,20 +46,25 @@ app.register_functions(audit_logs_blueprint)
 app.register_functions(sign_in_logs_blueprint)
 app.register_functions(directory_data_blueprint)
 app.register_functions(identity_profiles_blueprint)
+app.register_functions(agent_workflows_blueprint)
 
 logger.info("Function app initialized — blueprints registered")
 
 appinsights_configured = bool(os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING"))
 if not appinsights_configured:
-    logger.warning("APPLICATIONINSIGHTS_CONNECTION_STRING not set — logs will not appear in App Insights")
+    logger.warning(
+        "APPLICATIONINSIGHTS_CONNECTION_STRING not set — logs will not appear in App Insights"
+    )
 
 
 @app.route(route="health", methods=["GET"], auth_level=func.AuthLevel.ANONYMOUS)
 async def health_check(req: func.HttpRequest) -> func.HttpResponse:
     return func.HttpResponse(
-        json.dumps({
-            "status": "ok",
-            "appinsights_configured": appinsights_configured,
-        }),
+        json.dumps(
+            {
+                "status": "ok",
+                "appinsights_configured": appinsights_configured,
+            }
+        ),
         mimetype="application/json",
     )

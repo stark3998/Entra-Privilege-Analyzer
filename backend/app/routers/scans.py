@@ -19,10 +19,9 @@ from app.auth.obo import OboTokenProvider
 from app.config import Settings, get_settings
 from app.models.project import ScanPhase, ScanRecord
 from app.services.master_repo import MasterRepo, get_master_repo
+from app.services.permission_validator import REQUIRED_PERMISSIONS
 from app.services.project_repo import ProjectRepo
 from app.services.project_repo_cache import ProjectRepoCache
-from app.services.crypto import CryptoService
-from app.services.permission_validator import REQUIRED_PERMISSIONS
 from app.services.scan_events import ScanEventBroker, drain_queue, encode_sse
 
 logger = logging.getLogger(__name__)
@@ -492,9 +491,6 @@ async def trigger_scan(
             detail="Project has no app credentials configured.",
         )
 
-    crypto = CryptoService(settings)
-    client_secret = crypto.decrypt(project.encrypted_client_secret)
-
     scan = ScanRecord(
         id=str(uuid.uuid4()),
         project_id=project_id,
@@ -509,14 +505,9 @@ async def trigger_scan(
     cosmos_database = project.database_name
     function_payload = {
         "tenant_id": project.target_tenant_id,
-        "client_id": project.client_id,
-        "client_secret": client_secret,
         "project_id": project_id,
         "scan_id": scan.id,
-        "cosmos_endpoint": settings.cosmos_endpoint,
-        "cosmos_key": settings.cosmos_key,
         "cosmos_database": cosmos_database,
-        "cosmos_master_database": settings.cosmos_master_database,
         "graph_api_version": settings.graph_api_version,
     }
 
@@ -722,9 +713,6 @@ async def resume_scan(
             detail="Project has no app credentials configured.",
         )
 
-    crypto = CryptoService(settings)
-    client_secret = crypto.decrypt(project.encrypted_client_secret)
-
     scan = ScanRecord(
         id=str(uuid.uuid4()),
         project_id=project_id,
@@ -740,14 +728,9 @@ async def resume_scan(
     cosmos_database = project.database_name
     function_payload = {
         "tenant_id": project.target_tenant_id,
-        "client_id": project.client_id,
-        "client_secret": client_secret,
         "project_id": project_id,
         "scan_id": scan.id,
-        "cosmos_endpoint": settings.cosmos_endpoint,
-        "cosmos_key": settings.cosmos_key,
         "cosmos_database": cosmos_database,
-        "cosmos_master_database": settings.cosmos_master_database,
         "graph_api_version": settings.graph_api_version,
         "resume_from_scan_id": failed_scan.id,
     }
@@ -897,7 +880,7 @@ async def get_function_logs(
         table = result.tables[0]
         col_names = [c.name for c in table.columns]
         for row in table.rows:
-            row_dict = dict(zip(col_names, row))
+            row_dict = dict(zip(col_names, row, strict=True))
             ts = row_dict.get("timestamp", "")
             ts_str = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
             dims = row_dict.get("customDimensions") or {}

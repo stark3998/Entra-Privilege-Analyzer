@@ -1,4 +1,5 @@
 // frontend/src/App.tsx
+import type { ReactNode } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import {
   AuthenticatedTemplate,
@@ -31,12 +32,39 @@ import { RemediationHistoryPage } from "@/pages/RemediationHistoryPage";
 import { PimSessionsPage } from "@/pages/PimSessionsPage";
 import { PimSessionDetailPage } from "@/pages/PimSessionDetailPage";
 import { AccessPathsPage } from "@/pages/AccessPathsPage";
+import { WorkflowInboxPage } from "@/pages/WorkflowInboxPage";
+import { WorkflowDetailPage } from "@/pages/WorkflowDetailPage";
+import { EvidenceExplorerPage } from "@/pages/EvidenceExplorerPage";
+import { PersonaCatalogPage } from "@/pages/PersonaCatalogPage";
+import { ConnectorAdminPage } from "@/pages/ConnectorAdminPage";
+import { ScopedCopilotPage } from "@/pages/ScopedCopilotPage";
 import { DocsPage } from "@/pages/DocsPage";
 import { useAuth } from "@/auth/useAuth";
 import { ProjectProvider } from "@/store/projectContext";
 import { getApiClient } from "@/api/client";
+import { RoleGate } from "@/components/layout/RoleGate";
+import { AccessDeniedState } from "@/components/governance/GovernanceFeedback";
 
 const isLocalMode = import.meta.env.VITE_LOCAL_MODE === "true";
+
+function ProjectRoleRoute({
+  roles,
+  children,
+}: {
+  roles: string[];
+  children: ReactNode;
+}) {
+  return (
+    <RoleGate
+      roles={roles}
+      fallback={
+        <AccessDeniedState description="Your current app role cannot access this governance workflow." />
+      }
+    >
+      {children}
+    </RoleGate>
+  );
+}
 
 function AuthenticatedApp() {
   const { acquireToken } = useAuth();
@@ -76,6 +104,54 @@ function AuthenticatedApp() {
         <Route path="groups" element={<GroupsPage />} />
         <Route path="access-paths" element={<AccessPathsPage />} />
         <Route path="custom-roles" element={<CustomRolesPage />} />
+        <Route
+          path="workflows"
+          element={
+            <ProjectRoleRoute roles={["SecurityEngineer", "IAMAdmin"]}>
+              <WorkflowInboxPage />
+            </ProjectRoleRoute>
+          }
+        />
+        <Route
+          path="workflows/:id"
+          element={
+            <ProjectRoleRoute roles={["SecurityEngineer", "IAMAdmin"]}>
+              <WorkflowDetailPage />
+            </ProjectRoleRoute>
+          }
+        />
+        <Route
+          path="evidence"
+          element={
+            <ProjectRoleRoute roles={["SecurityEngineer", "IAMAdmin", "Executive"]}>
+              <EvidenceExplorerPage />
+            </ProjectRoleRoute>
+          }
+        />
+        <Route
+          path="personas"
+          element={
+            <ProjectRoleRoute roles={["IAMAdmin", "Executive"]}>
+              <PersonaCatalogPage />
+            </ProjectRoleRoute>
+          }
+        />
+        <Route
+          path="connectors"
+          element={
+            <ProjectRoleRoute roles={["IAMAdmin"]}>
+              <ConnectorAdminPage />
+            </ProjectRoleRoute>
+          }
+        />
+        <Route
+          path="copilot"
+          element={
+            <ProjectRoleRoute roles={["SecurityEngineer", "IAMAdmin"]}>
+              <ScopedCopilotPage />
+            </ProjectRoleRoute>
+          }
+        />
         <Route path="remediation" element={<RemediationHistoryPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="scan" element={<ScanPage />} />

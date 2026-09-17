@@ -3,6 +3,7 @@ from blueprints.audit_logs_bp import bp as audit_logs_blueprint
 from blueprints.sign_in_logs_bp import bp as sign_in_logs_blueprint
 from blueprints.directory_data_bp import bp as directory_data_blueprint
 from blueprints.identity_profiles_bp import bp as identity_profiles_blueprint
+from blueprints.agent_workflows_bp import bp as agent_workflows_blueprint
 
 __all__ = [
     "scan_blueprint",
@@ -10,4 +11,5 @@ __all__ = [
     "sign_in_logs_blueprint",
     "directory_data_blueprint",
     "identity_profiles_blueprint",
+    "agent_workflows_blueprint",
 ]

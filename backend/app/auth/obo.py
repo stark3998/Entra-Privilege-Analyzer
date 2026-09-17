@@ -12,6 +12,7 @@ from app.config import Settings
 logger = logging.getLogger(__name__)
 
 _GRAPH_SCOPES = ["https://graph.microsoft.com/.default"]
+_ARM_SCOPES = ["https://management.azure.com/.default"]
 
 
 class OboTokenProvider:
@@ -46,10 +47,26 @@ class OboTokenProvider:
         Raises:
             RuntimeError: If the OBO exchange fails.
         """
+        return await self._get_token(user_assertion, _GRAPH_SCOPES, tenant_id)
+
+    async def get_arm_token(
+        self,
+        user_assertion: str,
+        tenant_id: str | None = None,
+    ) -> str:
+        """Exchange a user assertion for an Azure Resource Manager token."""
+        return await self._get_token(user_assertion, _ARM_SCOPES, tenant_id)
+
+    async def _get_token(
+        self,
+        user_assertion: str,
+        scopes: list[str],
+        tenant_id: str | None,
+    ) -> str:
         app = self._build_app(tenant_id)
         result: dict[str, Any] = app.acquire_token_on_behalf_of(
             user_assertion=user_assertion,
-            scopes=_GRAPH_SCOPES,
+            scopes=scopes,
         )
         if "access_token" not in result:
             error_desc = result.get("error_description", "Unknown OBO error")
