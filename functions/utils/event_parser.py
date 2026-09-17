@@ -28,7 +28,12 @@ def parse_audit_event(
     user_info = initiated_by.get("user") or {}
     app_info = initiated_by.get("app") or {}
 
-    actor_id = user_info.get("id") or app_info.get("id") or "unknown"
+    # directoryAudit's appIdentity has no "id" field -- it exposes
+    # servicePrincipalId (object ID) and appId (client ID). Some
+    # system-initiated events (e.g. Azure AD Cloud Sync) omit both, in
+    # which case the actor is genuinely unresolvable from Graph's data.
+    app_actor_id = app_info.get("servicePrincipalId") or app_info.get("appId")
+    actor_id = user_info.get("id") or app_actor_id or "unknown"
     actor_name = (
         user_info.get("displayName")
         or app_info.get("displayName")
@@ -47,7 +52,7 @@ def parse_audit_event(
         else datetime.now(UTC)
     )
 
-    identity_prefix = "ServicePrincipal" if app_info.get("id") else "User"
+    identity_prefix = "ServicePrincipal" if app_actor_id else "User"
     identity_id = f"{identity_prefix}_{actor_id}"
 
     event: dict[str, Any] = {

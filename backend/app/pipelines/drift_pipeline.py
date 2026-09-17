@@ -69,7 +69,7 @@ class DriftPipeline:
         for identity in all_identities:
             try:
                 # Run drift detection
-                alerts = await self._detector.detect_all(identity)
+                alerts = await self._detector.detect_all(tenant_id, identity)
 
                 # Buffer alerts for batch write
                 all_alerts.extend(alerts)

@@ -13,14 +13,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 import azure.durable_functions as df
-
-from blueprints.shared import RETRY_OPTIONS, cosmos_config
 from utils.cosmos_writer import (
     query_action_events_for_identity,
     read_scan_staging,
     upsert_identity_profile,
 )
 from utils.log_context import set_scan_context
+
+from blueprints.shared import cosmos_config
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,9 @@ def process_identity_batch_activity(payload: dict) -> dict:
 
     Expects payload keys:
     - actor_entries: list of [identity_id, display_name] pairs
-    - scan_id, tenant_id, cosmos_endpoint, cosmos_key, cosmos_database
+    - scan_id, tenant_id, project_id, cosmos_database
+
+    Cosmos credentials are resolved from app settings inside the activity.
     """
     set_scan_context(payload)
     actor_entries: list[list[str]] = payload["actor_entries"]
@@ -235,6 +237,11 @@ def _process_single_identity(
     elif identity_type_str == "ServicePrincipal" and object_id in sp_lookup:
         sp_data = sp_lookup[object_id]
         app_id = sp_data.get("appId")
+        # Graph's audit appIdentity often omits displayName (e.g. events with
+        # only a servicePrincipalId populated), so fall back to the directory
+        # data staged for this SP rather than showing "Unknown".
+        if (not display_name or display_name == "Unknown") and sp_data.get("displayName"):
+            display_name = sp_data["displayName"]
 
     profile = {
         "id": identity_id,

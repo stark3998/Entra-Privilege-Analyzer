@@ -11,7 +11,12 @@ from app.config import get_settings
 from app.models.action import ActionEvent
 from app.models.identity import IdentityProfile, IdentityType, ObservedAction
 from app.models.project import ScanRecord
-from app.observability import get_tracer, scan_duration_histogram, scan_events_counter, scan_identities_counter
+from app.observability import (
+    get_tracer,
+    scan_duration_histogram,
+    scan_events_counter,
+    scan_identities_counter,
+)
 from app.services.graph_ingest import GraphIngestService
 from app.services.graph_roles import GraphRolesService
 
@@ -232,7 +237,7 @@ class IngestPipeline:
                 "message": f"Loaded {loaded_count} previously stored events for resume.",
                 "phase": "audit_logs",
                 "status": "running",
-                "items_processed": len(stored),
+                "items_processed": loaded_count,
             }
         )
 
@@ -592,6 +597,11 @@ class IngestPipeline:
                 sp_data = sp_lookup[object_id]
                 app_id = sp_data.get("appId")
                 account_enabled = sp_data.get("accountEnabled")
+                # Graph's audit appIdentity often omits displayName (e.g.
+                # events with only a servicePrincipalId populated), so fall
+                # back to the directory data staged for this SP.
+                if (not display_name or display_name == "Unknown") and sp_data.get("displayName"):
+                    display_name = sp_data["displayName"]
 
             if existing:
                 upn = upn or existing.upn

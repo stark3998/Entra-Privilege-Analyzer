@@ -57,7 +57,8 @@ SAMPLE_AUDIT_LOG_APP_ACTOR: dict[str, Any] = {
     "correlationId": "corr-002",
     "initiatedBy": {
         "app": {
-            "id": "sp-oid-999",
+            "appId": "app-client-id-999",
+            "servicePrincipalId": "sp-oid-999",
             "displayName": "My Service Principal",
         }
     },
@@ -182,6 +183,39 @@ class TestParseAuditEvent:
         assert actor_name == "My Service Principal"
         assert event.resource == "Target App"
         assert event.resource_type == "Application"
+
+    def test_app_actor_without_service_principal_id_falls_back_to_app_id(self) -> None:
+        """When servicePrincipalId is absent, appId should still resolve the actor."""
+        raw = {
+            **SAMPLE_AUDIT_LOG_APP_ACTOR,
+            "initiatedBy": {
+                "app": {"appId": "app-client-id-only", "displayName": "Client Only App"}
+            },
+        }
+        event, actor_id, actor_name = GraphIngestService.parse_audit_event("tenant-001", raw)
+
+        assert event.identity_id == "ServicePrincipal_app-client-id-only"
+        assert actor_id == "app-client-id-only"
+        assert actor_name == "Client Only App"
+
+    def test_system_event_with_no_actor_id_is_unresolvable(self) -> None:
+        """Graph provides no ID at all for some system events (e.g. Azure AD
+        Cloud Sync); these should remain User_unknown rather than crash."""
+        raw = {
+            **SAMPLE_AUDIT_LOG_APP_ACTOR,
+            "initiatedBy": {
+                "app": {
+                    "appId": None,
+                    "servicePrincipalId": None,
+                    "displayName": "Azure AD Cloud Sync",
+                }
+            },
+        }
+        event, actor_id, actor_name = GraphIngestService.parse_audit_event("tenant-001", raw)
+
+        assert event.identity_id == "User_unknown"
+        assert actor_id == "unknown"
+        assert actor_name == "Azure AD Cloud Sync"
 
     def test_deterministic_id_is_stable(self) -> None:
         """The same raw event should always produce the same event ID."""
@@ -470,8 +504,6 @@ class TestTriggerScanErrorMapping:
         )
         mock_repo.list_projects_for_user.return_value = [project]
 
-        monkeypatch.setattr("app.routers.scans.CryptoService.decrypt", lambda self, value: "secret")
-
         test_app = create_app()
         test_app.dependency_overrides[get_settings] = _scan_test_settings
         test_app.dependency_overrides[get_master_repo] = lambda: mock_repo
@@ -523,6 +555,30 @@ class TestTriggerScanErrorMapping:
         assert body["status"] == "running"
         assert "scan_id" in body
         mock_repo.upsert_scan.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_trigger_scan_payload_excludes_secrets(
+        self,
+        scan_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        async def _capture(_settings: Settings, payload: dict[str, Any]) -> dict[str, Any]:
+            captured.update(payload)
+            return {"id": "orch-123"}
+
+        monkeypatch.setattr("app.routers.scans._start_function_app_scan", _capture)
+
+        resp = await scan_client.post("/api/projects/project-001/scans/trigger")
+
+        assert resp.status_code == 202
+        assert captured["project_id"] == "project-001"
+        assert captured["cosmos_database"] == "project-project-001"
+        assert "client_secret" not in captured
+        assert "cosmos_endpoint" not in captured
+        assert "cosmos_key" not in captured
+        assert "encryption_key" not in captured
 
     @pytest.mark.asyncio
     async def test_trigger_scan_rejects_no_function_app_configured(

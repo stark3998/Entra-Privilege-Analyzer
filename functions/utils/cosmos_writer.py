@@ -13,7 +13,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
-from azure.cosmos import CosmosClient, PartitionKey
+from azure.cosmos import CosmosClient
 
 logger = logging.getLogger(__name__)
 
@@ -283,6 +283,9 @@ def query_action_events_for_identity(
         {"name": "@tid", "value": tenant_id},
         {"name": "@iid", "value": identity_id},
     ]
+    # action_events is partitioned by /identity_id (not tenant_id), so the
+    # point-partition query must be scoped to identity_id or results will
+    # always come back empty even though matching documents exist.
     return list(container.query_items(
-        query=query, parameters=params, partition_key=tenant_id,
+        query=query, parameters=params, partition_key=identity_id,
     ))
