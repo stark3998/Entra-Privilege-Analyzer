@@ -12,7 +12,7 @@ interface HorizontalBarChartProps {
 
 export function HorizontalBarChart({
   data,
-  color = "#6366f1",
+  color = "#2563eb",
   maxBars = 10,
   onBarClick,
 }: HorizontalBarChartProps) {

@@ -3,6 +3,8 @@ import { useRecommendations, useComputeRecommendations } from "@/api/hooks";
 import { useAuth } from "@/auth/useAuth";
 import { RecommendationList } from "@/components/recommendations/RecommendationList";
 import { Tooltip } from "@/components/common/Tooltip";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import type { IdentityType } from "@/api/types";
 
 const TYPE_OPTIONS: { label: string; value: IdentityType | "" }[] = [
@@ -73,7 +75,8 @@ export function RecommendationsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="page-title">Role Recommendations</h1>
+          <p className="eyebrow">Least Privilege</p>
+          <h1 className="page-title mt-1">Role Recommendations</h1>
           <p className="page-subtitle">
             Least-privilege role recommendations based on observed permission usage
           </p>
@@ -119,8 +122,23 @@ export function RecommendationsPage() {
         </div>
       )}
 
+      <MotionStagger className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <MotionItem className="card p-4">
+          <p className="eyebrow">Total Matches</p>
+          <AnimatedNumber value={data?.total ?? 0} className="mt-1 block text-2xl font-bold tabular-nums text-brand-700 dark:text-brand-300" />
+        </MotionItem>
+        <MotionItem className="card p-4">
+          <p className="eyebrow">Visible Results</p>
+          <AnimatedNumber value={data?.items.length ?? 0} className="mt-1 block text-2xl font-bold tabular-nums text-slate-900 dark:text-white" />
+        </MotionItem>
+        <MotionItem className="card p-4">
+          <p className="eyebrow">Current Page</p>
+          <AnimatedNumber value={page} className="mt-1 block text-2xl font-bold tabular-nums text-slate-900 dark:text-white" />
+        </MotionItem>
+      </MotionStagger>
+
       {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <svg className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />

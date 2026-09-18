@@ -4,6 +4,8 @@ import { useDriftAlerts, useDetectDrift } from "@/api/hooks";
 import { useAuth } from "@/auth/useAuth";
 import { DriftAlertTable } from "@/components/drift/DriftAlertTable";
 import { Tooltip } from "@/components/common/Tooltip";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import type { DriftSeverity, DriftStatus } from "@/api/types";
 
 const SEVERITY_OPTIONS: { label: string; value: DriftSeverity | "" }[] = [
@@ -68,7 +70,8 @@ export function DriftPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="page-title">Permission Drift Monitor</h1>
+          <p className="eyebrow">Security Analysis</p>
+          <h1 className="page-title mt-1">Permission Drift Monitor</h1>
           <p className="page-subtitle">
             Detect anomalous permission usage and first-seen actions across identities
           </p>
@@ -110,21 +113,21 @@ export function DriftPage() {
       )}
 
       {/* Severity count badges */}
-      <div className="flex flex-wrap gap-3">
+      <MotionStagger className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {(["critical", "high", "medium", "low"] as const).map((sev) => {
           const s = SEVERITY_BADGE[sev];
           return (
-            <div key={sev} className={clsx("flex items-center gap-2.5 rounded-xl px-4 py-2.5", s.bg)}>
+            <MotionItem key={sev} className={clsx("card flex items-center gap-2.5 p-4", s.bg)}>
               <span className={clsx("h-2 w-2 rounded-full", s.dot)} />
               <span className={clsx("text-sm font-semibold capitalize", s.text)}>{sev}</span>
-              <span className={clsx("text-lg font-bold tabular-nums", s.text)}>{severityCounts[sev]}</span>
-            </div>
+              <AnimatedNumber value={severityCounts[sev]} className={clsx("ml-auto text-lg font-bold tabular-nums", s.text)} />
+            </MotionItem>
           );
         })}
-      </div>
+      </MotionStagger>
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <svg className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />

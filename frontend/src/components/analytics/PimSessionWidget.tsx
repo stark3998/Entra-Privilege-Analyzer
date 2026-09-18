@@ -11,18 +11,16 @@ export function PimSessionWidget() {
 
   if (analyticsLoading) {
     return (
-      <div className="animate-pulse rounded-lg border border-slate-200 bg-white p-6 dark:border-slate-700 dark:bg-slate-800">
-        <div className="h-4 w-32 rounded bg-slate-200 dark:bg-slate-700" />
-        <div className="mt-4 h-8 w-20 rounded bg-slate-200 dark:bg-slate-700" />
+      <div className="card p-6">
+        <div className="skeleton h-4 w-32" />
+        <div className="skeleton mt-4 h-8 w-20" />
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-6 dark:border-slate-700 dark:bg-slate-800">
-      <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-        PIM Sessions (30d)
-      </h3>
+    <div className="card p-6">
+      <h3 className="section-title">PIM Sessions (30d)</h3>
 
       <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div>

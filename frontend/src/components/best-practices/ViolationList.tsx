@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import clsx from "clsx";
 import type { BestPracticeViolation, ViolationType, ViolationPriority } from "@/api/types";
 import { EmptyState } from "@/components/common/EmptyState";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
+import { useProjectContext } from "@/store/projectContext";
 
 interface ViolationListProps {
   data: BestPracticeViolation[];
@@ -60,12 +62,12 @@ function SkeletonCard() {
     <div className="card p-5">
       <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <div className="h-5 w-16 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
-          <div className="h-5 w-24 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+          <div className="skeleton h-5 w-16 rounded-full" />
+          <div className="skeleton h-5 w-24 rounded-full" />
         </div>
-        <div className="h-4 w-64 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
-        <div className="h-3 w-48 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
-        <div className="h-3 w-full animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
+        <div className="skeleton h-4 w-64" />
+        <div className="skeleton h-3 w-48" />
+        <div className="skeleton h-3 w-full" />
       </div>
     </div>
   );
@@ -83,6 +85,7 @@ export function ViolationList({
   onPageChange,
   isLoading,
 }: ViolationListProps) {
+  const { projectId } = useProjectContext();
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const startItem = (page - 1) * pageSize + 1;
   const endItem = Math.min(page * pageSize, total);
@@ -123,10 +126,11 @@ export function ViolationList({
 
   return (
     <div className="space-y-4">
+      <MotionStagger className="space-y-4">
       {data.map((violation) => {
         const pColor = PRIORITY_COLORS[violation.priority];
         return (
-          <div key={violation.id} className="card-interactive p-5">
+          <MotionItem key={violation.id} className="card-interactive p-5">
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className={clsx("badge capitalize", pColor.bg)}>
@@ -160,13 +164,14 @@ export function ViolationList({
                 {violation.description}
               </p>
 
-              <Link to={`/best-practices/${violation.id}`} className="btn-primary inline-flex text-xs">
+              <Link to={`/projects/${projectId}/best-practices/${violation.id}`} className="btn-primary inline-flex text-xs">
                 View Details
               </Link>
             </div>
-          </div>
+          </MotionItem>
         );
       })}
+      </MotionStagger>
 
       {/* Pagination */}
       {total > 0 && (
@@ -178,12 +183,7 @@ export function ViolationList({
             <button
               onClick={() => onPageChange(page - 1)}
               disabled={page <= 1}
-              className={clsx(
-                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                page <= 1
-                  ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
-                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
-              )}
+              className="btn-ghost px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-40"
             >
               Prev
             </button>
@@ -193,12 +193,7 @@ export function ViolationList({
             <button
               onClick={() => onPageChange(page + 1)}
               disabled={page >= totalPages}
-              className={clsx(
-                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                page >= totalPages
-                  ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
-                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
-              )}
+              className="btn-ghost px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>

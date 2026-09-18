@@ -14,7 +14,7 @@ interface TrendChartProps {
 const TAB_CONFIG: { key: TrendTab; label: string; color: string; fillColor: string; hint: string }[] = [
   { key: "risk", label: "Risk Score", color: "#ef4444", fillColor: "rgba(239,68,68,0.08)", hint: "Average risk score over time" },
   { key: "drift", label: "Drift Alerts", color: "#f59e0b", fillColor: "rgba(245,158,11,0.08)", hint: "New drift alerts per day" },
-  { key: "actions", label: "Actions", color: "#6366f1", fillColor: "rgba(99,102,241,0.08)", hint: "Permission actions observed daily" },
+  { key: "actions", label: "Actions", color: "#2563eb", fillColor: "rgba(37,99,235,0.08)", hint: "Permission actions observed daily" },
 ];
 
 const CHART_HEIGHT = 200;

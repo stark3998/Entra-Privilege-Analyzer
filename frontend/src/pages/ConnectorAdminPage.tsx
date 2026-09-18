@@ -5,6 +5,7 @@ import { JsonViewer } from "@/components/common/JsonViewer";
 import { ConnectorCard } from "@/components/governance/ConnectorCard";
 import { GovernanceErrorState } from "@/components/governance/GovernanceFeedback";
 import { GovernanceMetricCard } from "@/components/governance/GovernanceMetricCard";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import { formatDateTime, toTitleCase } from "@/utils/governanceFormatting";
 
 export function ConnectorAdminPage() {
@@ -38,18 +39,21 @@ export function ConnectorAdminPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="page-title">Connector Administration</h1>
-        <p className="page-subtitle">
-          Read-only inspection of configured governance connectors using the backend-supported GET endpoint
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="eyebrow">Governance Integrations</p>
+          <h1 className="page-title mt-1">Connector Administration</h1>
+          <p className="page-subtitle">
+            Read-only inspection of configured governance connectors using the backend-supported GET endpoint
+          </p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <GovernanceMetricCard label="Connectors" value={connectors.length} tone="brand" />
-        <GovernanceMetricCard label="Enabled" value={enabledCount} tone="emerald" />
-        <GovernanceMetricCard label="Secret-backed" value={secretBackedCount} tone="slate" />
-      </div>
+      <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <MotionItem><GovernanceMetricCard label="Connectors" value={connectors.length} tone="brand" /></MotionItem>
+        <MotionItem><GovernanceMetricCard label="Enabled" value={enabledCount} tone="emerald" /></MotionItem>
+        <MotionItem><GovernanceMetricCard label="Secret-backed" value={secretBackedCount} tone="slate" /></MotionItem>
+      </MotionStagger>
 
       {readinessQuery.isError && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
@@ -101,9 +105,9 @@ export function ConnectorAdminPage() {
         <div className="space-y-3">
           {isLoading ? (
             Array.from({ length: 4 }).map((_, index) => (
-              <div key={index} className="card animate-pulse p-4">
-                <div className="h-4 w-1/3 rounded bg-slate-100 dark:bg-slate-800" />
-                <div className="mt-3 h-10 rounded bg-slate-100 dark:bg-slate-800" />
+              <div key={index} className="card p-4">
+                <div className="skeleton h-4 w-1/3" />
+                <div className="skeleton mt-3 h-10" />
               </div>
             ))
           ) : connectors.length === 0 ? (
@@ -112,14 +116,17 @@ export function ConnectorAdminPage() {
               description="Connector inventory will appear here after backend connector records are created."
             />
           ) : (
-            connectors.map((connector) => (
-              <ConnectorCard
-                key={connector.id}
-                connector={connector}
-                selected={connector.id === selectedId}
-                onSelect={() => setSelectedId(connector.id)}
-              />
-            ))
+            <MotionStagger className="space-y-3">
+              {connectors.map((connector) => (
+                <MotionItem key={connector.id}>
+                  <ConnectorCard
+                    connector={connector}
+                    selected={connector.id === selectedId}
+                    onSelect={() => setSelectedId(connector.id)}
+                  />
+                </MotionItem>
+              ))}
+            </MotionStagger>
           )}
         </div>
 

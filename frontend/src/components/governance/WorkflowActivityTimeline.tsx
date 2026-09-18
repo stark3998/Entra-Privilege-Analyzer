@@ -1,5 +1,6 @@
 import type { WorkflowActivity } from "@/api/types";
 import { EmptyState } from "@/components/common/EmptyState";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import { formatDateTime, toTitleCase } from "@/utils/governanceFormatting";
 
 export function WorkflowActivityTimeline({
@@ -17,9 +18,9 @@ export function WorkflowActivityTimeline({
   }
 
   return (
-    <div className="space-y-4">
+    <MotionStagger className="space-y-4">
       {activities.map((activity, index) => (
-        <div key={activity.id} className="flex gap-4">
+        <MotionItem key={activity.id} className="flex gap-4">
           <div className="flex w-6 flex-col items-center">
             <span className="mt-1 h-2.5 w-2.5 rounded-full bg-brand-500" />
             {index < activities.length - 1 && (
@@ -45,8 +46,8 @@ export function WorkflowActivityTimeline({
               {activity.message}
             </p>
           </div>
-        </div>
+        </MotionItem>
       ))}
-    </div>
+    </MotionStagger>
   );
 }

@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { useActions } from "@/api/hooks";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 
 interface DriftTimelineProps {
@@ -86,7 +87,7 @@ export function DriftTimeline({
       )}
 
       {/* Timeline */}
-      <div className="relative ml-3 border-l-2 border-slate-200 pl-6 dark:border-slate-700">
+      <MotionStagger className="relative ml-3 border-l-2 border-slate-200 pl-6 dark:border-slate-700">
         {events.map((event) => {
           const isHighlighted =
             event.action.toLowerCase() === highlightAction.toLowerCase();
@@ -95,7 +96,7 @@ export function DriftTimeline({
             event.result.toLowerCase() === "succeeded";
 
           return (
-            <div key={event.id} className="relative mb-6 last:mb-0">
+            <MotionItem key={event.id} className="relative mb-6 last:mb-0">
               {/* Dot on the timeline line */}
               <div
                 className={clsx(
@@ -164,10 +165,10 @@ export function DriftTimeline({
                   )}
                 </p>
               </div>
-            </div>
+            </MotionItem>
           );
         })}
-      </div>
+      </MotionStagger>
 
       {/* Pagination */}
       {totalPages > 1 && (
@@ -179,24 +180,14 @@ export function DriftTimeline({
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
-              className={clsx(
-                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                page <= 1
-                  ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
-                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
-              )}
+              className="btn-ghost px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-40"
             >
               Prev
             </button>
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
-              className={clsx(
-                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                page >= totalPages
-                  ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
-                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
-              )}
+              className="btn-ghost px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>

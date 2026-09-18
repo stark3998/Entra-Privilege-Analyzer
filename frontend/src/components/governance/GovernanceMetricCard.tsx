@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
 
 type Tone = "slate" | "brand" | "emerald" | "amber" | "orange" | "red" | "purple";
 
@@ -26,12 +27,12 @@ export function GovernanceMetricCard({
   tone = "slate",
 }: GovernanceMetricCardProps) {
   return (
-    <div className="card px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+    <div className="card p-4">
+      <p className="eyebrow">
         {label}
       </p>
       <p className={clsx("mt-1 text-2xl font-bold tabular-nums", TONE_CLASSES[tone])}>
-        {value}
+        {typeof value === "number" ? <AnimatedNumber value={value} /> : value}
       </p>
       {caption && (
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{caption}</p>

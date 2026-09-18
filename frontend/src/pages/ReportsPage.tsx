@@ -1,6 +1,7 @@
 // frontend/src/pages/ReportsPage.tsx
 import { useCallback } from "react";
 import { useDownloadReport } from "@/api/hooks";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 
 interface ReportCardProps {
   title: string;
@@ -28,9 +29,9 @@ function ReportCard({ title, description, format, icon }: ReportCardProps) {
   }, [refetch, format]);
 
   return (
-    <div className="card p-6">
+    <div className="card-interactive group h-full p-6">
       <div className="flex items-start gap-4">
-        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400">
+        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 transition-transform group-hover:scale-105 dark:bg-brand-900/30 dark:text-brand-400">
           {icon}
         </div>
         <div className="flex-1">
@@ -44,7 +45,7 @@ function ReportCard({ title, description, format, icon }: ReportCardProps) {
             type="button"
             onClick={handleDownload}
             disabled={isFetching}
-            className="btn-primary mt-4"
+            className="btn-primary mt-5"
           >
             {isFetching ? (
               <>
@@ -98,14 +99,16 @@ export function ReportsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="page-title">Reports</h1>
+        <p className="eyebrow">Executive Evidence</p>
+        <h1 className="page-title mt-1">Reports</h1>
         <p className="page-subtitle">
-          Download executive reports summarizing your Entra ID permissions posture
+          Download executive reports summarizing your Entra ID permissions posture.
         </p>
       </div>
 
       {/* Report cards */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <MotionStagger className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <MotionItem>
         <ReportCard
           title="Executive PDF Report"
           description="A comprehensive PDF report with risk scores, compliance status, drift analysis, and AI-generated executive narrative. Ideal for sharing with leadership."
@@ -126,6 +129,8 @@ export function ReportsPage() {
             </svg>
           }
         />
+        </MotionItem>
+        <MotionItem>
         <ReportCard
           title="Executive PowerPoint Report"
           description="A presentation-ready slide deck with key metrics, trend visualizations, and actionable recommendations. Perfect for board meetings."
@@ -146,7 +151,8 @@ export function ReportsPage() {
             </svg>
           }
         />
-      </div>
+        </MotionItem>
+      </MotionStagger>
     </div>
   );
 }

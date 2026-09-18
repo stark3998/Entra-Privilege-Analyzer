@@ -36,11 +36,11 @@ export function ActivitySparkline({ data }: ActivitySparklineProps) {
       className="w-full"
       preserveAspectRatio="xMidYMid meet"
     >
-      <polygon points={area} fill="rgba(99,102,241,0.08)" />
+      <polygon points={area} fill="rgba(37,99,235,0.08)" />
       <polyline
         points={line}
         fill="none"
-        stroke="#6366f1"
+        stroke="#2563eb"
         strokeWidth={2}
         strokeLinejoin="round"
         strokeLinecap="round"

@@ -1,12 +1,15 @@
 import { useAuth } from "@/auth/useAuth";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { Tooltip } from "@/components/common/Tooltip";
+import { LogoBadge } from "@/components/common/Logo";
 import { useProjectContext } from "@/store/projectContext";
+import { useCommandPalette } from "./CommandPalette";
 
 export function Header() {
   const { user, signOut } = useAuth();
   const [isDark, toggleDark] = useDarkMode();
   const { project } = useProjectContext();
+  const { open: openCommandPalette } = useCommandPalette();
 
   const initials = user?.name
     ? user.name
@@ -21,21 +24,7 @@ export function Header() {
     <header className="flex h-16 items-center justify-between border-b border-slate-200/80 bg-white px-6 dark:border-slate-700/80 dark:bg-slate-900">
       {/* Left: Logo + App name */}
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 shadow-sm">
-          <svg
-            className="h-5 w-5 text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-            />
-          </svg>
-        </div>
+        <LogoBadge size="md" />
         <div>
           <div className="flex items-center gap-1.5">
             <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
@@ -56,6 +45,23 @@ export function Header() {
             Least Privilege Advisory
           </p>
         </div>
+      </div>
+
+      {/* Center: Global search trigger */}
+      <div className="flex flex-1 justify-center px-6">
+        <button
+          onClick={openCommandPalette}
+          className="group flex w-full max-w-md items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50/80 px-3.5 py-2 text-sm text-slate-400 shadow-xs transition-all hover:border-brand-300 hover:bg-white hover:text-slate-500 dark:border-slate-700 dark:bg-slate-800/60 dark:hover:border-brand-700 dark:hover:bg-slate-800"
+          aria-label="Open command palette"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+          <span className="flex-1 text-left">Search or jump to…</span>
+          <kbd className="hidden items-center gap-0.5 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 shadow-xs group-hover:border-brand-200 dark:border-slate-600 dark:bg-slate-900 sm:flex">
+            <span className="text-xs">⌘</span>K
+          </kbd>
+        </button>
       </div>
 
       {/* Right: Controls */}

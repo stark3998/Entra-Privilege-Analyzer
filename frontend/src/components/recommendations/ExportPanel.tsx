@@ -24,9 +24,9 @@ const FORMAT_OPTIONS: FormatOption[] = [
     label: "Terraform",
     language: "hcl",
     color:
-      "border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-400 dark:hover:bg-purple-900/20",
+      "border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800",
     activeColor:
-      "border-purple-500 bg-purple-50 text-purple-700 dark:border-purple-500 dark:bg-purple-900/30 dark:text-purple-300",
+      "border-brand-500 bg-brand-50 text-brand-700 dark:border-brand-500 dark:bg-brand-900/30 dark:text-brand-300",
   },
   {
     key: "bicep",
@@ -112,7 +112,7 @@ export function ExportPanel({ identityId }: ExportPanelProps) {
             key={opt.key}
             onClick={() => handleFormatClick(opt.key)}
             className={clsx(
-              "rounded-lg border px-4 py-2 text-sm font-medium transition-colors",
+              "rounded-xl border px-4 py-2 text-sm font-semibold transition-colors",
               activeFormat === opt.key ? opt.activeColor : opt.color,
             )}
           >
@@ -143,7 +143,7 @@ export function ExportPanel({ identityId }: ExportPanelProps) {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleDownload}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  className="btn-secondary px-3 py-2 text-xs"
                 >
                   <svg
                     className="h-3.5 w-3.5"

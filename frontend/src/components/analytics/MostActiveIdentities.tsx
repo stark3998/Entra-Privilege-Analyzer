@@ -65,7 +65,7 @@ export function MostActiveIdentities({
           <div className="flex flex-shrink-0 items-center gap-2">
             <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
               <div
-                className="h-full rounded-full bg-indigo-500 transition-all"
+                className="h-full rounded-full bg-brand-500 transition-all"
                 style={{ width: `${(identity.count / maxCount) * 100}%` }}
               />
             </div>

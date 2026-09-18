@@ -19,15 +19,15 @@ export function AINarrativeCard({
   return (
     <div className="card overflow-hidden">
       {/* Accent header bar */}
-      <div className="h-1 bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400" />
+      <div className="h-1 bg-brand-gradient" />
 
       <div className="p-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-900/20">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 dark:bg-brand-950/40">
               <svg
-                className="h-4 w-4 text-amber-500 dark:text-amber-400"
+                className="h-4 w-4 text-brand-600 dark:text-brand-400"
                 fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}
               >
                 <path

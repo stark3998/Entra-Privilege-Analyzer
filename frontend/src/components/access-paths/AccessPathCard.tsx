@@ -29,10 +29,10 @@ export function AccessPathCard({ path, selected, onClick }: AccessPathCardProps)
     <button
       type="button"
       onClick={onClick}
-      className={`w-full rounded-lg border p-3 text-left transition-colors ${
+      className={`w-full rounded-xl border p-3 text-left transition-all ${
         selected
-          ? "border-indigo-400 bg-indigo-50 dark:border-indigo-600 dark:bg-indigo-900/20"
-          : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-600"
+          ? "border-brand-300 bg-brand-50 shadow-card dark:border-brand-700 dark:bg-brand-900/20"
+          : "border-slate-200 bg-white hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-card dark:border-slate-700 dark:bg-slate-900 dark:hover:border-brand-900/60"
       }`}
     >
       <div className="flex items-center justify-between gap-2">

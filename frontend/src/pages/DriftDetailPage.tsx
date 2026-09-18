@@ -1,6 +1,6 @@
 // frontend/src/pages/DriftDetailPage.tsx
 import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { useDriftAlertDetail, useUpdateDriftAlert } from "@/api/hooks";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
@@ -11,10 +11,13 @@ import { AcknowledgeDialog } from "@/components/drift/AcknowledgeDialog";
 import { ApiError } from "@/api/client";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import type { DriftStatus, DriftType } from "@/api/types";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
+import { useProjectContext } from "@/store/projectContext";
 
 const DRIFT_TYPE_COLORS: Record<DriftType, string> = {
   first_seen: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-  frequency_anomaly: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+  frequency_anomaly: "bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
 };
 
 const DRIFT_TYPE_LABELS: Record<DriftType, string> = {
@@ -93,6 +96,7 @@ function ZScoreGauge({
 export function DriftDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { projectId } = useProjectContext();
   const { data, isLoading, isError, error } = useDriftAlertDetail(id ?? "");
   const updateMutation = useUpdateDriftAlert();
 
@@ -110,8 +114,8 @@ export function DriftDetailPage() {
     <div className="space-y-6">
       <button
         type="button"
-        onClick={() => navigate("../drift")}
-        className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-brand-900/20 dark:hover:text-brand-300"
+        onClick={() => navigate(`/projects/${projectId}/drift`)}
+        className="btn-ghost"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -155,7 +159,7 @@ export function DriftDetailPage() {
             </svg>
           }
           action={
-            <button type="button" onClick={() => navigate("../drift")} className="btn-primary">
+            <button type="button" onClick={() => navigate(`/projects/${projectId}/drift`)} className="btn-primary">
               Return to Drift Monitor
             </button>
           }
@@ -166,8 +170,9 @@ export function DriftDetailPage() {
       {data && (
         <div className="space-y-8">
           {/* Header */}
-          <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0 flex-1">
+              <p className="eyebrow">Drift Detail</p>
               <div className="flex flex-wrap items-center gap-2">
                 <SeverityBadge severity={data.severity} size="md" />
                 <span
@@ -188,7 +193,7 @@ export function DriftDetailPage() {
                 </span>
               </div>
               <h1 className="page-title mt-2">{data.identity_display_name}</h1>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              <p className="page-subtitle">
                 Detected {formatRelativeTime(data.detected_at)}
               </p>
             </div>
@@ -240,7 +245,7 @@ export function DriftDetailPage() {
 
           {/* Mutation feedback */}
           {updateMutation.isError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+            <div className="card border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
               Failed to update alert:{" "}
               {updateMutation.error instanceof Error
                 ? updateMutation.error.message
@@ -248,26 +253,56 @@ export function DriftDetailPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="card px-4 py-3">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Action</p>
+          <MotionStagger className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <MotionItem className="card p-4">
+              <p className="eyebrow">Action</p>
               <p className="mt-1 truncate text-sm font-bold text-slate-900 dark:text-white" title={data.action}>{data.action}</p>
-            </div>
-            <div className="card px-4 py-3">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Resource</p>
+            </MotionItem>
+            <MotionItem className="card p-4">
+              <p className="eyebrow">Resource</p>
               <p className="mt-1 truncate text-sm font-bold text-slate-900 dark:text-white" title={data.resource ?? undefined}>
                 {data.resource ?? <span className="text-slate-400 dark:text-slate-500">--</span>}
               </p>
-            </div>
-            <div className="card px-4 py-3">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Observed Count</p>
-              <p className="mt-1 text-xl font-bold tabular-nums text-slate-900 dark:text-white">{data.observed_count ?? "--"}</p>
-            </div>
-            <div className="card px-4 py-3">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Detected At</p>
+            </MotionItem>
+            <MotionItem className="card p-4">
+              <p className="eyebrow">Observed Count</p>
+              {data.observed_count == null ? (
+                <p className="mt-1 text-xl font-bold tabular-nums text-slate-400 dark:text-slate-500">--</p>
+              ) : (
+                <AnimatedNumber value={data.observed_count} className="mt-1 block text-xl font-bold tabular-nums text-slate-900 dark:text-white" />
+              )}
+            </MotionItem>
+            <MotionItem className="card p-4">
+              <p className="eyebrow">Detected At</p>
               <p className="mt-1 text-sm font-bold text-slate-900 dark:text-white">{formatRelativeTime(data.detected_at)}</p>
+            </MotionItem>
+          </MotionStagger>
+
+          <section className="card p-5">
+            <h2 className="section-title">Related</h2>
+            <div className="mt-3 space-y-1">
+              <Link
+                to={`/projects/${projectId}/identities/${data.identity_id}`}
+                className="group flex items-center justify-between rounded-xl px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+              >
+                <span>
+                  <span className="block text-sm font-medium text-slate-900 dark:text-white">Identity profile</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">{data.identity_display_name}</span>
+                </span>
+                <span className="text-slate-400 transition-transform group-hover:translate-x-0.5 dark:text-slate-500">›</span>
+              </Link>
+              <Link
+                to={`/projects/${projectId}/recommendations/${data.identity_id}`}
+                className="group flex items-center justify-between rounded-xl px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+              >
+                <span>
+                  <span className="block text-sm font-medium text-slate-900 dark:text-white">Least-privilege recommendation</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">Recommendation for this identity</span>
+                </span>
+                <span className="text-slate-400 transition-transform group-hover:translate-x-0.5 dark:text-slate-500">›</span>
+              </Link>
             </div>
-          </div>
+          </section>
 
           <section>
             <h2 className="section-title mb-3">Details</h2>

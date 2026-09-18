@@ -1,4 +1,5 @@
 import type { ActionEvent, PimSession } from "@/api/types";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 
 const RESULT_DOT: Record<string, string> = {
   success: "bg-green-500",
@@ -17,11 +18,11 @@ export function SessionTimeline({
       {/* Activation marker */}
       <div className="flex items-start gap-3 pb-4">
         <div className="flex flex-col items-center">
-          <div className="h-3 w-3 rounded-full bg-indigo-500 ring-2 ring-indigo-200 dark:ring-indigo-800" />
+          <div className="h-3 w-3 rounded-full bg-brand-500 ring-2 ring-brand-200 dark:ring-brand-800" />
           <div className="w-px flex-1 bg-slate-200 dark:bg-slate-700" />
         </div>
         <div className="-mt-0.5">
-          <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+          <p className="text-sm font-semibold text-brand-700 dark:text-brand-300">
             Role Activated: {session.role_name}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -31,8 +32,9 @@ export function SessionTimeline({
       </div>
 
       {/* Events */}
+      <MotionStagger className="space-y-0">
       {events.map((evt, idx) => (
-        <div key={evt.id} className="flex items-start gap-3 pb-4">
+        <MotionItem key={evt.id} className="flex items-start gap-3 pb-4">
           <div className="flex flex-col items-center">
             <div className={`h-2 w-2 rounded-full ${RESULT_DOT[evt.result] ?? "bg-slate-400"}`} />
             {idx < events.length - 1 && (
@@ -54,22 +56,23 @@ export function SessionTimeline({
               )}
             </div>
           </div>
-        </div>
+        </MotionItem>
       ))}
+      </MotionStagger>
 
       {/* Expiry marker */}
       <div className="flex items-start gap-3">
         <div className="flex flex-col items-center">
           <div className={`h-3 w-3 rounded-full ring-2 ${
             session.is_active
-              ? "bg-green-500 ring-green-200 dark:ring-green-800"
+              ? "bg-emerald-500 ring-emerald-200 dark:ring-emerald-800"
               : "bg-slate-400 ring-slate-200 dark:ring-slate-700"
           }`} />
         </div>
         <div className="-mt-0.5">
           <p className={`text-sm font-semibold ${
             session.is_active
-              ? "text-green-700 dark:text-green-300"
+              ? "text-emerald-700 dark:text-emerald-300"
               : "text-slate-600 dark:text-slate-400"
           }`}>
             {session.is_active ? "Session Active" : "Session Expired"}

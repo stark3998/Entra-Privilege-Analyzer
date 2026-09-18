@@ -1,6 +1,7 @@
 // frontend/src/components/recommendations/RoleDiff.tsx
 import { useState } from "react";
 import clsx from "clsx";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import type {
   CurrentRole,
   BuiltInRoleMatch,
@@ -88,17 +89,17 @@ export function RoleDiff({
     <div className="grid gap-6 lg:grid-cols-2">
       {/* Left: Current Roles */}
       <div>
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <h3 className="eyebrow mb-3">
           Current Roles
         </h3>
-        <div className="space-y-2">
+        <MotionStagger className="space-y-2">
           {currentRoles.length === 0 ? (
             <p className="py-4 text-center text-sm text-slate-400 dark:text-slate-500">
               No roles assigned
             </p>
           ) : (
             currentRoles.map((role) => (
-              <div
+              <MotionItem
                 key={role.role_id}
                 className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800/60"
               >
@@ -127,15 +128,15 @@ export function RoleDiff({
                     </span>
                   )}
                 </div>
-              </div>
+              </MotionItem>
             ))
           )}
-        </div>
+        </MotionStagger>
       </div>
 
       {/* Right: Recommended */}
       <div>
-        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <h3 className="eyebrow mb-3">
           Recommended
         </h3>
         <div className="space-y-3">
@@ -210,11 +211,13 @@ export function RoleDiff({
                 {alternativeBuiltins.length !== 1 ? "s" : ""}
               </button>
               {showAlternatives && (
-                <div className="mt-2 space-y-2">
+                <MotionStagger className="mt-2 space-y-2">
                   {alternativeBuiltins.map((alt) => (
-                    <BuiltInMatchCard key={alt.role_id} match={alt} />
+                    <MotionItem key={alt.role_id}>
+                      <BuiltInMatchCard match={alt} />
+                    </MotionItem>
                   ))}
-                </div>
+                </MotionStagger>
               )}
             </div>
           )}

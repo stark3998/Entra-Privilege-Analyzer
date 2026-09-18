@@ -1,5 +1,5 @@
 // frontend/src/pages/BestPracticeDetailPage.tsx
-import { useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { useViolationDetail } from "@/api/hooks";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
@@ -8,6 +8,8 @@ import { RemediationSteps } from "@/components/best-practices/RemediationSteps";
 import { ApiError } from "@/api/client";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 import type { ViolationType, ViolationPriority } from "@/api/types";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
+import { useProjectContext } from "@/store/projectContext";
 
 /** Color map for priority badges. */
 const PRIORITY_COLORS: Record<ViolationPriority, { bg: string; dot: string }> = {
@@ -52,14 +54,15 @@ const IDENTITY_TYPE_COLORS: Record<string, string> = {
 export function BestPracticeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { projectId } = useProjectContext();
   const { data, isLoading, isError, error } = useViolationDetail(id ?? "");
 
   return (
     <div className="space-y-6">
       <button
         type="button"
-        onClick={() => navigate("../best-practices")}
-        className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-brand-900/20 dark:hover:text-brand-300"
+        onClick={() => navigate(`/projects/${projectId}/best-practices`)}
+        className="btn-ghost"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -103,7 +106,7 @@ export function BestPracticeDetailPage() {
             </svg>
           }
           action={
-            <button type="button" onClick={() => navigate("../best-practices")} className="btn-primary">
+            <button type="button" onClick={() => navigate(`/projects/${projectId}/best-practices`)} className="btn-primary">
               Return to Best Practices
             </button>
           }
@@ -114,8 +117,9 @@ export function BestPracticeDetailPage() {
       {data && (
         <div className="space-y-8">
           {/* Header */}
-          <div className="flex flex-wrap items-start gap-4">
+          <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0 flex-1">
+              <p className="eyebrow">Best Practice Detail</p>
               <div className="flex flex-wrap items-center gap-2">
                 <span className={clsx("badge capitalize", PRIORITY_COLORS[data.priority].bg)}>
                   <span className={clsx("h-1.5 w-1.5 rounded-full", PRIORITY_COLORS[data.priority].dot)} />
@@ -131,12 +135,14 @@ export function BestPracticeDetailPage() {
                 )}
               </div>
               <h1 className="page-title mt-2">{data.title}</h1>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              <p className="page-subtitle">
                 Detected {formatRelativeTime(data.detected_at)}
               </p>
             </div>
           </div>
 
+          <MotionStagger className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr,0.8fr]">
+          <MotionItem>
           <section>
             <h2 className="section-title mb-3">Identity</h2>
             <div className="card p-5">
@@ -153,6 +159,46 @@ export function BestPracticeDetailPage() {
               </p>
             </div>
           </section>
+          </MotionItem>
+
+          <MotionItem>
+          <section className="card p-5">
+            <h2 className="section-title">Related</h2>
+            <div className="mt-3 space-y-1">
+              <Link
+                to={`/projects/${projectId}/identities/${data.identity_id}`}
+                className="group flex items-center justify-between rounded-xl px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+              >
+                <span>
+                  <span className="block text-sm font-medium text-slate-900 dark:text-white">Identity profile</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">{data.identity_display_name}</span>
+                </span>
+                <span className="text-slate-400 transition-transform group-hover:translate-x-0.5 dark:text-slate-500">›</span>
+              </Link>
+              <Link
+                to={`/projects/${projectId}/recommendations/${data.identity_id}`}
+                className="group flex items-center justify-between rounded-xl px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+              >
+                <span>
+                  <span className="block text-sm font-medium text-slate-900 dark:text-white">Role recommendation</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">Least-privilege analysis for this identity</span>
+                </span>
+                <span className="text-slate-400 transition-transform group-hover:translate-x-0.5 dark:text-slate-500">›</span>
+              </Link>
+              <Link
+                to={`/projects/${projectId}/drift?search=${encodeURIComponent(data.identity_display_name)}`}
+                className="group flex items-center justify-between rounded-xl px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+              >
+                <span>
+                  <span className="block text-sm font-medium text-slate-900 dark:text-white">Drift alerts</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">Search drift for this identity</span>
+                </span>
+                <span className="text-slate-400 transition-transform group-hover:translate-x-0.5 dark:text-slate-500">›</span>
+              </Link>
+            </div>
+          </section>
+          </MotionItem>
+          </MotionStagger>
 
           <section>
             <h2 className="section-title mb-3">Description</h2>

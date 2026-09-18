@@ -16,6 +16,7 @@ import {
   WorkflowTypeBadge,
 } from "@/components/governance/GovernanceBadges";
 import { GovernanceMetricCard } from "@/components/governance/GovernanceMetricCard";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import { useProjectContext } from "@/store/projectContext";
 import { formatDateTime, toTitleCase } from "@/utils/governanceFormatting";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
@@ -71,7 +72,7 @@ export function WorkflowDetailPage() {
       <button
         type="button"
         onClick={() => navigate(`/projects/${projectId}/workflows`)}
-        className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-brand-900/20 dark:hover:text-brand-300"
+        className="btn-ghost"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -81,6 +82,7 @@ export function WorkflowDetailPage() {
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
+          <p className="eyebrow">Workflow Detail</p>
           <div className="flex flex-wrap items-center gap-2">
             <WorkflowStatusBadge status={data.status} />
             <WorkflowTypeBadge type={data.kind} />
@@ -96,15 +98,31 @@ export function WorkflowDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <GovernanceMetricCard label="Steps" value={data.steps.length} tone="brand" />
-        <GovernanceMetricCard label="Approvals" value={data.approvals.length} tone="amber" />
-        <GovernanceMetricCard label="Completed actions" value={data.completed_action_ids.length} tone="emerald" />
-        <GovernanceMetricCard label="Policy keys" value={Object.keys(data.policy_decision).length} tone="slate" />
-      </div>
+      <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MotionItem><GovernanceMetricCard label="Steps" value={data.steps.length} tone="brand" /></MotionItem>
+        <MotionItem><GovernanceMetricCard label="Approvals" value={data.approvals.length} tone="amber" /></MotionItem>
+        <MotionItem><GovernanceMetricCard label="Completed actions" value={data.completed_action_ids.length} tone="emerald" /></MotionItem>
+        <MotionItem><GovernanceMetricCard label="Policy keys" value={Object.keys(data.policy_decision).length} tone="slate" /></MotionItem>
+      </MotionStagger>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr,0.8fr]">
         <div className="space-y-5">
+          <section className="card p-5">
+            <h2 className="section-title">Related</h2>
+            <div className="mt-3 space-y-1">
+              <Link
+                to={`/projects/${projectId}/identities/${data.identity_id}`}
+                className="group flex items-center justify-between rounded-xl px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+              >
+                <span>
+                  <span className="block text-sm font-medium text-slate-900 dark:text-white">Identity profile</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">{identityLabel}</span>
+                </span>
+                <span className="text-slate-400 transition-transform group-hover:translate-x-0.5 dark:text-slate-500">›</span>
+              </Link>
+            </div>
+          </section>
+
           <section className="card p-5">
             <h2 className="section-title">Workflow metadata</h2>
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">

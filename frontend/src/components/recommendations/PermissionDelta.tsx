@@ -1,6 +1,7 @@
 // frontend/src/components/recommendations/PermissionDelta.tsx
 import clsx from "clsx";
 import type { PermissionGap } from "@/api/types";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 
 interface PermissionDeltaProps {
   permissionGaps: PermissionGap[];
@@ -22,7 +23,7 @@ function PermissionRow({
   index: number;
 }) {
   return (
-    <div
+    <MotionItem
       className="flex items-center justify-between rounded-lg px-3 py-2 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40"
       style={{ animationDelay: `${index * 30}ms` }}
     >
@@ -37,7 +38,7 @@ function PermissionRow({
       >
         {gap.risk_weight}
       </span>
-    </div>
+    </MotionItem>
   );
 }
 
@@ -101,7 +102,7 @@ export function PermissionDelta({ permissionGaps }: PermissionDeltaProps) {
                 No required permissions identified
               </p>
             ) : (
-              <div className="divide-y divide-emerald-100 dark:divide-emerald-800/30">
+              <MotionStagger className="divide-y divide-emerald-100 dark:divide-emerald-800/30">
                 {required.map((gap, idx) => (
                   <PermissionRow
                     key={gap.permission}
@@ -109,7 +110,7 @@ export function PermissionDelta({ permissionGaps }: PermissionDeltaProps) {
                     index={idx}
                   />
                 ))}
-              </div>
+              </MotionStagger>
             )}
           </div>
         </div>
@@ -128,7 +129,7 @@ export function PermissionDelta({ permissionGaps }: PermissionDeltaProps) {
                 No excess permissions -- already least-privilege
               </p>
             ) : (
-              <div className="divide-y divide-red-100 dark:divide-red-800/30">
+              <MotionStagger className="divide-y divide-red-100 dark:divide-red-800/30">
                 {excess.map((gap, idx) => (
                   <PermissionRow
                     key={gap.permission}
@@ -136,7 +137,7 @@ export function PermissionDelta({ permissionGaps }: PermissionDeltaProps) {
                     index={idx}
                   />
                 ))}
-              </div>
+              </MotionStagger>
             )}
           </div>
         </div>

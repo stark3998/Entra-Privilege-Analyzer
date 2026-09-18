@@ -6,14 +6,16 @@ import {
   useRemoveMember,
 } from "@/api/projectHooks";
 import { useProjectContext } from "@/store/projectContext";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import type { ProjectMember } from "@/api/types";
 
 function RoleBadge({ role }: { role: string }) {
   const styles: Record<string, string> = {
     admin:
-      "bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400",
+      "bg-brand-50 text-brand-700 dark:bg-brand-900/20 dark:text-brand-300",
     operator:
-      "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400",
+      "bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300",
     viewer:
       "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
     owner:
@@ -46,9 +48,9 @@ function MemberRow({
   }
 
   return (
-    <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 last:border-b-0 dark:border-slate-800">
+    <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 transition-colors last:border-b-0 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60">
       <div className="flex items-center gap-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-xs font-bold text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
           {member.email.charAt(0).toUpperCase()}
         </div>
         <div>
@@ -160,7 +162,8 @@ export function ProjectMembersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="page-title">Team Members</h1>
+        <p className="eyebrow">Manage</p>
+        <h1 className="page-title mt-1">Team Members</h1>
         <p className="page-subtitle">
           Manage who has access to{" "}
           <span className="font-medium text-slate-700 dark:text-slate-300">
@@ -171,8 +174,17 @@ export function ProjectMembersPage() {
 
       {/* Invite form — visible only to owners and admins */}
       {canManageMembers && (
+        <MotionItem>
         <div className="card p-6">
-          <h2 className="section-title">Invite Member</h2>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="eyebrow">Access Control</p>
+              <h2 className="section-title mt-1">Invite Member</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Add a teammate with project-scoped permissions.
+              </p>
+            </div>
+          </div>
           <form
             onSubmit={handleInvite}
             className="mt-4 flex flex-wrap items-end gap-3"
@@ -226,32 +238,45 @@ export function ProjectMembersPage() {
             </p>
           )}
         </div>
+        </MotionItem>
       )}
 
       {/* Members list */}
       <div className="card">
-        <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-          <h2 className="section-title">Members</h2>
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div>
+            <p className="eyebrow">Directory</p>
+            <h2 className="section-title mt-1">Members</h2>
+          </div>
+          {members && (
+            <AnimatedNumber
+              value={members.length}
+              className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white"
+            />
+          )}
         </div>
 
         {isLoading ? (
-          <div className="animate-pulse space-y-3 p-5">
+          <div className="space-y-3 p-5">
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="h-12 rounded-xl bg-slate-100 dark:bg-slate-800"
+                className="skeleton h-12 rounded-xl"
               />
             ))}
           </div>
         ) : members && members.length > 0 ? (
-          members.map((m) => (
-            <MemberRow
-              key={m.id}
-              member={m}
-              projectId={projectId}
-              canManage={canManageMembers}
-            />
-          ))
+          <MotionStagger>
+            {members.map((m) => (
+              <MotionItem key={m.id}>
+                <MemberRow
+                  member={m}
+                  projectId={projectId}
+                  canManage={canManageMembers}
+                />
+              </MotionItem>
+            ))}
+          </MotionStagger>
         ) : (
           <div className="px-5 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
             No team members yet. Invite someone above.

@@ -19,7 +19,7 @@ const NODE_HEIGHT = 48;
 
 const NODE_COLORS: Record<AccessPathNodeType, { bg: string; border: string; text: string }> = {
   user: { bg: "#eff6ff", border: "#3b82f6", text: "#1e40af" },
-  service_principal: { bg: "#f5f3ff", border: "#8b5cf6", text: "#5b21b6" },
+  service_principal: { bg: "#dbeafe", border: "#2563eb", text: "#1d4ed8" },
   application: { bg: "#ecfdf5", border: "#10b981", text: "#065f46" },
   group: { bg: "#fffbeb", border: "#f59e0b", text: "#92400e" },
   directory_role: { bg: "#fef2f2", border: "#ef4444", text: "#991b1b" },

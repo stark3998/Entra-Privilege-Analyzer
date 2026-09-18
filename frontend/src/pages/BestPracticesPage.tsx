@@ -5,6 +5,8 @@ import { useAuth } from "@/auth/useAuth";
 import { ViolationList } from "@/components/best-practices/ViolationList";
 import { ComplianceGauge } from "@/components/best-practices/ComplianceGauge";
 import { Tooltip } from "@/components/common/Tooltip";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import type { ViolationType, ViolationPriority } from "@/api/types";
 
 const VIOLATION_TYPE_OPTIONS: { label: string; value: ViolationType | "" }[] = [
@@ -62,7 +64,8 @@ export function BestPracticesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="page-title">Best Practice Compliance</h1>
+          <p className="eyebrow">Compliance Guardrails</p>
+          <h1 className="page-title mt-1">Best Practice Compliance</h1>
           <p className="page-subtitle">
             Evaluate identity configurations against Entra ID security best practices
           </p>
@@ -104,30 +107,28 @@ export function BestPracticesPage() {
       )}
 
       {summary && (
-        <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
-          <div className="flex-shrink-0">
+        <MotionStagger className="card flex flex-col items-center gap-6 p-6 sm:flex-row sm:items-start">
+          <MotionItem className="flex-shrink-0">
             <ComplianceGauge score={summary.compliance_score} size={140} />
-          </div>
+          </MotionItem>
           <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-4">
             {(["critical", "high", "medium", "low"] as const).map((priority) => {
               const c = PRIORITY_CARD[priority];
               return (
-                <div key={priority} className={clsx("rounded-xl px-4 py-3", c?.bg)}>
+                <MotionItem key={priority} className={clsx("rounded-xl px-4 py-3", c?.bg)}>
                   <div className="flex items-center gap-1.5">
                     <span className={clsx("h-1.5 w-1.5 rounded-full", c?.dot)} />
                     <p className={clsx("text-xs font-semibold capitalize", c?.text)}>{priority}</p>
                   </div>
-                  <p className={clsx("mt-1 text-2xl font-bold tabular-nums", c?.text)}>
-                    {summary.by_priority[priority] ?? 0}
-                  </p>
-                </div>
+                  <AnimatedNumber value={summary.by_priority[priority] ?? 0} className={clsx("mt-1 block text-2xl font-bold tabular-nums", c?.text)} />
+                </MotionItem>
               );
             })}
           </div>
-        </div>
+        </MotionStagger>
       )}
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="card flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
         <select value={typeFilter} onChange={(e) => handleTypeChange(e.target.value)} aria-label="Filter by violation type" className="input-base">
           {VIOLATION_TYPE_OPTIONS.map((opt) => (<option key={opt.value} value={opt.value}>{opt.label}</option>))}
         </select>

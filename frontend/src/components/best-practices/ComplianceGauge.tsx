@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
 import clsx from "clsx";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
 
 interface ComplianceGaugeProps {
   score: number;
@@ -15,17 +15,11 @@ function scoreColors(score: number): { stroke: string; text: string; label: stri
 }
 
 export function ComplianceGauge({ score, size = 120 }: ComplianceGaugeProps) {
-  const [animatedScore, setAnimatedScore] = useState(0);
   const strokeWidth = 8;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (animatedScore / 100) * circumference;
+  const offset = circumference - (score / 100) * circumference;
   const colors = scoreColors(score);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setAnimatedScore(score), 50);
-    return () => clearTimeout(timer);
-  }, [score]);
 
   return (
     <div className="flex flex-col items-center">
@@ -47,7 +41,7 @@ export function ComplianceGauge({ score, size = 120 }: ComplianceGaugeProps) {
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className={clsx("text-2xl font-bold tabular-nums", colors.text)}>
-            {Math.round(animatedScore)}
+            <AnimatedNumber value={score} />
           </span>
           <span className="text-[10px] font-medium text-slate-400">/ 100</span>
         </div>

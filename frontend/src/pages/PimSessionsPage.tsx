@@ -2,6 +2,8 @@ import { useState } from "react";
 import { usePimSessions, useActivePimSessions, useSyncPimSessions } from "@/api/hooks";
 import { PimSessionTable } from "@/components/pim-sessions/PimSessionTable";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import type { PimSessionStatus } from "@/api/types";
 
 const STATUS_OPTIONS: { label: string; value: PimSessionStatus | "" }[] = [
@@ -37,38 +39,52 @@ export function PimSessionsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            PIM Sessions
-          </h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <p className="eyebrow">Privileged Identity Management</p>
+          <h1 className="page-title mt-1">PIM Sessions</h1>
+          <p className="page-subtitle">
             Track privileged role activations, session activity, and anomalies
           </p>
         </div>
         <div className="flex items-center gap-3">
           {activeCount > 0 && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-3 py-1 text-sm font-medium text-green-700 dark:bg-green-900/20 dark:text-green-300">
-              <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-              {activeCount} active
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              <AnimatedNumber value={activeCount} /> active
             </span>
           )}
           <button
             onClick={() => syncMutation.mutate()}
             disabled={syncMutation.isPending}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="btn-primary"
           >
             {syncMutation.isPending ? "Syncing..." : "Sync Sessions"}
           </button>
         </div>
       </div>
 
+      <MotionStagger className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <MotionItem className="card p-4">
+          <p className="eyebrow">Total Sessions</p>
+          <AnimatedNumber value={total} className="mt-1 block text-2xl font-bold tabular-nums text-slate-900 dark:text-white" />
+        </MotionItem>
+        <MotionItem className="card p-4">
+          <p className="eyebrow">Active Now</p>
+          <AnimatedNumber value={activeCount} className="mt-1 block text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400" />
+        </MotionItem>
+        <MotionItem className="card p-4">
+          <p className="eyebrow">Visible Results</p>
+          <AnimatedNumber value={items.length} className="mt-1 block text-2xl font-bold tabular-nums text-brand-700 dark:text-brand-300" />
+        </MotionItem>
+      </MotionStagger>
+
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="card flex flex-wrap items-center gap-3 p-4">
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value as PimSessionStatus | ""); setPage(1); }}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+          className="input-base"
         >
           {STATUS_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
@@ -80,7 +96,7 @@ export function PimSessionsPage() {
           placeholder="Filter by role name..."
           value={roleFilter}
           onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+          className="input-base"
         />
 
         <select
@@ -90,7 +106,7 @@ export function PimSessionsPage() {
             setAnomalyFilter(v === "" ? undefined : v === "yes");
             setPage(1);
           }}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+          className="input-base"
         >
           <option value="">All Sessions</option>
           <option value="yes">With Anomalies</option>
@@ -106,7 +122,7 @@ export function PimSessionsPage() {
       {isLoading ? (
         <LoadingSpinner />
       ) : items.length === 0 ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-12 text-center dark:border-slate-700 dark:bg-slate-800">
+        <div className="card p-12 text-center">
           <p className="text-slate-500 dark:text-slate-400">
             No PIM sessions found. Trigger a scan or sync to discover sessions.
           </p>
@@ -121,7 +137,7 @@ export function PimSessionsPage() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-slate-600 dark:text-white"
+            className="btn-secondary px-3 py-2 text-sm"
           >
             Previous
           </button>
@@ -131,7 +147,7 @@ export function PimSessionsPage() {
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-50 dark:border-slate-600 dark:text-white"
+            className="btn-secondary px-3 py-2 text-sm"
           >
             Next
           </button>

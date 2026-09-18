@@ -8,6 +8,7 @@ import {
 import type { IdentityType } from "@/api/types";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import { EvidenceCoverageCard } from "@/components/governance/EvidenceCoverageCard";
 import { GovernanceErrorState } from "@/components/governance/GovernanceFeedback";
 import { GovernanceMetricCard } from "@/components/governance/GovernanceMetricCard";
@@ -61,7 +62,8 @@ export function EvidenceExplorerPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="page-title">Evidence Explorer</h1>
+          <p className="eyebrow">Evidence Graph</p>
+          <h1 className="page-title mt-1">Evidence Explorer</h1>
           <p className="page-subtitle">
             Inspect raw evidence source health and identity access edges returned by governance evidence endpoints
           </p>
@@ -99,21 +101,21 @@ export function EvidenceExplorerPage() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.95fr,1.25fr]">
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-1">
-            <GovernanceMetricCard label="Loaded identities" value={identities.length} tone="brand" />
-            <GovernanceMetricCard label="Total identities" value={identitiesQuery.data?.total ?? 0} tone="slate" />
-            <GovernanceMetricCard
+          <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-1">
+            <MotionItem><GovernanceMetricCard label="Loaded identities" value={identities.length} tone="brand" /></MotionItem>
+            <MotionItem><GovernanceMetricCard label="Total identities" value={identitiesQuery.data?.total ?? 0} tone="slate" /></MotionItem>
+            <MotionItem><GovernanceMetricCard
               label="Access edges"
               value={accessQuery.data?.items.length ?? 0}
               tone="emerald"
-            />
-          </div>
+            /></MotionItem>
+          </MotionStagger>
 
           {identitiesQuery.isLoading ? (
             Array.from({ length: 4 }).map((_, index) => (
-              <div key={index} className="card animate-pulse p-4">
-                <div className="h-4 w-1/3 rounded bg-slate-100 dark:bg-slate-800" />
-                <div className="mt-3 h-10 rounded bg-slate-100 dark:bg-slate-800" />
+              <div key={index} className="card p-4">
+                <div className="skeleton h-4 w-1/3" />
+                <div className="skeleton mt-3 h-10" />
               </div>
             ))
           ) : identities.length === 0 ? (
@@ -122,16 +124,18 @@ export function EvidenceExplorerPage() {
               description="The evidence access view requires project identities to be present."
             />
           ) : (
-            <div className="space-y-3">
+            <MotionStagger className="space-y-3">
               {identities.map((identity) => (
-                <button
+                <MotionItem
                   key={identity.id}
+                >
+                <button
                   type="button"
                   onClick={() => setSelectedIdentityId(identity.id)}
-                  className={`card w-full p-4 text-left transition-all ${
+                  className={`card-interactive w-full p-4 text-left ${
                     identity.id === selectedIdentityId
                       ? "border-brand-300 ring-2 ring-brand-100 dark:border-brand-700 dark:ring-brand-900/40"
-                      : "hover:border-slate-300 dark:hover:border-slate-600"
+                      : ""
                   }`}
                 >
                   <div className="flex flex-wrap items-center gap-2">
@@ -149,8 +153,9 @@ export function EvidenceExplorerPage() {
                     {identity.id}
                   </p>
                 </button>
+                </MotionItem>
               ))}
-            </div>
+            </MotionStagger>
           )}
           {(identitiesQuery.data?.total ?? 0) > PAGE_SIZE && (
             <div className="flex items-center justify-between">
@@ -216,9 +221,9 @@ export function EvidenceExplorerPage() {
                     No access edges were returned for this identity.
                   </p>
                 ) : (
-                  <div className="mt-4 space-y-3">
+                  <MotionStagger className="mt-4 space-y-3">
                     {accessQuery.data.items.map((item) => (
-                      <div
+                      <MotionItem
                         key={item.id}
                         className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-slate-700/80 dark:bg-slate-800/40"
                       >
@@ -258,9 +263,9 @@ export function EvidenceExplorerPage() {
                             Condition: {item.condition}
                           </p>
                         )}
-                      </div>
+                      </MotionItem>
                     ))}
-                  </div>
+                  </MotionStagger>
                 )}
               </div>
             </div>

@@ -3,6 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import clsx from "clsx";
 import { useScanDetail, useScanLogs } from "@/api/hooks";
 import { useProjectContext } from "@/store/projectContext";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem } from "@/components/common/motion";
 import type { ScanPhase, ScanStreamEvent } from "@/api/types";
 
 const LEVEL_COLORS: Record<string, string> = {
@@ -33,7 +35,7 @@ function StatusBadge({ status }: { status: string }) {
         "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
         status === "completed" && "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
         status === "failed" && "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-        status === "running" && "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+        status === "running" && "bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300",
         status === "pending" && "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
       )}
     >
@@ -131,10 +133,10 @@ export function ScanLogsPage() {
 
   if (scanLoading) {
     return (
-      <div className="mx-auto max-w-5xl animate-pulse space-y-4 p-6">
-        <div className="h-8 w-48 rounded bg-slate-200 dark:bg-slate-700" />
-        <div className="h-32 rounded-xl bg-slate-100 dark:bg-slate-800" />
-        <div className="h-64 rounded-xl bg-slate-100 dark:bg-slate-800" />
+      <div className="mx-auto max-w-5xl space-y-4 p-6">
+        <div className="skeleton h-8 w-48" />
+        <div className="skeleton h-32 rounded-xl" />
+        <div className="skeleton h-64 rounded-xl" />
       </div>
     );
   }
@@ -160,12 +162,12 @@ export function ScanLogsPage() {
   const totalPages = logs ? Math.ceil(logs.total / logs.size) : 1;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 p-6">
+    <div className="mx-auto max-w-5xl space-y-6 p-6">
       {/* Header */}
       <div>
         <Link
           to={`/projects/${projectId}/scan`}
-          className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          className="btn-ghost mb-3 -ml-2"
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -173,14 +175,20 @@ export function ScanLogsPage() {
           Back to Scans
         </Link>
 
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold text-slate-900 dark:text-white">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+          <p className="eyebrow">Scan Observability</p>
+          <h1 className="page-title mt-1">
             Scan {scan.id.slice(0, 8)}...
           </h1>
+          <p className="page-subtitle">
+            Raw ingestion events, phase timing, and execution diagnostics.
+          </p>
+          </div>
           <StatusBadge status={scan.status} />
         </div>
 
-        <div className="mt-1 flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
           <span>Started: {startedAt.toLocaleString()}</span>
           {completedAt && <span>Completed: {completedAt.toLocaleString()}</span>}
           {durationSec !== null && <span>Duration: {durationSec}s</span>}
@@ -196,14 +204,16 @@ export function ScanLogsPage() {
 
       {/* Phase Timing */}
       {scan.phases.length > 0 && (
+        <MotionItem>
         <div className="card">
           <div className="border-b border-slate-100 px-5 py-3 dark:border-slate-800">
-            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Phase Breakdown</h2>
+            <h2 className="section-title">Phase Breakdown</h2>
           </div>
           <div className="p-4">
             <PhaseTimeline phases={scan.phases} />
           </div>
         </div>
+        </MotionItem>
       )}
 
       {/* Error Summary */}
@@ -231,16 +241,25 @@ export function ScanLogsPage() {
       )}
 
       {/* Log Table */}
+      <MotionItem>
       <div className="card">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 dark:border-slate-800">
-          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-            Scan Logs {logs && <span className="font-normal text-slate-400">({logs.total} entries)</span>}
-          </h2>
+          <div>
+            <p className="eyebrow">Events</p>
+            <h2 className="section-title mt-1">
+              Scan Logs{" "}
+              {logs && (
+                <span className="font-normal text-slate-400">
+                  (<AnimatedNumber value={logs.total} /> entries)
+                </span>
+              )}
+            </h2>
+          </div>
           <div className="flex items-center gap-2">
             <select
               value={phaseFilter}
               onChange={(e) => { setPhaseFilter(e.target.value); setPage(1); }}
-              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              className="input-base py-1.5 text-xs"
             >
               {PHASE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
@@ -249,7 +268,7 @@ export function ScanLogsPage() {
             <select
               value={levelFilter}
               onChange={(e) => { setLevelFilter(e.target.value); setPage(1); }}
-              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              className="input-base py-1.5 text-xs"
             >
               {LEVEL_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
@@ -259,9 +278,9 @@ export function ScanLogsPage() {
         </div>
 
         {logsLoading ? (
-          <div className="animate-pulse space-y-2 p-5">
+          <div className="space-y-2 p-5">
             {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-8 rounded bg-slate-100 dark:bg-slate-800" />
+              <div key={i} className="skeleton h-8" />
             ))}
           </div>
         ) : logs && logs.items.length > 0 ? (
@@ -316,6 +335,7 @@ export function ScanLogsPage() {
           </div>
         )}
       </div>
+      </MotionItem>
     </div>
   );
 }

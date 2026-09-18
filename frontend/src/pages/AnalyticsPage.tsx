@@ -24,13 +24,13 @@ const TIME_OPTIONS: { value: TimeRange; label: string }[] = [
 
 function SkeletonCard({ className = "" }: { className?: string }) {
   return (
-    <div className={`card animate-pulse p-6 ${className}`}>
-      <div className="h-4 w-1/3 rounded bg-slate-100 dark:bg-slate-800" />
-      <div className="mt-3 h-8 w-1/2 rounded bg-slate-100 dark:bg-slate-800" />
+    <div className={`card p-6 ${className}`}>
+      <div className="skeleton h-4 w-1/3" />
+      <div className="skeleton mt-3 h-8 w-1/2" />
       <div className="mt-4 space-y-2">
-        <div className="h-3 w-full rounded bg-slate-100 dark:bg-slate-800" />
-        <div className="h-3 w-4/5 rounded bg-slate-100 dark:bg-slate-800" />
-        <div className="h-3 w-3/5 rounded bg-slate-100 dark:bg-slate-800" />
+        <div className="skeleton h-3 w-full" />
+        <div className="skeleton h-3 w-4/5" />
+        <div className="skeleton h-3 w-3/5" />
       </div>
     </div>
   );
@@ -44,19 +44,20 @@ function SectionHeader({
   subtitle: string;
 }) {
   return (
-    <div className="mb-4 mt-2">
-      <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-        {title}
-      </h2>
-      <p className="text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>
+    <div className="mb-4 mt-4 flex items-center gap-3">
+      <span className="h-5 w-1 rounded-full bg-brand-gradient" />
+      <div>
+        <h2 className="section-title">{title}</h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>
+      </div>
     </div>
   );
 }
 
 const SOURCE_COLORS: Record<string, string> = {
-  audit_log: "#6366f1",
-  sign_in_log: "#8b5cf6",
-  activity_log: "#a78bfa",
+  audit_log: "#2563eb",
+  sign_in_log: "#60a5fa",
+  activity_log: "#06b6d4",
 };
 
 const VIOLATION_TYPE_LABELS: Record<string, string> = {
@@ -77,9 +78,10 @@ export function AnalyticsPage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div className="flex items-end justify-between">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="page-title">Analytics</h1>
+          <p className="eyebrow">Insights</p>
+          <h1 className="page-title mt-1">Analytics</h1>
           <p className="page-subtitle">
             Activity, permission, and security posture insights
           </p>
@@ -220,7 +222,7 @@ export function AnalyticsPage() {
                   label: a.action,
                   value: a.count,
                 }))}
-                color="#6366f1"
+                color="#2563eb"
               />
             </div>
 
@@ -366,7 +368,7 @@ export function AnalyticsPage() {
                   label: r.role_name,
                   value: r.count,
                 }))}
-                color="#8b5cf6"
+                color="#3b82f6"
               />
             </div>
 

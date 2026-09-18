@@ -1,5 +1,7 @@
 // frontend/src/auth/LoginGate.tsx
 import { useMsal } from "@azure/msal-react";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
+import { LogoBadge } from "@/components/common/Logo";
 import { apiScopes } from "./msal";
 
 export function LoginGate() {
@@ -10,29 +12,45 @@ export function LoginGate() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-brand-50/30 to-slate-100 dark:from-slate-950 dark:via-brand-950/20 dark:to-slate-900">
-      <div className="w-full max-w-md animate-fade-in space-y-8 rounded-2xl border border-slate-200/60 bg-white/80 p-10 shadow-card backdrop-blur-sm dark:border-slate-700/60 dark:bg-slate-900/80">
-        <div className="text-center">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 shadow-lg shadow-brand-500/25">
-            <svg
-              className="h-8 w-8 text-white"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-              />
-            </svg>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-50 px-6 py-12 dark:bg-slate-950">
+      <div className="absolute left-1/2 top-[-10rem] h-80 w-80 -translate-x-1/2 rounded-full bg-brand-500/15 blur-3xl dark:bg-brand-500/10" />
+      <div className="absolute bottom-[-12rem] right-[-8rem] h-96 w-96 rounded-full bg-brand-400/10 blur-3xl dark:bg-brand-400/5" />
+
+      <MotionStagger className="relative grid w-full max-w-5xl items-center gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+        <MotionItem>
+          <div className="space-y-6">
+            <span className="badge bg-brand-50 text-brand-700 ring-1 ring-brand-200/70 dark:bg-brand-900/20 dark:text-brand-300 dark:ring-brand-900/50">
+              2027 SaaS security intelligence
+            </span>
+            <div>
+              <p className="eyebrow">Entra Privilege Analyzer</p>
+              <h1 className="mt-3 text-4xl font-bold tracking-[-0.04em] text-slate-950 dark:text-white sm:text-5xl">
+                Make least privilege measurable.
+              </h1>
+              <p className="mt-4 max-w-xl text-base leading-7 text-slate-600 dark:text-slate-300">
+                Connect Microsoft Entra ID, surface overprivilege, and brief leaders with confident, evidence-backed access posture.
+              </p>
+            </div>
+            <div className="grid max-w-lg grid-cols-3 gap-3">
+              {["Graph-aware", "AI narrative", "Audit ready"].map((label) => (
+                <div key={label} className="card-glass px-3 py-2 text-center text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  {label}
+                </div>
+              ))}
+            </div>
           </div>
+        </MotionItem>
+
+        <MotionItem>
+        <div className="card-glass relative w-full overflow-hidden p-8 shadow-elevated">
+          <div className="absolute inset-x-0 top-0 h-1 bg-brand-gradient" />
+          <div className="text-center">
+          <LogoBadge size="lg" className="mx-auto mb-5" />
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
             Entra Permissions Analyzer
           </h1>
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-            Least Privilege Analysis &amp; Role Advisory
+            Least privilege analysis &amp; role advisory
           </p>
         </div>
         <button
@@ -51,6 +69,8 @@ export function LoginGate() {
           Powered by Microsoft Entra ID
         </p>
       </div>
+        </MotionItem>
+      </MotionStagger>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 // frontend/src/components/best-practices/RemediationSteps.tsx
 import { useState, useCallback } from "react";
 import clsx from "clsx";
+import { fadeInUp, motion, staggerContainer } from "@/components/common/motion";
 
 interface RemediationStepsProps {
   steps: string[];
@@ -26,10 +27,16 @@ export function RemediationSteps({ steps }: RemediationStepsProps) {
   }
 
   return (
-    <ol className="divide-y divide-slate-200 dark:divide-slate-700">
+    <motion.ol
+      variants={staggerContainer}
+      initial="hidden"
+      animate="show"
+      className="divide-y divide-slate-200 dark:divide-slate-700"
+    >
       {steps.map((step, index) => (
-        <li
+        <motion.li
           key={index}
+          variants={fadeInUp}
           className={clsx(
             "flex items-start gap-3 px-4 py-3",
             index % 2 === 0
@@ -86,8 +93,8 @@ export function RemediationSteps({ steps }: RemediationStepsProps) {
               {step}
             </span>
           </div>
-        </li>
+        </motion.li>
       ))}
-    </ol>
+    </motion.ol>
   );
 }

@@ -3,6 +3,8 @@ import clsx from "clsx";
 import { useCAPolicies } from "@/api/hooks";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import type { ConditionalAccessPolicy } from "@/api/types";
 
 const STATE_STYLE: Record<string, { bg: string; text: string }> = {
@@ -33,9 +35,10 @@ export function ConditionalAccessPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="page-title">Conditional Access Policies</h1>
+        <p className="eyebrow">Policy Posture</p>
+        <h1 className="page-title mt-1">Conditional Access Policies</h1>
         <p className="page-subtitle">
-          Review conditional access policies, their states, and last modification dates
+          Review conditional access policies, their states, and last modification dates.
         </p>
       </div>
 
@@ -52,7 +55,25 @@ export function ConditionalAccessPage() {
           }
         />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+        <MotionStagger className="space-y-5">
+          <MotionItem>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="card p-5">
+                <p className="eyebrow">Policies</p>
+                <AnimatedNumber value={items.length} className="mt-2 block text-3xl font-bold tabular-nums text-slate-900 dark:text-white" />
+              </div>
+              <div className="card p-5">
+                <p className="eyebrow">Enabled</p>
+                <AnimatedNumber value={items.filter((policy) => policy.state === "enabled").length} className="mt-2 block text-3xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div className="card p-5">
+                <p className="eyebrow">Report-only</p>
+                <AnimatedNumber value={items.filter((policy) => policy.state === "enabledForReportingButNotEnforced").length} className="mt-2 block text-3xl font-bold tabular-nums text-amber-600 dark:text-amber-400" />
+              </div>
+            </div>
+          </MotionItem>
+          <MotionItem>
+        <div className="card overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-800/50">
@@ -93,6 +114,8 @@ export function ConditionalAccessPage() {
             </tbody>
           </table>
         </div>
+          </MotionItem>
+        </MotionStagger>
       )}
     </div>
   );

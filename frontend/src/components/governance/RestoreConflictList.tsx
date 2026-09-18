@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import type { RestoreConflict } from "@/api/types";
 import { EmptyState } from "@/components/common/EmptyState";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import { SeverityBadge } from "@/components/common/SeverityBadge";
 import { RestoreConflictStatusBadge } from "@/components/governance/GovernanceBadges";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
@@ -22,9 +23,9 @@ export function RestoreConflictList({
     return (
       <div className="space-y-3">
         {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="card animate-pulse p-4">
-            <div className="h-4 w-1/3 rounded bg-slate-100 dark:bg-slate-800" />
-            <div className="mt-3 h-6 w-full rounded bg-slate-100 dark:bg-slate-800" />
+          <div key={index} className="card p-4">
+            <div className="skeleton h-4 w-1/3" />
+            <div className="skeleton mt-3 h-6 w-full" />
           </div>
         ))}
       </div>
@@ -41,12 +42,14 @@ export function RestoreConflictList({
   }
 
   return (
-    <div className="space-y-3">
+    <MotionStagger className="space-y-3">
       {items.map((item) => {
         const isSelected = item.id === selectedId;
         return (
-          <button
+          <MotionItem
             key={item.id}
+          >
+          <button
             type="button"
             onClick={() => onSelect(item.id)}
             className={clsx(
@@ -74,8 +77,9 @@ export function RestoreConflictList({
               <span>{formatRelativeTime(item.detected_at)}</span>
             </div>
           </button>
+          </MotionItem>
         );
       })}
-    </div>
+    </MotionStagger>
   );
 }

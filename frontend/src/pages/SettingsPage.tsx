@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import clsx from "clsx";
 import { useTenantSettings, useUpdateTenantSettings } from "@/api/hooks";
 import { Tooltip } from "@/components/common/Tooltip";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 
 const SYNC_SCHEDULE_OPTIONS: { label: string; value: number; hint: string }[] = [
   { label: "Every 1 hour", value: 1, hint: "Most frequent — higher API usage" },
@@ -56,8 +58,9 @@ export function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="page-title">Settings</h1>
-        <p className="page-subtitle">Configure tenant-level sync and baseline settings</p>
+        <p className="eyebrow">Manage</p>
+        <h1 className="page-title mt-1">Settings</h1>
+        <p className="page-subtitle">Configure tenant-level sync and baseline settings.</p>
       </div>
 
       {showToast && (
@@ -80,12 +83,35 @@ export function SettingsPage() {
       )}
 
       {isLoading ? (
-        <div className="animate-pulse space-y-4">
-          <div className="h-10 w-2/3 rounded-xl bg-slate-100 dark:bg-slate-800" />
-          <div className="h-10 w-2/3 rounded-xl bg-slate-100 dark:bg-slate-800" />
+        <div className="max-w-xl space-y-4">
+          <div className="skeleton h-32 w-full rounded-2xl" />
+          <div className="skeleton h-12 w-40 rounded-xl" />
         </div>
       ) : settings ? (
-        <div className="max-w-xl space-y-8">
+        <MotionStagger className="max-w-xl space-y-8">
+          <MotionItem>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="card p-5">
+                <p className="eyebrow">Sync cadence</p>
+                <AnimatedNumber
+                  value={syncHours}
+                  suffix="h"
+                  className="mt-2 block text-3xl font-bold tabular-nums text-slate-900 dark:text-white"
+                />
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Current interval</p>
+              </div>
+              <div className="card p-5">
+                <p className="eyebrow">Baseline</p>
+                <AnimatedNumber
+                  value={baselineDays}
+                  suffix="d"
+                  className="mt-2 block text-3xl font-bold tabular-nums text-slate-900 dark:text-white"
+                />
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Behavior window</p>
+              </div>
+            </div>
+          </MotionItem>
+          <MotionItem>
           <section className="card p-6">
             <div className="flex items-center gap-2">
               <h2 className="section-title">Sync Configuration</h2>
@@ -129,7 +155,9 @@ export function SettingsPage() {
               </div>
             </div>
           </section>
+          </MotionItem>
 
+          <MotionItem>
           <button
             type="button"
             onClick={handleSave}
@@ -148,7 +176,8 @@ export function SettingsPage() {
               "Save Changes"
             )}
           </button>
-        </div>
+          </MotionItem>
+        </MotionStagger>
       ) : null}
     </div>
   );

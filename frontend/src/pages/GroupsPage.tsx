@@ -4,6 +4,8 @@ import clsx from "clsx";
 import { useGroups } from "@/api/hooks";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import type { GroupProfile } from "@/api/types";
 
 const PAGE_SIZE = 50;
@@ -19,9 +21,10 @@ export function GroupsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="page-title">Groups</h1>
+        <p className="eyebrow">Directory Governance</p>
+        <h1 className="page-title mt-1">Groups</h1>
         <p className="page-subtitle">
-          Inspect group memberships, role assignments, dynamic rules, and ownership
+          Inspect group memberships, role assignments, dynamic rules, and ownership.
         </p>
       </div>
 
@@ -38,8 +41,29 @@ export function GroupsPage() {
           }
         />
       ) : (
-        <>
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+        <MotionStagger className="space-y-5">
+          <MotionItem>
+            <div className="grid gap-4 sm:grid-cols-4">
+              <div className="card p-5">
+                <p className="eyebrow">Groups</p>
+                <AnimatedNumber value={total} className="mt-2 block text-3xl font-bold tabular-nums text-slate-900 dark:text-white" />
+              </div>
+              <div className="card p-5">
+                <p className="eyebrow">Role assignable</p>
+                <AnimatedNumber value={items.filter((group) => group.is_role_assignable).length} className="mt-2 block text-3xl font-bold tabular-nums text-brand-600 dark:text-brand-400" />
+              </div>
+              <div className="card p-5">
+                <p className="eyebrow">Dynamic</p>
+                <AnimatedNumber value={items.filter((group) => group.is_dynamic).length} className="mt-2 block text-3xl font-bold tabular-nums text-sky-600 dark:text-sky-400" />
+              </div>
+              <div className="card p-5">
+                <p className="eyebrow">Owners</p>
+                <AnimatedNumber value={items.reduce((sum, group) => sum + group.owner_count, 0)} className="mt-2 block text-3xl font-bold tabular-nums text-slate-900 dark:text-white" />
+              </div>
+            </div>
+          </MotionItem>
+          <MotionItem>
+          <div className="card overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-800/50">
@@ -62,7 +86,7 @@ export function GroupsPage() {
                         className={clsx(
                           "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
                           group.is_role_assignable
-                            ? "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+                            ? "bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300"
                             : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
                         )}
                       >
@@ -74,7 +98,7 @@ export function GroupsPage() {
                         className={clsx(
                           "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
                           group.is_dynamic
-                            ? "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                            ? "bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300"
                             : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
                         )}
                       >
@@ -108,9 +132,11 @@ export function GroupsPage() {
               </tbody>
             </table>
           </div>
+          </MotionItem>
 
           {/* Pagination */}
           {totalPages > 1 && (
+            <MotionItem>
             <div className="flex items-center justify-between">
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
@@ -119,21 +145,22 @@ export function GroupsPage() {
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                  className="btn-secondary text-xs"
                 >
                   Previous
                 </button>
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                  className="btn-secondary text-xs"
                 >
                   Next
                 </button>
               </div>
             </div>
+            </MotionItem>
           )}
-        </>
+        </MotionStagger>
       )}
     </div>
   );

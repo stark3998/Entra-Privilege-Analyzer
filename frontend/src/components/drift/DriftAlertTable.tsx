@@ -4,6 +4,7 @@ import clsx from "clsx";
 import type { DriftAlert, DriftType, DriftStatus } from "@/api/types";
 import { SeverityBadge } from "@/components/common/SeverityBadge";
 import { EmptyState } from "@/components/common/EmptyState";
+import { useProjectContext } from "@/store/projectContext";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 
 interface DriftAlertTableProps {
@@ -17,7 +18,7 @@ interface DriftAlertTableProps {
 
 const DRIFT_TYPE_COLORS: Record<DriftType, string> = {
   first_seen: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-  frequency_anomaly: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+  frequency_anomaly: "bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",
 };
 
 const DRIFT_TYPE_LABELS: Record<DriftType, string> = {
@@ -39,7 +40,7 @@ function SkeletonRow() {
     <tr>
       {Array.from({ length: 7 }).map((_, i) => (
         <td key={i} className="px-4 py-3">
-          <div className="h-4 w-20 animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
+          <div className="skeleton h-4 w-20" />
         </td>
       ))}
     </tr>
@@ -59,13 +60,14 @@ export function DriftAlertTable({
   isLoading,
 }: DriftAlertTableProps) {
   const navigate = useNavigate();
+  const { projectId } = useProjectContext();
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const startItem = (page - 1) * pageSize + 1;
   const endItem = Math.min(page * pageSize, total);
 
   if (isLoading) {
     return (
-      <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+      <div className="card overflow-hidden">
         <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
           <thead>
             <tr className="bg-slate-50 dark:bg-slate-800/50">
@@ -132,8 +134,8 @@ export function DriftAlertTable({
               {data.map((alert) => (
                 <tr
                   key={alert.id}
-                  onClick={() => navigate(`/drift/${alert.id}`)}
-                  className="cursor-pointer transition-colors hover:bg-brand-50/50 dark:hover:bg-brand-900/10"
+                  onClick={() => navigate(`/projects/${projectId}/drift/${alert.id}`)}
+                  className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60"
                 >
                   <td className="whitespace-nowrap px-4 py-2.5">
                     <SeverityBadge severity={alert.severity} />
@@ -189,12 +191,7 @@ export function DriftAlertTable({
             <button
               onClick={() => onPageChange(page - 1)}
               disabled={page <= 1}
-              className={clsx(
-                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                page <= 1
-                  ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
-                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
-              )}
+              className="btn-ghost px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-40"
             >
               Prev
             </button>
@@ -204,12 +201,7 @@ export function DriftAlertTable({
             <button
               onClick={() => onPageChange(page + 1)}
               disabled={page >= totalPages}
-              className={clsx(
-                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                page >= totalPages
-                  ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
-                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
-              )}
+              className="btn-ghost px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>

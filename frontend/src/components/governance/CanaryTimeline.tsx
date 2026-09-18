@@ -1,5 +1,6 @@
 import type { CanaryTimelineEvent } from "@/api/types";
 import { EmptyState } from "@/components/common/EmptyState";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import { RoleDiffStatusBadge } from "@/components/governance/GovernanceBadges";
 import { formatDateTime, toTitleCase } from "@/utils/governanceFormatting";
 
@@ -18,9 +19,9 @@ export function CanaryTimeline({
   }
 
   return (
-    <div className="space-y-4">
+    <MotionStagger className="space-y-4">
       {events.map((event, index) => (
-        <div key={event.id} className="flex gap-4">
+        <MotionItem key={event.id} className="flex gap-4">
           <div className="flex w-6 flex-col items-center">
             <span className="mt-1 h-2.5 w-2.5 rounded-full bg-blue-500" />
             {index < events.length - 1 && (
@@ -56,8 +57,8 @@ export function CanaryTimeline({
               </div>
             )}
           </div>
-        </div>
+        </MotionItem>
       ))}
-    </div>
+    </MotionStagger>
   );
 }

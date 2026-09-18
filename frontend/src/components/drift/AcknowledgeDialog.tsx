@@ -2,6 +2,7 @@
 import { useState } from "react";
 import type { DriftAlert, DriftStatus } from "@/api/types";
 import { SeverityBadge } from "@/components/common/SeverityBadge";
+import { motion, scaleIn } from "@/components/common/motion";
 
 interface AcknowledgeDialogProps {
   alert: DriftAlert;
@@ -39,7 +40,12 @@ export function AcknowledgeDialog({
         onClick={onCancel}
       />
 
-      <div className="animate-scale-in relative z-10 mx-4 w-full max-w-md rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xl dark:border-slate-700/80 dark:bg-slate-900">
+      <motion.div
+        variants={scaleIn}
+        initial="hidden"
+        animate="show"
+        className="card relative z-10 mx-4 w-full max-w-md p-6 shadow-overlay"
+      >
         <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
           {STATUS_LABELS[targetStatus]} Alert
         </h2>
@@ -74,7 +80,7 @@ export function AcknowledgeDialog({
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Add any context or reason..."
             rows={3}
-            className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-brand-400 dark:focus:ring-brand-400"
+            className="input-base mt-1.5 w-full"
           />
         </div>
 
@@ -118,7 +124,7 @@ export function AcknowledgeDialog({
             {STATUS_LABELS[targetStatus]}
           </button>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

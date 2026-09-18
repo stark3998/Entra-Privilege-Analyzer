@@ -5,6 +5,7 @@ import { WorkflowInboxList } from "@/components/governance/WorkflowInboxList";
 import { GovernanceMetricCard } from "@/components/governance/GovernanceMetricCard";
 import { GovernanceErrorState } from "@/components/governance/GovernanceFeedback";
 import { useProjectContext } from "@/store/projectContext";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 
 const PAGE_SIZE = 12;
 
@@ -63,7 +64,8 @@ export function WorkflowInboxPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="page-title">Workflow Inbox</h1>
+          <p className="eyebrow">Governance Workflows</p>
+          <h1 className="page-title mt-1">Workflow Inbox</h1>
           <p className="page-subtitle">
             Review active governance workflows, approval state, and referenced remediation artifacts
           </p>
@@ -123,12 +125,12 @@ export function WorkflowInboxPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <GovernanceMetricCard label="Waiting approval" value={metrics.waitingApproval} tone="amber" />
-        <GovernanceMetricCard label="In flight" value={metrics.inFlight} tone="brand" />
-        <GovernanceMetricCard label="Failed" value={metrics.failed} tone="red" />
-        <GovernanceMetricCard label="Completed" value={metrics.completed} tone="emerald" />
-      </div>
+      <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MotionItem><GovernanceMetricCard label="Waiting approval" value={metrics.waitingApproval} tone="amber" /></MotionItem>
+        <MotionItem><GovernanceMetricCard label="In flight" value={metrics.inFlight} tone="brand" /></MotionItem>
+        <MotionItem><GovernanceMetricCard label="Failed" value={metrics.failed} tone="red" /></MotionItem>
+        <MotionItem><GovernanceMetricCard label="Completed" value={metrics.completed} tone="emerald" /></MotionItem>
+      </MotionStagger>
 
       {isError ? (
         <GovernanceErrorState error={error} feature="workflow inbox" />

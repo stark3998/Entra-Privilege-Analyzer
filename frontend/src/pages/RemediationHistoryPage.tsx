@@ -4,13 +4,15 @@ import clsx from "clsx";
 import { useRemediationActions } from "@/api/hooks";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import type { RemediationAction } from "@/api/types";
 
 const PAGE_SIZE = 50;
 
 const STATUS_STYLE: Record<string, { bg: string; text: string }> = {
   pending: { bg: "bg-amber-50 dark:bg-amber-900/30", text: "text-amber-700 dark:text-amber-300" },
-  approved: { bg: "bg-blue-50 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-300" },
+  approved: { bg: "bg-brand-50 dark:bg-brand-900/30", text: "text-brand-700 dark:text-brand-300" },
   in_progress: { bg: "bg-brand-50 dark:bg-brand-900/30", text: "text-brand-700 dark:text-brand-300" },
   completed: { bg: "bg-emerald-50 dark:bg-emerald-900/30", text: "text-emerald-700 dark:text-emerald-300" },
   failed: { bg: "bg-red-50 dark:bg-red-900/30", text: "text-red-700 dark:text-red-300" },
@@ -45,9 +47,10 @@ export function RemediationHistoryPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="page-title">Remediation History</h1>
+        <p className="eyebrow">Operations</p>
+        <h1 className="page-title mt-1">Remediation History</h1>
         <p className="page-subtitle">
-          Track remediation actions, their approval status, and execution results
+          Track remediation actions, their approval status, and execution results.
         </p>
       </div>
 
@@ -64,8 +67,29 @@ export function RemediationHistoryPage() {
           }
         />
       ) : (
-        <>
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+        <MotionStagger className="space-y-5">
+          <MotionItem>
+            <div className="grid gap-4 sm:grid-cols-4">
+              <div className="card p-5">
+                <p className="eyebrow">Actions</p>
+                <AnimatedNumber value={total} className="mt-2 block text-3xl font-bold tabular-nums text-slate-900 dark:text-white" />
+              </div>
+              <div className="card p-5">
+                <p className="eyebrow">Pending</p>
+                <AnimatedNumber value={items.filter((action) => action.status === "pending").length} className="mt-2 block text-3xl font-bold tabular-nums text-amber-600 dark:text-amber-400" />
+              </div>
+              <div className="card p-5">
+                <p className="eyebrow">Completed</p>
+                <AnimatedNumber value={items.filter((action) => action.status === "completed").length} className="mt-2 block text-3xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div className="card p-5">
+                <p className="eyebrow">Failed</p>
+                <AnimatedNumber value={items.filter((action) => action.status === "failed").length} className="mt-2 block text-3xl font-bold tabular-nums text-red-600 dark:text-red-400" />
+              </div>
+            </div>
+          </MotionItem>
+          <MotionItem>
+          <div className="card overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-800/50">
@@ -119,9 +143,11 @@ export function RemediationHistoryPage() {
               </tbody>
             </table>
           </div>
+          </MotionItem>
 
           {/* Pagination */}
           {totalPages > 1 && (
+            <MotionItem>
             <div className="flex items-center justify-between">
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
@@ -130,21 +156,22 @@ export function RemediationHistoryPage() {
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                  className="btn-secondary text-xs"
                 >
                   Previous
                 </button>
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                  className="btn-secondary text-xs"
                 >
                   Next
                 </button>
               </div>
             </div>
+            </MotionItem>
           )}
-        </>
+        </MotionStagger>
       )}
     </div>
   );

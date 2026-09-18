@@ -16,7 +16,7 @@ export function ConnectorCard({
       type="button"
       onClick={onSelect}
       className={clsx(
-        "card w-full p-4 text-left transition-all",
+        "card-interactive w-full p-4 text-left",
         selected
           ? "border-brand-300 ring-2 ring-brand-100 dark:border-brand-700 dark:ring-brand-900/40"
           : "hover:border-slate-300 dark:hover:border-slate-600",

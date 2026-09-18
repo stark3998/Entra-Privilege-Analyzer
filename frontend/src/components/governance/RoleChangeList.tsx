@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import type { RoleDiffSummary } from "@/api/types";
 import { EmptyState } from "@/components/common/EmptyState";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import { SeverityBadge } from "@/components/common/SeverityBadge";
 import { RoleDiffStatusBadge } from "@/components/governance/GovernanceBadges";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
@@ -17,10 +18,10 @@ interface RoleChangeListProps {
 
 function RoleDiffSkeleton() {
   return (
-    <div className="card animate-pulse p-5">
-      <div className="h-4 w-1/4 rounded bg-slate-100 dark:bg-slate-800" />
-      <div className="mt-3 h-6 w-2/3 rounded bg-slate-100 dark:bg-slate-800" />
-      <div className="mt-4 h-16 rounded bg-slate-100 dark:bg-slate-800" />
+    <div className="card p-5">
+      <div className="skeleton h-4 w-1/4" />
+      <div className="skeleton mt-3 h-6 w-2/3" />
+      <div className="skeleton mt-4 h-16" />
     </div>
   );
 }
@@ -57,9 +58,10 @@ export function RoleChangeList({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <MotionStagger className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {items.map((item) => (
-          <Link key={item.id} to={`${basePath}/${item.id}`} className="card-interactive block p-5">
+          <MotionItem key={item.id}>
+          <Link to={`${basePath}/${item.id}`} className="card-interactive block p-5">
             <div className="flex flex-wrap items-center gap-2">
               <RoleDiffStatusBadge status={item.status} />
               <SeverityBadge severity={item.blast_radius} />
@@ -99,8 +101,9 @@ export function RoleChangeList({
               </div>
             </div>
           </Link>
+          </MotionItem>
         ))}
-      </div>
+      </MotionStagger>
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">

@@ -1,5 +1,6 @@
 import type { EvidenceCoverageSummary } from "@/api/types";
 import { GovernanceMetricCard } from "@/components/governance/GovernanceMetricCard";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import { formatPercent, formatDateTime } from "@/utils/governanceFormatting";
 
 export function EvidenceCoverageCard({
@@ -20,30 +21,30 @@ export function EvidenceCoverageCard({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <GovernanceMetricCard
+      <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MotionItem><GovernanceMetricCard
           label="Sources"
           value={summary.sources.length}
           caption={`Tenant ${summary.tenant_id}`}
           tone="brand"
-        />
-        <GovernanceMetricCard
+        /></MotionItem>
+        <MotionItem><GovernanceMetricCard
           label="Complete"
           value={summary.complete ? "Yes" : "No"}
           caption="All sources at 90% completeness or better"
           tone={summary.complete ? "emerald" : "amber"}
-        />
-        <GovernanceMetricCard
+        /></MotionItem>
+        <MotionItem><GovernanceMetricCard
           label="Avg completeness"
           value={formatPercent(averageCompleteness * 100, 0)}
           tone="brand"
-        />
-        <GovernanceMetricCard
+        /></MotionItem>
+        <MotionItem><GovernanceMetricCard
           label="Avg confidence"
           value={formatPercent(averageConfidence * 100, 0)}
           tone="slate"
-        />
-      </div>
+        /></MotionItem>
+      </MotionStagger>
 
       <div className="card p-5">
         <div className="flex items-center justify-between">
@@ -58,9 +59,9 @@ export function EvidenceCoverageCard({
           </span>
         </div>
 
-        <div className="mt-5 space-y-4">
+        <MotionStagger className="mt-5 space-y-4">
           {summary.sources.map((source) => (
-            <div key={source.id} className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-slate-700/80 dark:bg-slate-800/40">
+            <MotionItem key={source.id} className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-slate-700/80 dark:bg-slate-800/40">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="font-medium text-slate-900 dark:text-white">{source.source}</p>
@@ -89,9 +90,9 @@ export function EvidenceCoverageCard({
                   ))}
                 </div>
               )}
-            </div>
+            </MotionItem>
           ))}
-        </div>
+        </MotionStagger>
       </div>
     </div>
   );

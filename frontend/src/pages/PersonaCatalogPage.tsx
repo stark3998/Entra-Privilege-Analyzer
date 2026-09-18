@@ -3,6 +3,7 @@ import { usePersonaCatalog } from "@/api/hooks";
 import { GovernanceErrorState } from "@/components/governance/GovernanceFeedback";
 import { GovernanceMetricCard } from "@/components/governance/GovernanceMetricCard";
 import { PersonaCatalogGrid } from "@/components/governance/PersonaCatalogGrid";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 
 export function PersonaCatalogPage() {
   const [search, setSearch] = useState("");
@@ -37,7 +38,8 @@ export function PersonaCatalogPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="page-title">Persona Catalog</h1>
+          <p className="eyebrow">Governance Personas</p>
+          <h1 className="page-title mt-1">Persona Catalog</h1>
           <p className="page-subtitle">
             Review raw persona records, permission baselines, and approval state from the governance backend
           </p>
@@ -51,19 +53,19 @@ export function PersonaCatalogPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <GovernanceMetricCard label="Personas" value={(data ?? []).length} tone="brand" />
-        <GovernanceMetricCard label="Approved or published" value={approvedCount} tone="emerald" />
-        <GovernanceMetricCard label="Published" value={publishedCount} tone="slate" caption={isLoading ? "Loading..." : "Current backend records"} />
-      </div>
+      <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <MotionItem><GovernanceMetricCard label="Personas" value={(data ?? []).length} tone="brand" /></MotionItem>
+        <MotionItem><GovernanceMetricCard label="Approved or published" value={approvedCount} tone="emerald" /></MotionItem>
+        <MotionItem><GovernanceMetricCard label="Published" value={publishedCount} tone="slate" caption={isLoading ? "Loading..." : "Current backend records"} /></MotionItem>
+      </MotionStagger>
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="card animate-pulse p-5">
-              <div className="h-4 w-1/4 rounded bg-slate-100 dark:bg-slate-800" />
-              <div className="mt-3 h-6 w-2/3 rounded bg-slate-100 dark:bg-slate-800" />
-              <div className="mt-4 h-20 rounded bg-slate-100 dark:bg-slate-800" />
+            <div key={index} className="card p-5">
+              <div className="skeleton h-4 w-1/4" />
+              <div className="skeleton mt-3 h-6 w-2/3" />
+              <div className="skeleton mt-4 h-20" />
             </div>
           ))}
         </div>

@@ -2,6 +2,7 @@ import clsx from "clsx";
 import type { PersonaCatalogEntry, PersonaStatus } from "@/api/types";
 import { EmptyState } from "@/components/common/EmptyState";
 import { JsonViewer } from "@/components/common/JsonViewer";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import { formatDateTime } from "@/utils/governanceFormatting";
 
 const STATUS_CLASSES: Record<PersonaStatus, string> = {
@@ -28,9 +29,9 @@ export function PersonaCatalogGrid({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+    <MotionStagger className="grid grid-cols-1 gap-5 xl:grid-cols-2">
       {personas.map((persona) => (
-        <div key={persona.id} className="card p-5">
+        <MotionItem key={persona.id} className="card p-5">
           <div className="flex flex-wrap items-center gap-2">
             <span className={clsx("badge", STATUS_CLASSES[persona.status])}>
               {persona.status}
@@ -163,8 +164,8 @@ export function PersonaCatalogGrid({
               </div>
             </div>
           )}
-        </div>
+        </MotionItem>
       ))}
-    </div>
+    </MotionStagger>
   );
 }

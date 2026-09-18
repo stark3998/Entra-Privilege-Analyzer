@@ -1,6 +1,6 @@
 // frontend/src/components/identities/IdentityDetail.tsx
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import type { IdentityProfile, IdentityType, CurrentRole, ObservedAction } from "@/api/types";
 import { useIdentityPimSessions, useIdentityAccessPaths } from "@/api/hooks";
@@ -8,63 +8,173 @@ import { ActionTimeline } from "./ActionTimeline";
 import { AccessPathGraph } from "@/components/access-paths/AccessPathGraph";
 import { AccessPathCard } from "@/components/access-paths/AccessPathCard";
 import { SeverityBadge } from "@/components/common/SeverityBadge";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionStagger, MotionItem, motion } from "@/components/common/motion";
+import { useProjectContext } from "@/store/projectContext";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
 
 interface IdentityDetailProps {
   identity: IdentityProfile;
 }
 
-/** Color map for identity type badges. */
-const TYPE_COLORS: Record<IdentityType, { bg: string; dot: string }> = {
-  User: { bg: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", dot: "bg-blue-500" },
-  ServicePrincipal: { bg: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", dot: "bg-purple-500" },
-  ManagedIdentity: { bg: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300", dot: "bg-emerald-500" },
-  Group: { bg: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300", dot: "bg-amber-500" },
+const TYPE_COLORS: Record<IdentityType, { badge: string; dot: string; avatar: string }> = {
+  User: {
+    badge: "bg-brand-50 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300",
+    dot: "bg-brand-500",
+    avatar: "bg-brand-50 text-brand-700 ring-brand-200 dark:bg-brand-950/40 dark:text-brand-300 dark:ring-brand-900/60",
+  },
+  ServicePrincipal: {
+    badge: "bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
+    dot: "bg-violet-500",
+    avatar: "bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:ring-violet-900/60",
+  },
+  ManagedIdentity: {
+    badge: "bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300",
+    dot: "bg-teal-500",
+    avatar: "bg-teal-50 text-teal-700 ring-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:ring-teal-900/60",
+  },
+  Group: {
+    badge: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+    dot: "bg-amber-500",
+    avatar: "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900/60",
+  },
 };
 
-/** Color map for role assignment type badges. */
 const ASSIGNMENT_COLORS: Record<string, string> = {
-  direct: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-  group: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
-  pim: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+  direct: "bg-brand-50 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300",
+  group: "bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
+  pim: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
 };
+
+const STATUS_STYLES: Record<string, string> = {
+  active: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+  expired: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  deactivated: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+};
+
+function getInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "ID";
+}
+
+function clampScore(score: number): number {
+  return Math.max(0, Math.min(100, score));
+}
+
+function riskTone(score: number) {
+  if (score > 70) {
+    return {
+      label: "High risk",
+      text: "text-red-600 dark:text-red-400",
+      bar: "bg-red-500",
+      surface: "bg-red-50 dark:bg-red-950/30",
+    };
+  }
+  if (score > 40) {
+    return {
+      label: "Moderate risk",
+      text: "text-amber-600 dark:text-amber-400",
+      bar: "bg-amber-500",
+      surface: "bg-amber-50 dark:bg-amber-950/30",
+    };
+  }
+  return {
+    label: "Low risk",
+    text: "text-emerald-600 dark:text-emerald-400",
+    bar: "bg-emerald-500",
+    surface: "bg-emerald-50 dark:bg-emerald-950/30",
+  };
+}
+
+function RiskScoreRing({ score }: { score: number }) {
+  const tone = riskTone(score);
+  const clamped = clampScore(score);
+  const radius = 44;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (clamped / 100) * circumference;
+
+  return (
+    <div className={clsx("flex items-center gap-4 rounded-2xl p-4", tone.surface)}>
+      <div className="relative h-28 w-28">
+        <svg className="h-28 w-28 -rotate-90" viewBox="0 0 112 112" aria-hidden="true">
+          <circle
+            cx="56"
+            cy="56"
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="10"
+            className="text-white/80 dark:text-slate-800"
+          />
+          <motion.circle
+            cx="56"
+            cy="56"
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="10"
+            strokeLinecap="round"
+            className={tone.text}
+            strokeDasharray={circumference}
+            initial={{ strokeDashoffset: circumference }}
+            animate={{ strokeDashoffset: offset }}
+            transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <AnimatedNumber
+            value={clamped}
+            className={clsx("text-3xl font-bold tabular-nums", tone.text)}
+          />
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            Risk
+          </span>
+        </div>
+      </div>
+      <div className="min-w-0">
+        <p className={clsx("text-sm font-semibold", tone.text)}>{tone.label}</p>
+        <p className="mt-1 max-w-[14rem] text-sm text-slate-500 dark:text-slate-400">
+          Composite score from role exposure, observed activity, and anomaly signals.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function StatCard({
   label,
   value,
   color,
+  animated = false,
 }: {
   label: string;
   value: string | number;
   color?: string;
+  animated?: boolean;
 }) {
   return (
-    <div className="card px-4 py-3">
-      <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-        {label}
-      </p>
+    <div className="card p-4">
+      <p className="eyebrow">{label}</p>
       <p
         className={clsx(
-          "mt-1 text-xl font-bold",
+          "mt-2 text-2xl font-bold tabular-nums",
           color ?? "text-slate-900 dark:text-white",
         )}
       >
-        {value}
+        {animated && typeof value === "number" ? <AnimatedNumber value={value} /> : value}
       </p>
     </div>
   );
 }
 
-function RiskScoreColor(score: number): string {
-  if (score > 70) return "text-red-600 dark:text-red-400";
-  if (score > 40) return "text-amber-600 dark:text-amber-400";
-  return "text-emerald-600 dark:text-emerald-400";
-}
-
 function CurrentRolesTable({ roles }: { roles: CurrentRole[] }) {
   if (roles.length === 0) {
     return (
-      <p className="py-4 text-center text-sm text-slate-400 dark:text-slate-500">
+      <p className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">
         No roles assigned
       </p>
     );
@@ -72,46 +182,49 @@ function CurrentRolesTable({ roles }: { roles: CurrentRole[] }) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+      <table className="min-w-full divide-y divide-slate-100 dark:divide-slate-800">
         <thead>
-          <tr className="bg-slate-50 dark:bg-slate-800/50">
-            <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <tr className="bg-slate-50/80 dark:bg-slate-800/30">
+            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Role
             </th>
-            <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Scope
             </th>
-            <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Assignment
             </th>
-            <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Permanent
+            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Access Window
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+        <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
           {roles.map((role) => (
-            <tr key={role.role_id}>
-              <td className="whitespace-nowrap px-4 py-2.5 text-sm font-medium text-slate-900 dark:text-white">
+            <tr
+              key={`${role.role_id}-${role.scope}`}
+              className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60"
+            >
+              <td className="whitespace-nowrap px-4 py-3.5 text-sm font-medium text-slate-900 dark:text-white">
                 {role.role_name}
               </td>
-              <td className="max-w-xs truncate px-4 py-2.5 text-sm text-slate-600 dark:text-slate-400" title={role.scope}>
+              <td className="max-w-xs truncate px-4 py-3.5 text-sm text-slate-600 dark:text-slate-400" title={role.scope}>
                 {role.scope}
               </td>
-              <td className="whitespace-nowrap px-4 py-2.5 text-sm">
+              <td className="whitespace-nowrap px-4 py-3.5 text-sm">
                 <span
                   className={clsx(
-                    "inline-flex rounded px-1.5 py-0.5 text-xs font-medium",
+                    "badge capitalize",
                     ASSIGNMENT_COLORS[role.assignment_type.toLowerCase()] ??
-                      "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
+                      "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
                   )}
                 >
                   {role.assignment_type}
                 </span>
               </td>
-              <td className="whitespace-nowrap px-4 py-2.5 text-sm">
+              <td className="whitespace-nowrap px-4 py-3.5 text-sm">
                 {role.is_permanent ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+                  <span className="badge bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
                     <svg
                       className="h-3.5 w-3.5"
                       fill="none"
@@ -128,7 +241,7 @@ function CurrentRolesTable({ roles }: { roles: CurrentRole[] }) {
                     Permanent
                   </span>
                 ) : (
-                  <span className="text-xs text-slate-400 dark:text-slate-500">
+                  <span className="badge bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
                     Time-limited
                   </span>
                 )}
@@ -144,55 +257,59 @@ function CurrentRolesTable({ roles }: { roles: CurrentRole[] }) {
 function ObservedActionsTable({ actions }: { actions: ObservedAction[] }) {
   if (actions.length === 0) {
     return (
-      <p className="py-4 text-center text-sm text-slate-400 dark:text-slate-500">
+      <p className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">
         No observed actions
       </p>
     );
   }
 
-  // Sort by count descending
   const sorted = [...actions].sort((a, b) => b.count - a.count);
 
   return (
     <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+      <table className="min-w-full divide-y divide-slate-100 dark:divide-slate-800">
         <thead>
-          <tr className="bg-slate-50 dark:bg-slate-800/50">
-            <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <tr className="bg-slate-50/80 dark:bg-slate-800/30">
+            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Action
             </th>
-            <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Resource
             </th>
-            <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Count
             </th>
-            <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               First Seen
             </th>
-            <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Last Seen
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+        <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
           {sorted.map((action, idx) => (
-            <tr key={`${action.action}-${idx}`}>
-              <td className="whitespace-nowrap px-4 py-2.5 text-sm font-medium text-slate-900 dark:text-white">
+            <tr
+              key={`${action.action}-${idx}`}
+              className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60"
+            >
+              <td className="whitespace-nowrap px-4 py-3.5 text-sm font-medium text-slate-900 dark:text-white">
                 {action.action}
               </td>
-              <td className="max-w-xs truncate px-4 py-2.5 text-sm text-slate-600 dark:text-slate-400" title={action.resource ?? undefined}>
+              <td className="max-w-xs truncate px-4 py-3.5 text-sm text-slate-600 dark:text-slate-400" title={action.resource ?? undefined}>
                 {action.resource ?? (
                   <span className="text-slate-400 dark:text-slate-500">--</span>
                 )}
               </td>
-              <td className="whitespace-nowrap px-4 py-2.5 text-sm tabular-nums text-slate-700 dark:text-slate-300">
-                {action.count.toLocaleString()}
+              <td className="whitespace-nowrap px-4 py-3.5 text-sm">
+                <span className="chip tabular-nums">
+                  <AnimatedNumber value={action.count} />
+                </span>
               </td>
-              <td className="whitespace-nowrap px-4 py-2.5 text-sm text-slate-500 dark:text-slate-400">
+              <td className="whitespace-nowrap px-4 py-3.5 text-sm text-slate-500 dark:text-slate-400">
                 {formatRelativeTime(action.first_seen)}
               </td>
-              <td className="whitespace-nowrap px-4 py-2.5 text-sm text-slate-500 dark:text-slate-400">
+              <td className="whitespace-nowrap px-4 py-3.5 text-sm text-slate-500 dark:text-slate-400">
                 {formatRelativeTime(action.last_seen)}
               </td>
             </tr>
@@ -203,18 +320,9 @@ function ObservedActionsTable({ actions }: { actions: ObservedAction[] }) {
   );
 }
 
-/**
- * Full detail view for a single identity profile.
- * Displays header, stats, current roles, observed actions, and action timeline.
- */
-const STATUS_STYLES: Record<string, string> = {
-  active: "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300",
-  expired: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
-  deactivated: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
-};
-
 function PimSessionsTab({ identityId }: { identityId: string }) {
   const navigate = useNavigate();
+  const { projectId } = useProjectContext();
   const [page, setPage] = useState(1);
   const size = 10;
   const { data, isLoading } = useIdentityPimSessions(identityId, { page, size });
@@ -224,9 +332,9 @@ function PimSessionsTab({ identityId }: { identityId: string }) {
 
   if (isLoading) {
     return (
-      <div className="animate-pulse space-y-3 py-4">
+      <div className="space-y-3 p-4">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-12 rounded bg-slate-100 dark:bg-slate-800" />
+          <div key={i} className="skeleton h-12" />
         ))}
       </div>
     );
@@ -234,7 +342,7 @@ function PimSessionsTab({ identityId }: { identityId: string }) {
 
   if (sessions.length === 0) {
     return (
-      <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">
+      <p className="py-10 text-center text-sm text-slate-400 dark:text-slate-500">
         No PIM session activations found for this identity.
       </p>
     );
@@ -243,50 +351,50 @@ function PimSessionsTab({ identityId }: { identityId: string }) {
   return (
     <div>
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+        <table className="min-w-full divide-y divide-slate-100 dark:divide-slate-800">
           <thead>
-            <tr className="bg-slate-50 dark:bg-slate-800/50">
-              <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Role</th>
-              <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Status</th>
-              <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Activated</th>
-              <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Duration</th>
-              <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Events</th>
-              <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Anomalies</th>
+            <tr className="bg-slate-50/80 dark:bg-slate-800/30">
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Role</th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Status</th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Activated</th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Duration</th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Events</th>
+              <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Anomalies</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+          <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
             {sessions.map((s) => (
               <tr
                 key={s.id}
-                className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                onClick={() => navigate(`../pim-sessions/${s.id}`)}
+                className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                onClick={() => navigate(`/projects/${projectId}/pim-sessions/${s.id}`)}
               >
-                <td className="whitespace-nowrap px-4 py-2.5 text-sm font-medium text-slate-900 dark:text-white">
+                <td className="whitespace-nowrap px-4 py-3.5 text-sm font-medium text-slate-900 dark:text-white">
                   {s.role_name}
                 </td>
-                <td className="whitespace-nowrap px-4 py-2.5 text-sm">
-                  <span className={clsx("inline-flex rounded px-1.5 py-0.5 text-xs font-medium", STATUS_STYLES[s.status] ?? STATUS_STYLES.expired)}>
+                <td className="whitespace-nowrap px-4 py-3.5 text-sm">
+                  <span className={clsx("badge capitalize", STATUS_STYLES[s.status] ?? STATUS_STYLES.expired)}>
                     {s.status}
                   </span>
                 </td>
-                <td className="whitespace-nowrap px-4 py-2.5 text-sm text-slate-500 dark:text-slate-400">
+                <td className="whitespace-nowrap px-4 py-3.5 text-sm text-slate-500 dark:text-slate-400">
                   {formatRelativeTime(s.activation_time)}
                 </td>
-                <td className="whitespace-nowrap px-4 py-2.5 text-sm tabular-nums text-slate-700 dark:text-slate-300">
+                <td className="whitespace-nowrap px-4 py-3.5 text-sm tabular-nums text-slate-700 dark:text-slate-300">
                   {s.duration_minutes < 60
                     ? `${s.duration_minutes}m`
                     : `${(s.duration_minutes / 60).toFixed(1)}h`}
                 </td>
-                <td className="whitespace-nowrap px-4 py-2.5 text-sm tabular-nums text-slate-700 dark:text-slate-300">
-                  {s.total_event_count}
+                <td className="whitespace-nowrap px-4 py-3.5 text-sm tabular-nums text-slate-700 dark:text-slate-300">
+                  <AnimatedNumber value={s.total_event_count} />
                 </td>
-                <td className="whitespace-nowrap px-4 py-2.5 text-sm">
+                <td className="whitespace-nowrap px-4 py-3.5 text-sm">
                   {s.anomalies.length > 0 ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-300">
-                      {s.anomalies.length}
+                    <span className="badge bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                      <AnimatedNumber value={s.anomalies.length} />
                     </span>
                   ) : (
-                    <span className="text-xs text-slate-400">--</span>
+                    <span className="text-xs text-slate-400 dark:text-slate-500">--</span>
                   )}
                 </td>
               </tr>
@@ -295,13 +403,13 @@ function PimSessionsTab({ identityId }: { identityId: string }) {
         </table>
       </div>
       {total > size && (
-        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 dark:border-slate-700">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+        <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-800/20">
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
             {(page - 1) * size + 1}–{Math.min(page * size, total)} of {total}
           </p>
           <div className="flex gap-2">
-            <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} className="btn-secondary text-xs disabled:opacity-40">Prev</button>
-            <button type="button" disabled={page * size >= total} onClick={() => setPage(page + 1)} className="btn-secondary text-xs disabled:opacity-40">Next</button>
+            <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} className="btn-secondary px-3 py-1.5 text-xs">Prev</button>
+            <button type="button" disabled={page * size >= total} onClick={() => setPage(page + 1)} className="btn-secondary px-3 py-1.5 text-xs">Next</button>
           </div>
         </div>
       )}
@@ -321,8 +429,15 @@ function AccessPathsSection({ identityId }: { identityId: string }) {
     return (
       <section>
         <h2 className="section-title mb-3">Privilege Escalation Paths</h2>
-        <div className="card animate-pulse p-6">
-          <div className="h-4 w-48 rounded bg-slate-200 dark:bg-slate-700" />
+        <div className="card p-6">
+          <div className="skeleton h-4 w-48" />
+          <div className="mt-4 grid gap-3 lg:grid-cols-[18rem_minmax(0,1fr)]">
+            <div className="space-y-2">
+              <div className="skeleton h-16" />
+              <div className="skeleton h-16" />
+            </div>
+            <div className="skeleton h-56" />
+          </div>
         </div>
       </section>
     );
@@ -339,22 +454,23 @@ function AccessPathsSection({ identityId }: { identityId: string }) {
     );
   }
 
-  const displayPaths = selectedIdx !== null ? [paths[selectedIdx]] : paths;
+  const displayPaths = selectedIdx !== null && paths[selectedIdx] ? [paths[selectedIdx]] : paths;
 
   return (
     <section>
-      <div className="mb-3 flex items-center gap-3">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
         <h2 className="section-title">Privilege Escalation Paths</h2>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-300">
-          {total}
+        <span className="badge bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+          <AnimatedNumber value={total} />
+          paths
         </span>
         {highestRisk !== "none" && (
           <SeverityBadge severity={highestRisk as "critical" | "high" | "medium"} />
         )}
       </div>
       <div className="card overflow-hidden">
-        <div className="flex">
-          <div className="w-72 shrink-0 space-y-2 overflow-y-auto border-r border-slate-200 p-3 dark:border-slate-700" style={{ maxHeight: 440 }}>
+        <div className="flex flex-col lg:flex-row">
+          <div className="max-h-[440px] shrink-0 space-y-2 overflow-y-auto border-b border-slate-100 p-3 dark:border-slate-800 lg:w-72 lg:border-b-0 lg:border-r">
             {paths.map((p, i) => (
               <AccessPathCard
                 key={p.id}
@@ -364,7 +480,7 @@ function AccessPathsSection({ identityId }: { identityId: string }) {
               />
             ))}
           </div>
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <AccessPathGraph paths={displayPaths} height={440} />
           </div>
         </div>
@@ -373,85 +489,209 @@ function AccessPathsSection({ identityId }: { identityId: string }) {
   );
 }
 
+function RelatedCard({ identity }: { identity: IdentityProfile }) {
+  const { projectId } = useProjectContext();
+  const identityQuery = encodeURIComponent(identity.display_name || identity.id);
+  const idQuery = encodeURIComponent(identity.id);
+  const links = [
+    {
+      label: "Recommendation",
+      description: "Least-privilege role plan",
+      to: `/projects/${projectId}/recommendations/${identity.id}`,
+    },
+    {
+      label: "Drift alerts",
+      description: "Alerts filtered to this identity",
+      to: `/projects/${projectId}/drift?search=${identityQuery}`,
+    },
+    {
+      label: "Best-practice findings",
+      description: "Configuration issues and remediation",
+      to: `/projects/${projectId}/best-practices?identity=${idQuery}`,
+    },
+    {
+      label: "Access paths",
+      description: "Privilege escalation graph",
+      to: `/projects/${projectId}/access-paths?identity=${idQuery}`,
+    },
+    {
+      label: "PIM sessions",
+      description: "Privileged activation history",
+      to: `/projects/${projectId}/pim-sessions?identity=${idQuery}`,
+    },
+  ];
+
+  return (
+    <div className="card p-5">
+      <h2 className="section-title">Related</h2>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        Jump to connected analysis for this identity.
+      </p>
+      <div className="mt-4 space-y-1">
+        {links.map((link) => (
+          <Link
+            key={link.label}
+            to={link.to}
+            className="group flex items-center justify-between rounded-xl px-3 py-2.5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60"
+          >
+            <span>
+              <span className="block text-sm font-medium text-slate-900 group-hover:text-brand-600 dark:text-white dark:group-hover:text-brand-400">
+                {link.label}
+              </span>
+              <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">
+                {link.description}
+              </span>
+            </span>
+            <svg className="h-4 w-4 shrink-0 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-brand-500 dark:text-slate-600 dark:group-hover:text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function IdentityDetail({ identity }: IdentityDetailProps) {
+  const typeStyle = TYPE_COLORS[identity.identity_type];
+  const risk = riskTone(identity.risk_score);
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="page-title">{identity.display_name}</h1>
-            <span className={clsx("badge", TYPE_COLORS[identity.identity_type].bg)}>
-              <span className={clsx("h-1.5 w-1.5 rounded-full", TYPE_COLORS[identity.identity_type].dot)} />
-              {identity.identity_type}
-            </span>
-          </div>
-          <div className="mt-1 space-y-0.5">
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Object ID:{" "}
-              <span className="font-mono text-xs">{identity.object_id}</span>
-            </p>
-            {identity.upn && (
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                UPN: {identity.upn}
+      <div className="card-glass relative overflow-hidden p-6">
+        <div className="absolute inset-x-0 top-0 h-1 bg-brand-gradient" />
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 gap-4">
+            <div className={clsx("flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-xl font-bold ring-1", typeStyle.avatar)}>
+              {getInitials(identity.display_name)}
+            </div>
+            <div className="min-w-0">
+              <p className="eyebrow">Identity Profile</p>
+              <div className="mt-1 flex flex-wrap items-center gap-3">
+                <h1 className="page-title truncate">{identity.display_name}</h1>
+                <span className={clsx("badge", typeStyle.badge)}>
+                  <span className={clsx("h-1.5 w-1.5 rounded-full", typeStyle.dot)} />
+                  {identity.identity_type}
+                </span>
+              </div>
+              <p className="page-subtitle">
+                Roles, actions, privileged sessions, and escalation paths for this identity.
               </p>
-            )}
-            {identity.app_id && (
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                App ID:{" "}
-                <span className="font-mono text-xs">{identity.app_id}</span>
-              </p>
-            )}
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="chip max-w-full">
+                  Object ID
+                  <span className="truncate font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                    {identity.object_id}
+                  </span>
+                </span>
+                {identity.upn && (
+                  <span className="chip max-w-full">
+                    UPN
+                    <span className="truncate text-slate-500 dark:text-slate-400">
+                      {identity.upn}
+                    </span>
+                  </span>
+                )}
+                {identity.app_id && (
+                  <span className="chip max-w-full">
+                    App ID
+                    <span className="truncate font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                      {identity.app_id}
+                    </span>
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
+
+          <RiskScoreRing score={identity.risk_score} />
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard
-          label="Risk Score"
-          value={identity.risk_score}
-          color={RiskScoreColor(identity.risk_score)}
-        />
-        <StatCard label="Total Actions" value={identity.action_count.toLocaleString()} />
-        <StatCard label="Roles" value={identity.current_roles.length} />
-        <StatCard
-          label="First Seen"
-          value={formatRelativeTime(identity.first_seen)}
-        />
-        <StatCard
-          label="Last Seen"
-          value={formatRelativeTime(identity.last_seen)}
-        />
+      <MotionStagger className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <MotionItem>
+          <StatCard
+            label="Risk Score"
+            value={clampScore(identity.risk_score)}
+            color={risk.text}
+            animated
+          />
+        </MotionItem>
+        <MotionItem>
+          <StatCard label="Total Actions" value={identity.action_count} animated />
+        </MotionItem>
+        <MotionItem>
+          <StatCard label="Roles" value={identity.current_roles.length} animated />
+        </MotionItem>
+        <MotionItem>
+          <StatCard label="First Seen" value={formatRelativeTime(identity.first_seen)} />
+        </MotionItem>
+        <MotionItem>
+          <StatCard label="Last Seen" value={formatRelativeTime(identity.last_seen)} />
+        </MotionItem>
+      </MotionStagger>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <MotionStagger className="space-y-6">
+          <MotionItem>
+            <section>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="section-title">Current Roles</h2>
+                <span className="badge bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  <AnimatedNumber value={identity.current_roles.length} />
+                </span>
+              </div>
+              <div className="card overflow-hidden">
+                <CurrentRolesTable roles={identity.current_roles} />
+              </div>
+            </section>
+          </MotionItem>
+
+          <MotionItem>
+            <AccessPathsSection identityId={identity.id} />
+          </MotionItem>
+
+          <MotionItem>
+            <section>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="section-title">PIM Sessions</h2>
+                <span className="badge bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  Privileged activations
+                </span>
+              </div>
+              <div className="card overflow-hidden">
+                <PimSessionsTab identityId={identity.id} />
+              </div>
+            </section>
+          </MotionItem>
+
+          <MotionItem>
+            <section>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="section-title">Observed Actions</h2>
+                <span className="badge bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  <AnimatedNumber value={identity.observed_actions.length} />
+                  unique
+                </span>
+              </div>
+              <div className="card overflow-hidden">
+                <ObservedActionsTable actions={identity.observed_actions} />
+              </div>
+            </section>
+          </MotionItem>
+
+          <MotionItem>
+            <section>
+              <h2 className="section-title mb-3">Action Timeline</h2>
+              <ActionTimeline identityId={identity.id} />
+            </section>
+          </MotionItem>
+        </MotionStagger>
+
+        <MotionItem className="xl:sticky xl:top-6 xl:self-start">
+          <RelatedCard identity={identity} />
+        </MotionItem>
       </div>
-
-      <section>
-        <h2 className="section-title mb-3">Current Roles</h2>
-        <div className="card overflow-hidden">
-          <CurrentRolesTable roles={identity.current_roles} />
-        </div>
-      </section>
-
-      <AccessPathsSection identityId={identity.id} />
-
-      <section>
-        <h2 className="section-title mb-3">PIM Sessions</h2>
-        <div className="card overflow-hidden">
-          <PimSessionsTab identityId={identity.id} />
-        </div>
-      </section>
-
-      <section>
-        <h2 className="section-title mb-3">Observed Actions</h2>
-        <div className="card overflow-hidden">
-          <ObservedActionsTable actions={identity.observed_actions} />
-        </div>
-      </section>
-
-      <section>
-        <h2 className="section-title mb-3">Action Timeline</h2>
-        <ActionTimeline identityId={identity.id} />
-      </section>
     </div>
   );
 }

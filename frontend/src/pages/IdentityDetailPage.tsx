@@ -5,18 +5,20 @@ import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { IdentityDetail } from "@/components/identities/IdentityDetail";
 import { ApiError } from "@/api/client";
+import { useProjectContext } from "@/store/projectContext";
 
 export function IdentityDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { projectId } = useProjectContext();
   const { data, isLoading, isError, error } = useIdentityDetail(id ?? "");
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <button
         type="button"
-        onClick={() => navigate("../identities")}
-        className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-brand-900/20 dark:hover:text-brand-300"
+        onClick={() => navigate(`/projects/${projectId}/identities`)}
+        className="btn-ghost"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -60,7 +62,7 @@ export function IdentityDetailPage() {
           action={
             <button
               type="button"
-              onClick={() => navigate("../identities")}
+              onClick={() => navigate(`/projects/${projectId}/identities`)}
               className="btn-primary"
             >
               Return to Identities

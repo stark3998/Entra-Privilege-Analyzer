@@ -1,5 +1,5 @@
 // frontend/src/pages/RecommendationDetailPage.tsx
-import { useParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import { useRecommendationDetail } from "@/api/hooks";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -11,6 +11,9 @@ import { ApiError } from "@/api/client";
 import clsx from "clsx";
 import type { IdentityType } from "@/api/types";
 import { formatRelativeTime } from "@/utils/formatRelativeTime";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
+import { useProjectContext } from "@/store/projectContext";
 
 /** Color map for identity type badges. Matches IdentityDetail. */
 const TYPE_COLORS: Record<string, { bg: string; dot: string }> = {
@@ -30,6 +33,7 @@ function reductionScoreColor(score: number): string {
 export function RecommendationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { projectId } = useProjectContext();
   const { data, isLoading, isError, error } = useRecommendationDetail(
     id ?? "",
   );
@@ -38,8 +42,8 @@ export function RecommendationDetailPage() {
     <div className="space-y-6">
       <button
         type="button"
-        onClick={() => navigate("../recommendations")}
-        className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-slate-600 transition-colors hover:bg-brand-50 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-brand-900/20 dark:hover:text-brand-300"
+        onClick={() => navigate(`/projects/${projectId}/recommendations`)}
+        className="btn-ghost"
       >
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -83,7 +87,7 @@ export function RecommendationDetailPage() {
             </svg>
           }
           action={
-            <button type="button" onClick={() => navigate("../recommendations")} className="btn-primary">
+            <button type="button" onClick={() => navigate(`/projects/${projectId}/recommendations`)} className="btn-primary">
               Return to Recommendations
             </button>
           }
@@ -94,10 +98,11 @@ export function RecommendationDetailPage() {
       {data && (
         <div className="space-y-8">
           {/* Header */}
-          <div className="flex flex-wrap items-start gap-4">
+          <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0 flex-1">
+              <p className="eyebrow">Recommendation Detail</p>
               <div className="flex items-center gap-3">
-                <h1 className="page-title">{data.identity_display_name}</h1>
+                <h1 className="page-title mt-1">{data.identity_display_name}</h1>
                 {(() => {
                   const c = TYPE_COLORS[data.identity_type as IdentityType];
                   return (
@@ -108,30 +113,46 @@ export function RecommendationDetailPage() {
                   );
                 })()}
               </div>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              <p className="page-subtitle">
                 Computed {formatRelativeTime(data.computed_at)}
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="card px-4 py-3">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Reduction Score</p>
-              <p className={clsx("mt-1 text-xl font-bold", reductionScoreColor(data.reduction_score))}>{data.reduction_score}%</p>
+          <MotionStagger className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <MotionItem className="card p-4">
+              <p className="eyebrow">Reduction Score</p>
+              <AnimatedNumber value={data.reduction_score} suffix="%" className={clsx("mt-1 block text-xl font-bold", reductionScoreColor(data.reduction_score))} />
+            </MotionItem>
+            <MotionItem className="card p-4">
+              <p className="eyebrow">Current Roles</p>
+              <AnimatedNumber value={data.current_roles.length} className="mt-1 block text-xl font-bold text-slate-900 dark:text-white" />
+            </MotionItem>
+            <MotionItem className="card p-4">
+              <p className="eyebrow">Required Permissions</p>
+              <AnimatedNumber value={data.permission_gaps.filter((g) => g.is_used).length} className="mt-1 block text-xl font-bold text-emerald-600 dark:text-emerald-400" />
+            </MotionItem>
+            <MotionItem className="card p-4">
+              <p className="eyebrow">Excess Permissions</p>
+              <AnimatedNumber value={data.permission_gaps.filter((g) => !g.is_used).length} className="mt-1 block text-xl font-bold text-red-600 dark:text-red-400" />
+            </MotionItem>
+          </MotionStagger>
+
+          <section className="card p-5">
+            <h2 className="section-title">Related</h2>
+            <div className="mt-3 space-y-1">
+              <Link
+                to={`/projects/${projectId}/identities/${data.identity_id}`}
+                className="group flex items-center justify-between rounded-xl px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+              >
+                <span>
+                  <span className="block text-sm font-medium text-slate-900 dark:text-white">Identity profile</span>
+                  <span className="block text-xs text-slate-500 dark:text-slate-400">{data.identity_display_name}</span>
+                </span>
+                <span className="text-slate-400 transition-transform group-hover:translate-x-0.5">›</span>
+              </Link>
             </div>
-            <div className="card px-4 py-3">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Current Roles</p>
-              <p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{data.current_roles.length}</p>
-            </div>
-            <div className="card px-4 py-3">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Required Permissions</p>
-              <p className="mt-1 text-xl font-bold text-emerald-600 dark:text-emerald-400">{data.permission_gaps.filter((g) => g.is_used).length}</p>
-            </div>
-            <div className="card px-4 py-3">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Excess Permissions</p>
-              <p className="mt-1 text-xl font-bold text-red-600 dark:text-red-400">{data.permission_gaps.filter((g) => !g.is_used).length}</p>
-            </div>
-          </div>
+          </section>
 
           <section>
             <h2 className="section-title mb-4">Role Comparison</h2>

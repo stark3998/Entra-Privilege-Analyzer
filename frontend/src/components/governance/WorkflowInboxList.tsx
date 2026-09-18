@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import type { GovernanceWorkflow } from "@/api/types";
 import { EmptyState } from "@/components/common/EmptyState";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import {
   WorkflowStatusBadge,
   WorkflowTypeBadge,
@@ -20,10 +21,10 @@ interface WorkflowInboxListProps {
 
 function WorkflowCardSkeleton() {
   return (
-    <div className="card animate-pulse p-5">
-      <div className="h-4 w-1/3 rounded bg-slate-100 dark:bg-slate-800" />
-      <div className="mt-3 h-5 w-3/4 rounded bg-slate-100 dark:bg-slate-800" />
-      <div className="mt-4 h-14 rounded bg-slate-100 dark:bg-slate-800" />
+    <div className="card p-5">
+      <div className="skeleton h-4 w-1/3" />
+      <div className="skeleton mt-3 h-5 w-3/4" />
+      <div className="skeleton mt-4 h-14" />
     </div>
   );
 }
@@ -60,10 +61,10 @@ export function WorkflowInboxList({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <MotionStagger className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {items.map((item) => (
+          <MotionItem key={item.id}>
           <Link
-            key={item.id}
             to={`${basePath}/${item.id}`}
             className="card-interactive block p-5"
           >
@@ -135,8 +136,9 @@ export function WorkflowInboxList({
               )}
             </div>
           </Link>
+          </MotionItem>
         ))}
-      </div>
+      </MotionStagger>
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { useCreateProject, useValidatePermissions } from "@/api/projectHooks";
+import { MotionItem } from "@/components/common/motion";
 import type { Project, PermissionValidationResult } from "@/api/types";
 
 const REQUIRED_PERMISSIONS = [
@@ -133,20 +134,22 @@ export function ProjectCreatePage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-8">
-      <div>
+    <div className="mx-auto max-w-3xl space-y-6 p-8">
+      <div className="card-glass relative overflow-hidden p-6">
+        <div className="absolute inset-x-0 top-0 h-1 bg-brand-gradient" />
         <button
           onClick={() => navigate("/projects")}
-          className="mb-4 flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          className="btn-ghost mb-4 -ml-2"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
           Back to Projects
         </button>
-        <h1 className="page-title">New Project</h1>
+        <p className="eyebrow">Tenant Onboarding</p>
+        <h1 className="page-title mt-1">New Project</h1>
         <p className="page-subtitle">
-          Connect to an Entra ID tenant for permissions analysis
+          Connect an Entra ID tenant for least-privilege analysis.
         </p>
       </div>
 
@@ -160,7 +163,15 @@ export function ProjectCreatePage() {
 
       {/* Step 1: Basic Info */}
       {step === 1 && (
+        <MotionItem>
         <div className="card space-y-5 p-6">
+          <div>
+            <p className="eyebrow">Step 1</p>
+            <h2 className="section-title mt-1">Project details</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Name the workspace and identify the tenant you want to analyze.
+            </p>
+          </div>
           <div>
             <label
               htmlFor="project-name"
@@ -222,12 +233,21 @@ export function ProjectCreatePage() {
             </button>
           </div>
         </div>
+        </MotionItem>
       )}
 
       {/* Step 2: Credentials */}
       {step === 2 && (
+        <MotionItem>
         <div className="card space-y-5 p-6">
-          <div className="rounded-xl bg-blue-50 p-4 text-sm text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+          <div>
+            <p className="eyebrow">Step 2</p>
+            <h2 className="section-title mt-1">Credentials</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Provide an app registration with read-only Microsoft Graph access.
+            </p>
+          </div>
+          <div className="rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm text-brand-700 dark:border-brand-900/50 dark:bg-brand-950/30 dark:text-brand-300">
             <p className="font-semibold">App Registration Required</p>
             <p className="mt-1 text-xs">
               Create an app registration in the target tenant with the following
@@ -293,12 +313,20 @@ export function ProjectCreatePage() {
             </button>
           </div>
         </div>
+        </MotionItem>
       )}
 
       {/* Step 3: Validation Results */}
       {step === 3 && (
+        <MotionItem>
         <div className="card space-y-5 p-6">
-          <h2 className="section-title">Permission Validation</h2>
+          <div>
+            <p className="eyebrow">Step 3</p>
+            <h2 className="section-title mt-1">Permission Validation</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Confirm required scopes before the first scan.
+            </p>
+          </div>
           <div className="space-y-2">
             {REQUIRED_PERMISSIONS.map((perm) => {
               const granted = validationResult?.granted?.includes(perm);
@@ -352,10 +380,12 @@ export function ProjectCreatePage() {
             </button>
           </div>
         </div>
+        </MotionItem>
       )}
 
       {/* Step 4: Success */}
       {step === 4 && createdProject && (
+        <MotionItem>
         <div className="card p-8 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-900/20">
             <svg className="h-7 w-7 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -388,6 +418,7 @@ export function ProjectCreatePage() {
             </button>
           </div>
         </div>
+        </MotionItem>
       )}
     </div>
   );

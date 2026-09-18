@@ -2,12 +2,16 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAccessPaths } from "@/api/hooks";
 import { SeverityBadge } from "@/components/common/SeverityBadge";
+import { EmptyState } from "@/components/common/EmptyState";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
 import { AccessPathSummaryCard } from "@/components/access-paths/AccessPathSummaryCard";
+import { useProjectContext } from "@/store/projectContext";
 
 type RiskFilter = "" | "critical" | "high" | "medium";
 
 export function AccessPathsPage() {
   const navigate = useNavigate();
+  const { projectId } = useProjectContext();
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("");
   const [page, setPage] = useState(1);
   const size = 20;
@@ -24,19 +28,20 @@ export function AccessPathsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-          Privilege Escalation Paths
-        </h1>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+        <p className="eyebrow">Access Path Analysis</p>
+        <h1 className="page-title mt-1">Privilege Escalation Paths</h1>
+        <p className="page-subtitle">
           Indirect privilege escalation routes through app ownership, group membership, and SP permissions
         </p>
+        </div>
       </div>
 
       <AccessPathSummaryCard />
 
       <div className="card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
           <div className="flex items-center gap-2">
             <label htmlFor="risk-filter" className="text-xs font-medium text-slate-500 dark:text-slate-400">
               Min Risk:
@@ -45,7 +50,7 @@ export function AccessPathsPage() {
               id="risk-filter"
               value={riskFilter}
               onChange={(e) => { setRiskFilter(e.target.value as RiskFilter); setPage(1); }}
-              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+              className="input-base py-1 text-xs"
             >
               <option value="">All</option>
               <option value="critical">Critical</option>
@@ -53,23 +58,24 @@ export function AccessPathsPage() {
               <option value="medium">Medium+</option>
             </select>
           </div>
-          <span className="text-xs text-slate-500 dark:text-slate-400">
-            {total} {total === 1 ? "identity" : "identities"} with paths
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            <AnimatedNumber value={total} /> {total === 1 ? "identity" : "identities"} with paths
           </span>
         </div>
 
         {isLoading ? (
-          <div className="animate-pulse p-6">
+          <div className="p-6">
             <div className="space-y-3">
               {[...Array(5)].map((_, i) => (
-                <div key={i} className="h-10 rounded bg-slate-100 dark:bg-slate-700" />
+                <div key={i} className="skeleton h-10" />
               ))}
             </div>
           </div>
         ) : items.length === 0 ? (
-          <div className="p-12 text-center text-sm text-slate-400 dark:text-slate-500">
-            No privilege escalation paths found
-          </div>
+          <EmptyState
+            title="No privilege escalation paths found"
+            description="No connected escalation routes match the current risk filter."
+          />
         ) : (
           <table className="w-full text-left text-sm">
             <thead>
@@ -87,7 +93,7 @@ export function AccessPathsPage() {
               {items.map((item) => (
                 <tr
                   key={item.id}
-                  onClick={() => navigate(`../identities/${item.identity_id}`)}
+                  onClick={() => navigate(`/projects/${projectId}/identities/${item.identity_id}`)}
                   className="cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50"
                 >
                   <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">
@@ -137,7 +143,7 @@ export function AccessPathsPage() {
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 disabled:opacity-40 dark:border-slate-600 dark:text-slate-400"
+              className="btn-secondary px-3 py-2 text-xs"
             >
               Previous
             </button>
@@ -148,7 +154,7 @@ export function AccessPathsPage() {
               type="button"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
-              className="rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 disabled:opacity-40 dark:border-slate-600 dark:text-slate-400"
+              className="btn-secondary px-3 py-2 text-xs"
             >
               Next
             </button>

@@ -3,6 +3,7 @@ import { useAuthorizationReadiness, useGovernancePolicy, useRunScopedCopilot } f
 import type { GovernanceCopilotResponse } from "@/api/types";
 import { EmptyState } from "@/components/common/EmptyState";
 import { JsonViewer } from "@/components/common/JsonViewer";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import { GovernanceErrorState } from "@/components/governance/GovernanceFeedback";
 import { GovernanceMetricCard } from "@/components/governance/GovernanceMetricCard";
 import { formatDateTime, toTitleCase } from "@/utils/governanceFormatting";
@@ -76,26 +77,29 @@ export function ScopedCopilotPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="page-title">Scoped Copilot</h1>
-        <p className="page-subtitle">
-          Query the governance copilot using the backend-supported query payload and inspect the raw response
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="eyebrow">Governed AI</p>
+          <h1 className="page-title mt-1">Scoped Copilot</h1>
+          <p className="page-subtitle">
+            Query the governance copilot using the backend-supported query payload and inspect the raw response
+          </p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <GovernanceMetricCard label="Queries this session" value={history.length} tone="brand" />
-        <GovernanceMetricCard
+      <MotionStagger className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <MotionItem><GovernanceMetricCard label="Queries this session" value={history.length} tone="brand" /></MotionItem>
+        <MotionItem><GovernanceMetricCard
           label="Authorization ready"
           value={readiness?.ready ? "Yes" : "No"}
           tone={readiness?.ready ? "emerald" : "amber"}
-        />
-        <GovernanceMetricCard
+        /></MotionItem>
+        <MotionItem><GovernanceMetricCard
           label="Policy loaded"
           value={policy ? "Yes" : "No"}
           tone={policy ? "slate" : "amber"}
-        />
-      </div>
+        /></MotionItem>
+      </MotionStagger>
 
       {readiness && (
         <div
@@ -243,9 +247,9 @@ export function ScopedCopilotPage() {
           {history.length > 1 && (
             <div className="card p-5">
               <h2 className="section-title">Recent session queries</h2>
-              <div className="mt-4 space-y-3">
+              <MotionStagger className="mt-4 space-y-3">
                 {history.slice(1).map((item) => (
-                  <div
+                  <MotionItem
                     key={item.id}
                     className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-slate-700/80 dark:bg-slate-800/40"
                   >
@@ -253,9 +257,9 @@ export function ScopedCopilotPage() {
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                       {formatDateTime(item.submittedAt)}
                     </p>
-                  </div>
+                  </MotionItem>
                 ))}
-              </div>
+              </MotionStagger>
             </div>
           )}
         </div>

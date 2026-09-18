@@ -1,6 +1,9 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { Link } from "react-router-dom";
 import clsx from "clsx";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
+import { LogoBadge } from "@/components/common/Logo";
 
 // ---------------------------------------------------------------------------
 // Search index — each entry has an id (section), title, and searchable text
@@ -103,13 +106,12 @@ const TOC: TocItem[] = [
 // Shared primitives
 // ---------------------------------------------------------------------------
 
-function Badge({ children, color = "blue" }: { children: React.ReactNode; color?: "blue" | "green" | "amber" | "red" | "purple" | "slate" }) {
+function Badge({ children, color = "brand" }: { children: React.ReactNode; color?: "brand" | "green" | "amber" | "red" | "slate" }) {
   const colors = {
-    blue: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+    brand: "bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300",
     green: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
     amber: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
     red: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-    purple: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
     slate: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
   };
   return (
@@ -180,9 +182,9 @@ function Table({ headers, rows }: { headers: string[]; rows: string[][] }) {
   );
 }
 
-function FeatureCard({ title, description, badges }: { title: string; description: string; badges: { label: string; color: "blue" | "green" | "amber" | "red" | "purple" | "slate" }[] }) {
+function FeatureCard({ title, description, badges }: { title: string; description: string; badges: { label: string; color: "brand" | "green" | "amber" | "red" | "slate" }[] }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md dark:border-slate-700 dark:bg-slate-800/50">
+    <div className="card-interactive p-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold text-slate-900 dark:text-white">{title}</span>
         {badges.map((b) => (
@@ -208,20 +210,22 @@ function OverviewSection() {
         profiles, recommends least-privilege roles, detects permission drift and behavioral anomalies,
         evaluates 50+ best-practice rules, and maps findings to compliance frameworks (CIS, NIST, SOC 2).
       </P>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <MotionStagger className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: "Identity Types", value: "4", sub: "Users, SPs, MIs, Groups" },
-          { label: "Best Practice Rules", value: "50+", sub: "Across 11 categories" },
-          { label: "Detection Types", value: "7", sub: "Drift, geo, velocity, peer" },
-          { label: "Compliance Frameworks", value: "3", sub: "CIS, NIST, SOC 2" },
+          { label: "Identity Types", value: 4, suffix: "", sub: "Users, SPs, MIs, Groups" },
+          { label: "Best Practice Rules", value: 50, suffix: "+", sub: "Across 11 categories" },
+          { label: "Detection Types", value: 7, suffix: "", sub: "Drift, geo, velocity, peer" },
+          { label: "Compliance Frameworks", value: 3, suffix: "", sub: "CIS, NIST, SOC 2" },
         ].map((stat) => (
-          <div key={stat.label} className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-3 dark:border-slate-700 dark:from-slate-800 dark:to-slate-800/50">
-            <div className="text-2xl font-bold text-brand-600 dark:text-brand-400">{stat.value}</div>
+          <MotionItem key={stat.label}>
+          <div className="card p-3">
+            <AnimatedNumber value={stat.value} suffix={stat.suffix} className="text-2xl font-bold tabular-nums text-brand-600 dark:text-brand-400" />
             <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">{stat.label}</div>
             <div className="text-[10px] text-slate-400">{stat.sub}</div>
           </div>
+          </MotionItem>
         ))}
-      </div>
+      </MotionStagger>
     </div>
   );
 }
@@ -268,7 +272,7 @@ VITE_LOCAL_MODE=true npm run dev`}</CodeBlock>
         ]}
       />
       <SubHeading>First Scan</SubHeading>
-      <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+      <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-4 dark:border-brand-900/60 dark:bg-brand-950/30">
         <ol className="ml-4 list-decimal space-y-2 text-sm text-slate-700 dark:text-slate-300">
           <li>Create a project from the <strong>Projects</strong> page — provide your Entra ID app registration client ID and secret.</li>
           <li>Navigate into the project and go to <strong>Scans</strong> &rarr; click <strong>Run Scan</strong>.</li>
@@ -370,10 +374,10 @@ function FeaturesSection() {
 
       <SubHeading>Identity & Access Analysis</SubHeading>
       <div className="grid gap-3 sm:grid-cols-2">
-        <FeatureCard title="Identity Action Profiling" description="Ingests audit logs, sign-in logs, and activity logs. Builds per-identity action profiles for users, service principals, managed identities, and groups. Delta query support for incremental sync." badges={[{ label: "Core", color: "blue" }]} />
-        <FeatureCard title="PIM-Aware Role Analysis" description="Fetches active and eligible PIM role assignments. Distinguishes direct, pim_eligible, pim_activated, and group assignment types. Tracks activation sessions." badges={[{ label: "Core", color: "blue" }, { label: "PIM", color: "purple" }]} />
-        <FeatureCard title="Least-Privilege Recommender" description="Maps observed actions to required permissions using an 86-operation catalog. Recommends best-matching built-in roles (72 Entra + 57 Azure RBAC) or generates custom role definitions with reduction scoring." badges={[{ label: "Core", color: "blue" }]} />
-        <FeatureCard title="Access Path Analysis" description="Detects indirect privilege escalation chains: app owner to SP, group owner to role, SP owner to permissions, and implicit app admin paths." badges={[{ label: "Advanced", color: "purple" }]} />
+        <FeatureCard title="Identity Action Profiling" description="Ingests audit logs, sign-in logs, and activity logs. Builds per-identity action profiles for users, service principals, managed identities, and groups. Delta query support for incremental sync." badges={[{ label: "Core", color: "brand" }]} />
+        <FeatureCard title="PIM-Aware Role Analysis" description="Fetches active and eligible PIM role assignments. Distinguishes direct, pim_eligible, pim_activated, and group assignment types. Tracks activation sessions." badges={[{ label: "Core", color: "brand" }, { label: "PIM", color: "brand" }]} />
+        <FeatureCard title="Least-Privilege Recommender" description="Maps observed actions to required permissions using an 86-operation catalog. Recommends best-matching built-in roles (72 Entra + 57 Azure RBAC) or generates custom role definitions with reduction scoring." badges={[{ label: "Core", color: "brand" }]} />
+        <FeatureCard title="Access Path Analysis" description="Detects indirect privilege escalation chains: app owner to SP, group owner to role, SP owner to permissions, and implicit app admin paths." badges={[{ label: "Advanced", color: "brand" }]} />
       </div>
 
       <SubHeading>Service Principal & Workload Identity</SubHeading>
@@ -399,17 +403,17 @@ function FeaturesSection() {
 
       <SubHeading>Conditional Access & Policy</SubHeading>
       <div className="grid gap-3 sm:grid-cols-2">
-        <FeatureCard title="12 CA Misconfiguration Checks" description="Legacy auth blocking, MFA gaps for admins and all users, admin exclusions, risk-based policies, device compliance, guest MFA, Azure Management portal, and more." badges={[{ label: "Core", color: "blue" }]} />
-        <FeatureCard title="Group Membership Analysis" description="Ownerless role-assignable groups, non-RA groups with admin roles, dynamic groups with admin roles, broad membership rules, and large role-bearing groups." badges={[{ label: "Core", color: "blue" }]} />
-        <FeatureCard title="Custom Role Governance" description="Wildcard permissions, escalation paths, >90% built-in overlap, unused roles, missing descriptions, and custom role sprawl (>20 custom roles)." badges={[{ label: "Core", color: "blue" }]} />
-        <FeatureCard title="Access Review Coverage" description="Privileged roles without access reviews, role-assignable groups uncovered, stale reviews with no recurrence, and no guest-scoped review." badges={[{ label: "Core", color: "blue" }]} />
+        <FeatureCard title="12 CA Misconfiguration Checks" description="Legacy auth blocking, MFA gaps for admins and all users, admin exclusions, risk-based policies, device compliance, guest MFA, Azure Management portal, and more." badges={[{ label: "Core", color: "brand" }]} />
+        <FeatureCard title="Group Membership Analysis" description="Ownerless role-assignable groups, non-RA groups with admin roles, dynamic groups with admin roles, broad membership rules, and large role-bearing groups." badges={[{ label: "Core", color: "brand" }]} />
+        <FeatureCard title="Custom Role Governance" description="Wildcard permissions, escalation paths, >90% built-in overlap, unused roles, missing descriptions, and custom role sprawl (>20 custom roles)." badges={[{ label: "Core", color: "brand" }]} />
+        <FeatureCard title="Access Review Coverage" description="Privileged roles without access reviews, role-assignable groups uncovered, stale reviews with no recurrence, and no guest-scoped review." badges={[{ label: "Core", color: "brand" }]} />
       </div>
 
       <SubHeading>Reporting & Remediation</SubHeading>
       <div className="grid gap-3 sm:grid-cols-2">
-        <FeatureCard title="Executive Reports" description="Generate PDF and PowerPoint reports with risk scores, compliance metrics, top risky identities, and AI-generated narrative summaries." badges={[{ label: "Core", color: "blue" }]} />
-        <FeatureCard title="IaC Export" description="Export role recommendations as Terraform HCL, Bicep, or ARM JSON templates. Supports bulk export as ZIP for up to 500 identities." badges={[{ label: "Core", color: "blue" }]} />
-        <FeatureCard title="Remediation Workflow" description="Request, approve, reject, and execute remediation actions via the Graph API OBO flow. Immutable audit trail stored in Cosmos DB. Human confirmation required." badges={[{ label: "Core", color: "blue" }]} />
+        <FeatureCard title="Executive Reports" description="Generate PDF and PowerPoint reports with risk scores, compliance metrics, top risky identities, and AI-generated narrative summaries." badges={[{ label: "Core", color: "brand" }]} />
+        <FeatureCard title="IaC Export" description="Export role recommendations as Terraform HCL, Bicep, or ARM JSON templates. Supports bulk export as ZIP for up to 500 identities." badges={[{ label: "Core", color: "brand" }]} />
+        <FeatureCard title="Remediation Workflow" description="Request, approve, reject, and execute remediation actions via the Graph API OBO flow. Immutable audit trail stored in Cosmos DB. Human confirmation required." badges={[{ label: "Core", color: "brand" }]} />
         <FeatureCard title="AI Narratives" description="GPT-4o-powered natural language summaries: executive digests, identity risk summaries, drift explanations, and recommendation rationale. 24-hour TTL caching." badges={[{ label: "AI", color: "amber" }]} />
       </div>
     </div>
@@ -487,14 +491,14 @@ function ComplianceSection() {
       </P>
       <div className="grid gap-3 sm:grid-cols-3">
         {[
-          { name: "CIS Microsoft 365", version: "Foundations Benchmark v3.1.0", count: 23, color: "text-blue-600 dark:text-blue-400", sections: "Identity, Privileged Access, Guest Access, Applications, Governance, Conditional Access, Roles" },
+          { name: "CIS Microsoft 365", version: "Foundations Benchmark v3.1.0", count: 23, color: "text-brand-600 dark:text-brand-400", sections: "Identity, Privileged Access, Guest Access, Applications, Governance, Conditional Access, Roles" },
           { name: "NIST SP 800-53", version: "Rev. 5", count: 22, color: "text-emerald-600 dark:text-emerald-400", sections: "Access Control, Identification/Auth, Config Management, Risk Assessment, Personnel Security" },
-          { name: "SOC 2 Type II", version: "Trust Services Criteria 2017", count: 14, color: "text-purple-600 dark:text-purple-400", sections: "Common Criteria (CC6-CC8), Availability, Confidentiality" },
+          { name: "SOC 2 Type II", version: "Trust Services Criteria 2017", count: 14, color: "text-brand-600 dark:text-brand-400", sections: "Common Criteria (CC6-CC8), Availability, Confidentiality" },
         ].map((fw) => (
           <div key={fw.name} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800/50">
             <div className="text-sm font-semibold text-slate-900 dark:text-white">{fw.name}</div>
             <div className="text-xs text-slate-500 dark:text-slate-400">{fw.version}</div>
-            <div className={clsx("mt-2 text-2xl font-bold", fw.color)}>{fw.count}</div>
+            <AnimatedNumber value={fw.count} className={clsx("mt-2 block text-2xl font-bold tabular-nums", fw.color)} />
             <div className="text-xs text-slate-400">controls mapped</div>
             <div className="mt-2 text-[10px] leading-relaxed text-slate-400">{fw.sections}</div>
           </div>
@@ -769,7 +773,7 @@ function SearchBar({
           placeholder="Search documentation... (Ctrl+K)"
           value={query}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-20 text-sm text-slate-800 placeholder-slate-400 shadow-sm outline-none transition-all focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder-slate-500 dark:focus:border-brand-500 dark:focus:ring-brand-900/30"
+          className="input-base py-2.5 pl-10 pr-20"
         />
         {query && (
           <div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-2">
@@ -842,15 +846,10 @@ export function DocsPage() {
   return (
     <div className="flex h-screen flex-col bg-slate-50 dark:bg-slate-950">
       {/* Top header */}
-      <header className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6 py-3 dark:border-slate-700 dark:bg-slate-900">
+      <header className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white/90 px-6 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
         <div className="flex items-center gap-3">
-          <Link
-            to="/"
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 shadow-sm"
-          >
-            <svg className="h-4.5 w-4.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
+          <Link to="/" className="transition-transform hover:scale-105">
+            <LogoBadge size="sm" />
           </Link>
           <div>
             <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
@@ -871,7 +870,7 @@ export function DocsPage() {
         </div>
         <Link
           to="/"
-          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+          className="btn-secondary px-3 py-1.5 text-xs"
         >
           Go to App
         </Link>

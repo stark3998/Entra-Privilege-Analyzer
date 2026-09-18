@@ -10,7 +10,7 @@ function formatDuration(minutes: number): string {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  active: "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300",
+  active: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300",
   expired: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
   deactivated: "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300",
 };
@@ -20,18 +20,18 @@ export function PimSessionTable({ sessions }: { sessions: PimSession[] }) {
   const { projectId } = useProjectContext();
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+    <div className="card overflow-x-auto">
       <table className="w-full text-left text-sm">
         <thead className="bg-slate-50 dark:bg-slate-800">
           <tr>
-            <th className="px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Identity</th>
-            <th className="px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Role</th>
-            <th className="px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Scope</th>
-            <th className="px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Activated</th>
-            <th className="px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Duration</th>
-            <th className="px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Events</th>
-            <th className="px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Anomalies</th>
-            <th className="px-4 py-3 font-medium text-slate-600 dark:text-slate-300">Status</th>
+            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Identity</th>
+            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Role</th>
+            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Scope</th>
+            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Activated</th>
+            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Duration</th>
+            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Events</th>
+            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Anomalies</th>
+            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Status</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200 bg-white dark:divide-slate-700 dark:bg-slate-900">
@@ -79,7 +79,7 @@ export function PimSessionTable({ sessions }: { sessions: PimSession[] }) {
               </td>
               <td className="px-4 py-3">
                 <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_STYLES[s.status] ?? STATUS_STYLES.expired}`}>
-                  {s.is_active && <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />}
+                  {s.is_active && <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-emerald-500" />}
                   {s.status}
                 </span>
               </td>

@@ -3,6 +3,9 @@ import { Link } from "react-router-dom";
 import clsx from "clsx";
 import type { RoleRecommendation, IdentityType } from "@/api/types";
 import { EmptyState } from "@/components/common/EmptyState";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
+import { useProjectContext } from "@/store/projectContext";
 
 interface RecommendationListProps {
   data: RoleRecommendation[];
@@ -97,7 +100,7 @@ function CircularProgress({
           colors.text,
         )}
       >
-        {score}%
+        <AnimatedNumber value={score} suffix="%" />
       </span>
     </div>
   );
@@ -107,11 +110,11 @@ function SkeletonCard() {
   return (
     <div className="card p-5">
       <div className="flex items-center gap-4">
-        <div className="h-14 w-14 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+        <div className="skeleton h-14 w-14 rounded-full" />
         <div className="flex-1 space-y-2">
-          <div className="h-4 w-48 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
-          <div className="h-3 w-32 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
-          <div className="h-3 w-64 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
+          <div className="skeleton h-4 w-48" />
+          <div className="skeleton h-3 w-32" />
+          <div className="skeleton h-3 w-64" />
         </div>
       </div>
     </div>
@@ -130,6 +133,7 @@ export function RecommendationList({
   onPageChange,
   isLoading,
 }: RecommendationListProps) {
+  const { projectId } = useProjectContext();
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const startItem = (page - 1) * pageSize + 1;
   const endItem = Math.min(page * pageSize, total);
@@ -180,10 +184,11 @@ export function RecommendationList({
 
   return (
     <div className="space-y-4">
+      <MotionStagger className="space-y-4">
       {data.map((rec) => {
         const typeColor = TYPE_COLORS[rec.identity_type as IdentityType];
         return (
-          <div key={rec.id} className="card-interactive p-5">
+          <MotionItem key={rec.id} className="card-interactive p-5">
             <div className="flex items-center gap-4">
               <CircularProgress score={rec.reduction_score} />
 
@@ -210,15 +215,16 @@ export function RecommendationList({
               </div>
 
               <Link
-                to={`/recommendations/${rec.identity_id}`}
+                to={`/projects/${projectId}/recommendations/${rec.identity_id}`}
                 className="btn-primary flex-shrink-0 text-xs"
               >
                 View Details
               </Link>
             </div>
-          </div>
+          </MotionItem>
         );
       })}
+      </MotionStagger>
 
       {/* Pagination */}
       {total > 0 && (
@@ -231,12 +237,7 @@ export function RecommendationList({
             <button
               onClick={() => onPageChange(page - 1)}
               disabled={page <= 1}
-              className={clsx(
-                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                page <= 1
-                  ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
-                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
-              )}
+              className="btn-ghost px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-40"
             >
               Prev
             </button>
@@ -246,12 +247,7 @@ export function RecommendationList({
             <button
               onClick={() => onPageChange(page + 1)}
               disabled={page >= totalPages}
-              className={clsx(
-                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                page >= totalPages
-                  ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
-                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800",
-              )}
+              className="btn-ghost px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>

@@ -13,6 +13,8 @@ import {
   pollScanEvents,
 } from "@/api/projectHooks";
 import { useProjectContext } from "@/store/projectContext";
+import { AnimatedNumber } from "@/components/common/AnimatedNumber";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import type { ScanRecord, ScanPhase, ScanStreamEvent } from "@/api/types";
 
 const PHASE_TABS = [
@@ -44,7 +46,7 @@ function StatusBadge({ status }: { status: string }) {
     completed:
       "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400",
     running:
-      "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400",
+      "bg-brand-50 text-brand-700 dark:bg-brand-900/20 dark:text-brand-300",
     queued:
       "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
     failed: "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400",
@@ -59,7 +61,7 @@ function StatusBadge({ status }: { status: string }) {
 function AuthModeBadge({ mode }: { mode: string }) {
   if (mode === "delegated") {
     return (
-      <span className="badge bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400">
+      <span className="badge bg-brand-50 text-brand-700 dark:bg-brand-900/20 dark:text-brand-300">
         Delegated
       </span>
     );
@@ -86,7 +88,7 @@ function PhaseRow({ phase }: { phase: ScanPhase }) {
             </svg>
           </div>
         ) : phase.status === "running" ? (
-          <svg className="h-5 w-5 animate-spin text-blue-500" viewBox="0 0 24 24" fill="none">
+          <svg className="h-5 w-5 animate-spin text-brand-500" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
@@ -119,9 +121,9 @@ function PhaseRow({ phase }: { phase: ScanPhase }) {
 }
 
 const PHASE_COLORS: Record<string, string> = {
-  audit_logs: "bg-blue-500/20 text-blue-300",
-  sign_in_logs: "bg-indigo-500/20 text-indigo-300",
-  role_assignments: "bg-purple-500/20 text-purple-300",
+  audit_logs: "bg-brand-500/20 text-brand-300",
+  sign_in_logs: "bg-sky-500/20 text-sky-300",
+  role_assignments: "bg-brand-500/20 text-brand-300",
   identity_profiles: "bg-teal-500/20 text-teal-300",
   action_events: "bg-amber-500/20 text-amber-300",
   pim_sessions: "bg-pink-500/20 text-pink-300",
@@ -221,7 +223,7 @@ function ScanLogViewer({
             ) : event.level === "warning" ? (
               <span className="shrink-0 text-amber-400">&#9650;</span>
             ) : (
-              <span className="shrink-0 text-blue-400">&#9679;</span>
+              <span className="shrink-0 text-brand-400">&#9679;</span>
             )}
             <span
               className={clsx(
@@ -318,7 +320,7 @@ function ScanHistoryRow({
             <button
               type="button"
               onClick={() => setShowLogs(!showLogs)}
-              className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
             >
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -564,7 +566,8 @@ export function ScanPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="page-title">Scans</h1>
+        <p className="eyebrow">Ingestion Control</p>
+        <h1 className="page-title mt-1">Scans</h1>
         <p className="page-subtitle">
           Trigger and monitor permission scans for{" "}
           <span className="font-medium text-slate-700 dark:text-slate-300">
@@ -574,10 +577,11 @@ export function ScanPage() {
       </div>
 
       {/* Current status + trigger */}
+      <MotionItem>
       <div className="card p-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            <p className="eyebrow">
               Current Status
             </p>
             {latestScan ? (
@@ -608,7 +612,7 @@ export function ScanPage() {
                 className={clsx(
                   "rounded-l-lg px-3 py-1.5 text-xs font-medium transition-colors",
                   authMode === "app"
-                    ? "bg-blue-600 text-white"
+                    ? "bg-brand-600 text-white"
                     : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800",
                   !hasAppCredentials && "cursor-not-allowed opacity-40",
                 )}
@@ -620,7 +624,7 @@ export function ScanPage() {
                 className={clsx(
                   "rounded-r-lg px-3 py-1.5 text-xs font-medium transition-colors",
                   authMode === "delegated"
-                    ? "bg-purple-600 text-white"
+                    ? "bg-brand-600 text-white"
                     : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800",
                 )}
               >
@@ -672,14 +676,14 @@ export function ScanPage() {
 
         {/* Delegated mode info banner */}
         {authMode === "delegated" && (
-          <div className="mt-4 rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-800 dark:bg-purple-900/20">
-            <p className="text-xs text-purple-700 dark:text-purple-300">
+          <div className="mt-4 rounded-xl border border-brand-200 bg-brand-50 p-3 dark:border-brand-900/50 dark:bg-brand-950/30">
+            <p className="text-xs text-brand-700 dark:text-brand-300">
               Scan will use your Entra ID permissions via delegated access (OBO flow).
               You need sufficient admin roles (e.g., Global Reader) to read directory data.
               Some data may be unavailable if your permissions are limited.
             </p>
             {permCheckLoading && (
-              <p className="mt-1 text-xs text-purple-500 dark:text-purple-400">
+              <p className="mt-1 text-xs text-brand-600 dark:text-brand-400">
                 Checking your permissions...
               </p>
             )}
@@ -688,7 +692,7 @@ export function ScanPage() {
                 <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
                   Missing permissions: {permCheck.missing_scopes.join(", ")}
                 </p>
-                <p className="mt-0.5 text-xs text-purple-600 dark:text-purple-400">
+                <p className="mt-0.5 text-xs text-brand-600 dark:text-brand-400">
                   The scan may return partial results. Ask your admin to grant delegated permissions and admin consent.
                 </p>
               </div>
@@ -877,6 +881,7 @@ export function ScanPage() {
           </div>
         )}
       </div>
+      </MotionItem>
 
       {/* Function App Logs */}
       {latestScan && (
@@ -990,34 +995,46 @@ export function ScanPage() {
 
       {/* Scan History */}
       <div className="card">
-        <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
-          <h2 className="section-title">Scan History</h2>
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+          <div>
+            <p className="eyebrow">Audit Trail</p>
+            <h2 className="section-title mt-1">Scan History</h2>
+          </div>
+          {history && (
+            <AnimatedNumber
+              value={history.total}
+              className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white"
+            />
+          )}
         </div>
 
         {historyLoading ? (
-          <div className="animate-pulse space-y-3 p-5">
+          <div className="space-y-3 p-5">
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="h-12 rounded-xl bg-slate-100 dark:bg-slate-800"
+                className="skeleton h-12 rounded-xl"
               />
             ))}
           </div>
         ) : history && history.items.length > 0 ? (
           <>
-            {history.items.map((scan) => (
-              <ScanHistoryRow
-                key={scan.id}
-                scan={scan}
-                projectId={projectId}
-                expanded={expandedScanId === scan.id}
-                onToggle={() =>
-                  setExpandedScanId(
-                    expandedScanId === scan.id ? null : scan.id,
-                  )
-                }
-              />
-            ))}
+            <MotionStagger>
+              {history.items.map((scan) => (
+                <MotionItem key={scan.id}>
+                  <ScanHistoryRow
+                    scan={scan}
+                    projectId={projectId}
+                    expanded={expandedScanId === scan.id}
+                    onToggle={() =>
+                      setExpandedScanId(
+                        expandedScanId === scan.id ? null : scan.id,
+                      )
+                    }
+                  />
+                </MotionItem>
+              ))}
+            </MotionStagger>
             {history.total > history.size && (
               <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 dark:border-slate-800">
                 <span className="text-xs text-slate-400">

@@ -1,5 +1,6 @@
 import type { ScopedCopilotRun } from "@/api/types";
 import { EmptyState } from "@/components/common/EmptyState";
+import { MotionItem, MotionStagger } from "@/components/common/motion";
 import { CopilotRunStatusBadge } from "@/components/governance/GovernanceBadges";
 import { formatDateTime } from "@/utils/governanceFormatting";
 
@@ -14,9 +15,9 @@ export function ScopedCopilotRunList({
     return (
       <div className="space-y-3">
         {Array.from({ length: 3 }).map((_, index) => (
-          <div key={index} className="card animate-pulse p-4">
-            <div className="h-4 w-1/4 rounded bg-slate-100 dark:bg-slate-800" />
-            <div className="mt-3 h-10 rounded bg-slate-100 dark:bg-slate-800" />
+          <div key={index} className="card p-4">
+            <div className="skeleton h-4 w-1/4" />
+            <div className="skeleton mt-3 h-10" />
           </div>
         ))}
       </div>
@@ -33,9 +34,9 @@ export function ScopedCopilotRunList({
   }
 
   return (
-    <div className="space-y-3">
+    <MotionStagger className="space-y-3">
       {runs.map((run) => (
-        <div key={run.id} className="card p-4">
+        <MotionItem key={run.id} className="card p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <CopilotRunStatusBadge status={run.status} />
@@ -87,8 +88,8 @@ export function ScopedCopilotRunList({
               ))}
             </div>
           )}
-        </div>
+        </MotionItem>
       ))}
-    </div>
+    </MotionStagger>
   );
 }
